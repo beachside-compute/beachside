@@ -1,9 +1,16 @@
+---
+import { redditPixelConfigured } from "../lib/analytics";
+
+// Ad landing pages also load the Reddit Pixel after consent, so their notice says so.
+const ads = Astro.props.ads === true && redditPixelConfigured;
+---
+
 <div class="analytics-preferences">
   <button type="button" data-analytics-settings aria-controls="docs-analytics-consent" aria-expanded="false" hidden>Analytics preferences</button>
 </div>
 
 <section id="docs-analytics-consent" class="consent-bar" aria-label="Analytics preference" hidden>
-  <p>Allow analytics cookies? <a href="/docs/privacy/">Privacy</a></p>
+  <p>{ads ? "Allow analytics and ad measurement cookies?" : "Allow analytics cookies?"} <a href="/docs/privacy/">Privacy</a></p>
   <div class="consent-actions">
     <button type="button" data-analytics-choice="rejected">Reject</button>
     <button type="button" data-analytics-choice="accepted">Accept</button>
@@ -49,7 +56,7 @@
       });
     });
     window.addEventListener("storage", (event) => {
-      if (event.key === consentKey || event.key === null) applyChoice(readConsent());
+      if (event.key === consentKey() || event.key === null) applyChoice(readConsent());
     });
     window.addEventListener("pageshow", (event) => {
       if (event.persisted) applyChoice(readConsent());

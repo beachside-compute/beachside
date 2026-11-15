@@ -2,6 +2,7 @@
 import Logo from "../components/Logo.astro";
 import ThemeToggle from "../components/ThemeToggle.astro";
 import "../styles/tokens.css";
+import AnalyticsConsent from "../components/AnalyticsConsent.astro";
 
 // Lead-capture landing page for the 1.0 beta. Both signup forms post to /api/beta-signup (apps/docs/worker), which
 // saves the contact in Resend. Ad links can tag the signup with utm_campaign / utm_source.
@@ -62,6 +63,8 @@ const sessions = (["rex", "herdr"] as const).flatMap((server) =>
     lines: lines(server, provider),
   })),
 );
+
+const year = new Date().getFullYear();
 ---
 <!doctype html>
 <html lang="en">
@@ -135,7 +138,7 @@ const sessions = (["rex", "herdr"] as const).flatMap((server) =>
 
 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: 14px; color: var(--muted)">
 <span>Or start now with the preview releases:</span>
-<code style="padding: 8px 16px; border-radius: 999px; border: 1.5px dashed var(--line); background: var(--surface); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 13px"><span style="color: var(--pink-ink)">$</span> npm install -g @beachside/cli</code>
+<button type="button" class="copy-pill" data-copy="npm install -g @beachside/cli" aria-label="Copy npm install -g @beachside/cli" title="Copy"><span style="color: var(--pink-ink)">$</span> npm install -g @beachside/cli <span class="copy-icon"><svg data-copy-icon aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span></button>
 </div>
 </div>
 
@@ -237,7 +240,10 @@ const sessions = (["rex", "herdr"] as const).flatMap((server) =>
 <h2 style="margin: 0; font-size: clamp(32px, 3.6vw, 46px); line-height: 1.1; letter-spacing: -0.025em; font-weight: 700">Ask your agent for a machine. It makes one.</h2>
 <p style="margin: 0; max-width: 30em; font-size: 18px; color: #C9CCE0">Your coding agent can start a sandbox, launch Herdr or Rex in it, push your checkout and hand the long job off, then clean up when it's done. You watch from Herdr's sidebar or a Rex tab, even from your phone.</p>
 <div style="display: flex; flex-direction: column; gap: 8px; padding: 18px 20px; border-radius: 14px; background: #0A0F1E; border: 1px solid rgba(255,255,255,0.08)">
+<div style="display: flex; align-items: center; justify-content: space-between; gap: 12px">
 <span style="font-size: 14px; font-weight: 600; color: #F4EDE3">First, teach your agent. Two commands:</span>
+<button type="button" class="copy-block" data-copy={"npm install -g @beachside/cli\nbeachside skill setup"} aria-label="Copy both commands" title="Copy both commands"><span class="copy-icon"><svg data-copy-icon aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></span><span data-copy-label>Copy</span></button>
+</div>
 <pre style="margin: 0; font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #EAF2FF; line-height: 1.9; white-space: pre-wrap"><span style="color: #FF86B7">$ </span>npm install -g @beachside/cli
 <span style="color: #FF86B7">$ </span>beachside skill setup</pre>
 <span style="font-size: 13px; color: #A3A8C3">Installs the Beachside skill for Claude Code, Codex and other agents that read skills.</span>
@@ -316,10 +322,10 @@ const sessions = (["rex", "herdr"] as const).flatMap((server) =>
 <p style="margin: 0; max-width: 34em; font-size: 17px; color: var(--muted)">The CLI, the TypeScript SDK and every provider adapter are Apache-2.0. Missing a provider? Write an adapter with <code class="inline-code">defineAdapter</code> and everything here works on it.</p>
 </div>
 <div style="flex: 0 1 auto; display: flex; flex-wrap: wrap; gap: 12px">
-<a href="https://github.com/beachside-compute/beachside" style="display: inline-flex; align-items: center; gap: 10px; min-height: 52px; padding: 0 24px; border-radius: 999px; background: var(--ink); color: var(--bg); font-weight: 700; text-decoration: none">
+<a href="https://github.com/beachside-compute/beachside" data-track="github_star_click" style="display: inline-flex; align-items: center; gap: 10px; min-height: 52px; padding: 0 24px; border-radius: 999px; background: var(--ink); color: var(--bg); font-weight: 700; text-decoration: none">
 <svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 6.5 7 .9-5.2 4.8 1.4 7L12 17.8 5.8 21.2l1.4-7L2 9.4l7-.9z"></path></svg>
 Star on GitHub</a>
-<a href="/docs/guides/write-an-adapter/" style="display: inline-flex; align-items: center; min-height: 52px; padding: 0 24px; border-radius: 999px; border: 1.5px solid var(--ink); color: var(--ink); font-weight: 700; text-decoration: none">Write an adapter</a>
+<a href="/docs/guides/write-an-adapter/" data-track="adapter_guide_click" style="display: inline-flex; align-items: center; min-height: 52px; padding: 0 24px; border-radius: 999px; border: 1.5px solid var(--ink); color: var(--ink); font-weight: 700; text-decoration: none">Write an adapter</a>
 </div>
 </div>
 </section>
@@ -499,7 +505,6 @@ Star on GitHub</a>
 </div>
 </li>
 </ol>
-<a href="#join" style="display: inline-flex; align-items: center; min-height: 52px; padding: 0 24px; border-radius: 999px; background: #EF4F91; color: #FFFFFF; font-weight: 700; text-decoration: none; box-shadow: 0 5px 0 var(--pink-ink)">Get beta access</a>
 </section>
 
 <!-- Final capture -->
@@ -521,13 +526,57 @@ Star on GitHub</a>
 </section>
 
 <footer style="max-width: 1180px; margin: 0 auto; padding: 28px 24px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--muted)">
-<span>Apache-2.0 · <a href="/" style="color: inherit">beachside.run</a></span>
-<span>Rex, Herdr, boxd and Freestyle are their makers' products.</span>
+<span>© {year} Beachside Compute · Apache-2.0 · <a href="/" style="color: inherit">beachside.run</a> · <a href="https://github.com/beachside-compute/beachside" style="color: inherit">GitHub</a> · <a href="https://x.com/pandemicsyn" style="color: inherit">X</a></span>
+<span>Product names and trademarks are the property of their respective owners. <a href="/docs/privacy/" style="color: inherit">Privacy</a></span>
+<AnalyticsConsent ads />
 </footer>
 </div>
 <script>
+  import { trackClicks, trackConversion } from "../lib/analytics";
+
   // The site worker (apps/docs/worker) saves signups to Resend; it answers { ok, message? }.
   const signupEndpoint = "/api/beta-signup";
+
+  // Copy buttons: the hero install pill and the agent setup block.
+  const copyIcon = document.querySelector("[data-copy-icon]")?.innerHTML ?? "";
+
+  const checkIcon = '<path d="M20 6 9 17l-5-5"/>';
+
+  document.querySelectorAll<HTMLButtonElement>("[data-copy]").forEach((button) => {
+    const label = button.querySelector("[data-copy-label]");
+    const icon = button.querySelector("[data-copy-icon]");
+    let reset: ReturnType<typeof setTimeout> | undefined;
+
+    button.addEventListener("click", async () => {
+      let copied = true;
+
+      try {
+        await navigator.clipboard.writeText(button.dataset.copy ?? "");
+      } catch {
+        copied = false;
+      }
+
+      if (copied) trackConversion("cli_install_copied", "Lead", { page: "beta" });
+
+      button.toggleAttribute("data-copied", copied);
+
+      if (icon && copied) icon.innerHTML = checkIcon;
+
+      if (label) label.textContent = copied ? "Copied" : "Copy failed";
+
+      clearTimeout(reset);
+
+      reset = setTimeout(() => {
+        button.removeAttribute("data-copied");
+
+        if (icon) icon.innerHTML = copyIcon;
+
+        if (label) label.textContent = "Copy";
+      }, 1400);
+    });
+  });
+
+  trackClicks("beta");
 
   const query = new URLSearchParams(location.search);
 
@@ -584,6 +633,7 @@ Star on GitHub</a>
           fields.hidden = true;
           status.textContent = `Your spot in the 1.0 beta is saved for ${email}.`;
           status.dataset.state = "done";
+          trackConversion("beta_signup", "SignUp", { source });
         } else {
           status.textContent = reply.message;
           status.dataset.state = "error";
@@ -600,6 +650,16 @@ Star on GitHub</a>
 
   // Terminal tabs: pick Rex or Herdr and boxd or Freestyle; one rendered session shows at a time.
   const picked = { server: "rex", provider: "boxd" };
+
+  // Ads pick the view like /remote/ does: ?for=, a utm_campaign containing rex or herdr
+  // (for example "reddit-herdr-nov"), or #rex / #herdr. Rex stays the default.
+  const campaign = /\b(rex|herdr)\b/.exec(query.get("utm_campaign") ?? "")?.[1];
+
+  const wanted = [query.get("for"), campaign, location.hash.slice(1)].find(
+    (value) => value === "rex" || value === "herdr",
+  );
+
+  if (wanted) picked.server = wanted;
 
   const labels = new Map([
     ["boxd", "boxd"],
@@ -667,4 +727,11 @@ body { margin: 0; background: var(--bg); }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 button:disabled { opacity: 0.6; cursor: progress !important; }
 @media (max-width: 640px) { .wide-only { display: none; } }
+.copy-pill { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px 8px 16px; border-radius: 999px; border: 1.5px dashed var(--line); background: var(--surface); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 13px; cursor: pointer; }
+.copy-pill:hover, .copy-pill:focus-visible { border-color: var(--pink-ink); }
+.copy-pill .copy-icon { display: inline-grid; color: var(--muted); }
+.copy-pill:hover .copy-icon, .copy-pill[data-copied] .copy-icon { color: var(--pink-ink); }
+.copy-block { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.14); background: transparent; color: #A3A8C3; font: 600 12px 'JetBrains Mono', monospace; cursor: pointer; }
+.copy-block:hover, .copy-block:focus-visible, .copy-block[data-copied] { color: #FF86B7; border-color: #FF86B7; }
+.copy-icon svg { display: block; }
 </style>

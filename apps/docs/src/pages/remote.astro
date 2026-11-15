@@ -2,6 +2,7 @@
 import Logo from "../components/Logo.astro";
 import ThemeToggle from "../components/ThemeToggle.astro";
 import "../styles/tokens.css";
+import AnalyticsConsent from "../components/AnalyticsConsent.astro";
 
 // One landing page for Rex and Herdr users. `?for=`, `utm_campaign=` or `#rex` / `#herdr` picks the view, so each
 // ad can land on its own copy; the toggle switches in place and keeps the rest of the query.
@@ -83,6 +84,8 @@ const sunBands = [
 function lineClass(line: Line) {
   return "cmd" in line ? "cli-line" : "note" in line ? "cli-line cli-note" : "cli-line cli-out";
 }
+
+const year = new Date().getFullYear();
 ---
 
 <!doctype html>
@@ -394,19 +397,24 @@ function lineClass(line: Line) {
             <a class="band-link only-rex" href="/docs/cli/rex/">Read the Rex guide →</a>
             <a class="band-link only-herdr" href="/docs/cli/#servers-in-a-sandbox">Read the Herdr setup →</a>
             <a class="band-link" href="/">What is Beachside? →</a>
-            <a class="band-link" href={github}>Star on GitHub →</a>
+            <a class="band-link" href={github} data-track="github_star_click">Star on GitHub →</a>
           </div>
         </div>
       </section>
     </main>
 
     <footer class="wrap footer">
-      <span>Apache-2.0 · beachside.run</span>
-      <span>Rex and Herdr are their makers' products. <a href="/docs/privacy/">Privacy</a></span>
+      <span>© {year} Beachside Compute · Apache-2.0 · beachside.run · <a href="https://github.com/beachside-compute/beachside">GitHub</a> · <a href="https://x.com/pandemicsyn">X</a></span>
+      <span>Product names and trademarks are the property of their respective owners. <a href="/docs/privacy/">Privacy</a></span>
+      <AnalyticsConsent ads />
     </footer>
 
     <script>
+      import { trackClicks, trackConversion } from "../lib/analytics";
+
       const motionOn = () => !matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+      trackClicks("remote");
 
       // Copy buttons.
       document.querySelectorAll<HTMLButtonElement>("[data-copy]").forEach((button) => {
@@ -421,6 +429,8 @@ function lineClass(line: Line) {
           } catch {
             copied = false;
           }
+
+          if (copied) trackConversion("cli_install_copied", "Lead", { page: "remote" });
 
           if (label) label.textContent = copied ? "copied" : "copy failed";
           clearTimeout(reset);

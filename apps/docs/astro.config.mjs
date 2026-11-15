@@ -41,6 +41,7 @@ export default defineConfig({
       ],
       social: [
         { icon: "github", label: "GitHub", href: "https://github.com/beachside-compute/beachside" },
+        { icon: "x.com", label: "X", href: "https://x.com/pandemicsyn" },
       ],
       customCss: ["./src/styles/tokens.css", "./src/styles/docs.css"],
       components: {
