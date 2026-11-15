@@ -329,13 +329,13 @@ const year = new Date().getFullYear();
               <p class="only-herdr">
                 The sandbox joins your tailnet with Tailscale SSH. Run the command it prints: it adds the sandbox to the Herdr app
                 as a machine named after it and copies your <code>hc</code> there, so its agents show up in your sidebar. When ssh
-                asks about the host key, compare it with the fingerprint <code>beachside</code> printed. On Herdr TUI, run
+                asks about the host key, compare it with the fingerprint that <code>beachside create</code> printed. On Herdr TUI, run
                 <code>herdr --remote ssh://…</code> with the same address instead.
               </p>
               <pre class="step-code only-rex"><code><span class="prompt">$ </span>beachside create --name rex --ttl 2h --with rex
 <span class="out">https://beachside-rex.&lt;your-tailnet&gt;.ts.net</span></code></pre>
               <pre class="step-code only-herdr"><code><span class="prompt">$ </span>beachside create --name dev --ttl 2h --with herdr
-<span class="prompt">$ </span>hc machine add <span data-provider-user>root</span>@beachside-dev.&lt;your-tailnet&gt;.ts.net --temp --install --name dev</code></pre>
+<span class="prompt">$ </span>hc machine add <span data-provider-user>boxd</span>@beachside-dev.&lt;your-tailnet&gt;.ts.net --temp --install --name dev</code></pre>
               <a class="step-link only-rex" href="/docs/cli/rex/">What <code>--with rex</code> does →</a>
               <a class="step-link only-herdr" href="/docs/cli/#servers-in-a-sandbox">What <code>--with herdr</code> does →</a>
             </li>
