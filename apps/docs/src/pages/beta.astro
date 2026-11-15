@@ -1,6 +1,7 @@
 ---
 import Logo from "../components/Logo.astro";
 import ThemeToggle from "../components/ThemeToggle.astro";
+import "../styles/tokens.css";
 
 // Lead-capture landing page for the 1.0 beta. Both signup forms post to /api/beta-signup (apps/docs/worker), which
 // saves the contact in Resend. Ad links can tag the signup with utm_campaign / utm_source.
@@ -118,10 +119,6 @@ const sessions = (["rex", "herdr"] as const).flatMap((server) =>
 <div style="max-width: 1180px; margin: 0 auto; padding: 72px 24px 88px; display: flex; flex-wrap: wrap; gap: 56px; align-items: center">
 
 <div style="flex: 1 1 460px; min-width: 0; display: flex; flex-direction: column; gap: 26px">
-<div style="display: flex; flex-wrap: wrap; gap: 8px">
-<span style="padding: 5px 12px; border-radius: 999px; background: var(--ink); color: var(--bg); font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600">Open source · Apache-2.0</span>
-<span style="padding: 5px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--aqua-ink); font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600">Rex · Herdr</span>
-</div>
 <h1 style="margin: 0; font-size: clamp(44px, 6vw, 76px); line-height: 1.02; letter-spacing: -0.035em; font-weight: 700">Always-on cloud agents <span style="display: inline-block; font-family: Unbounded, sans-serif; font-weight: 800; color: #EF4F91; transform: skewX(-8deg)">you own.</span></h1>
 <p style="margin: 0; max-width: 32em; font-size: 19px; color: var(--muted)">One command, from you or your agent, launches a <a href="https://www.superlogical.com/rex/" style="color: var(--ink)">Rex</a> or <a href="https://herdr.dev" style="color: var(--ink)">Herdr</a> workspace in a sandbox on providers like boxd or Freestyle and joins it to your tailnet. It keeps working when your laptop sleeps. No hosted agent cloud in the middle: it's your account, your keys and open source code.</p>
 
@@ -657,6 +654,7 @@ body { margin: 0; background: var(--bg); }
 .beta-nav { display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 500; }
 .beta .beta-nav a { padding: 8px 12px; color: var(--muted); text-decoration: none; }
 .beta .beta-nav a.beta-nav-cta { padding: 10px 18px; border-radius: 999px; background: var(--ink); color: var(--bg); font-weight: 600; }
+@media (max-width: 420px) { .beta .beta-nav a.beta-nav-cta { padding: 8px 14px; font-size: 14px; white-space: nowrap; } }
 .term-tabs { display: flex; gap: 4px; padding: 3px; border-radius: 999px; background: rgba(255,255,255,0.07); }
 .term-tabs button { min-height: 30px; padding: 2px 14px; border: 0; border-radius: 999px; background: transparent; color: #8189AE; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; cursor: pointer; }
 .term-tabs button[aria-pressed="true"] { background: #6FE6D6; color: #17203D; }
