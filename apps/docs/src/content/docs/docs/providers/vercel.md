@@ -108,4 +108,4 @@ Snapshots expire 30 days after their last use. Set `snapshots: { retentionSecond
 - Interrupted file transfers can leave temporary files until the sandbox is destroyed.
 - No custom or OCI images, volumes, mounts, custom firewall rules beyond allowlists, or OIDC credential discovery.
 
-See the [Vercel Sandbox docs](https://vercel.com/docs/sandbox), [pricing and limits](https://vercel.com/docs/sandbox/pricing), the [adapter README](https://github.com/pandemicsyn/beachside/blob/main/packages/providers/vercel/README.md) and the [native audit](https://github.com/pandemicsyn/beachside/blob/main/packages/providers/vercel/NATIVE.md).
+See the [Vercel Sandbox docs](https://vercel.com/docs/sandbox), [pricing and limits](https://vercel.com/docs/sandbox/pricing), the [adapter README](https://github.com/beachside-compute/beachside/blob/main/packages/providers/vercel/README.md) and the [native audit](https://github.com/beachside-compute/beachside/blob/main/packages/providers/vercel/NATIVE.md).

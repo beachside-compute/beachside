@@ -312,7 +312,7 @@ const featureEntries = Object.entries(features) as [
 ][];
 
 const evidenceHref =
-  "https://github.com/pandemicsyn/beachside/blob/main/packages/sdk-qualification/provider-qualification/LIVE-EVIDENCE.md";
+  "https://github.com/beachside-compute/beachside/blob/main/packages/sdk-qualification/provider-qualification/LIVE-EVIDENCE.md";
 
 function featureMatrix(reports: readonly QualificationReport[], profiles: SupportMetadata[]) {
   const historical = reports.flatMap((report) => parseReport(report).historicalEvidence ?? []);

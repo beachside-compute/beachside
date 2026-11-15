@@ -16,7 +16,7 @@ Read these docs first:
 - https://beachside.run/docs/reference/typescript/
 - https://beachside.run/docs/guides/recovery/
 - https://beachside.run/docs/guides/runnable-agent-examples/
-- https://github.com/pandemicsyn/beachside/blob/main/examples/README.md
+- https://github.com/beachside-compute/beachside/blob/main/examples/README.md
 
 Inspect the project and installed package versions before changing code.
 Install "beachside" and the selected adapter package from npm at matching

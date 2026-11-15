@@ -12,7 +12,7 @@ Official adapters and third-party adapters use the same public API from `@beachs
 The `add-provider` agent skill walks a coding agent through this whole guide: researching the native API, the shared setup options, create and destroy, uncertain outcomes, conformance tests, packaging and docs. Install it with the [`skills`](https://github.com/vercel-labs/skills) installer, which supports Claude Code, Codex, Cursor and other agents:
 
 ```sh
-npx skills add pandemicsyn/beachside --skill add-provider
+npx skills add beachside-compute/beachside --skill add-provider
 ```
 
 Run it in the repository where the adapter will live, then ask your agent to add the provider. Add `-g` to install it for every project instead. For an agent without a skill system, paste the [provider integration prompt](/docs/agents/build-a-provider/).
@@ -28,7 +28,7 @@ An adapter package provides:
 
 ## Start from the Acme example
 
-This adapter is [compiled and tested in the repository](https://github.com/pandemicsyn/beachside/blob/main/apps/docs/examples/acme.test.ts). `AcmeClient` is a deterministic stand-in for a native client; replace it with authenticated native calls that enforce the account, region, image, size and network guarantees the adapter declares.
+This adapter is [compiled and tested in the repository](https://github.com/beachside-compute/beachside/blob/main/apps/docs/examples/acme.test.ts). `AcmeClient` is a deterministic stand-in for a native client; replace it with authenticated native calls that enforce the account, region, image, size and network guarantees the adapter declares.
 
 ```ts
 import { z } from "zod";
@@ -150,7 +150,7 @@ const beachside = await Beachside.connect(
 );
 ```
 
-The [adapter source](https://github.com/pandemicsyn/beachside/blob/main/apps/docs/examples/acme-adapter.ts) and [AcmeClient fixture](https://github.com/pandemicsyn/beachside/blob/main/apps/docs/examples/acme-native.ts) are copyable files. The [Boat adapter](https://github.com/pandemicsyn/beachside/blob/main/packages/providers/boat/src/adapter.ts) is a complete recent example around a real native SDK.
+The [adapter source](https://github.com/beachside-compute/beachside/blob/main/apps/docs/examples/acme-adapter.ts) and [AcmeClient fixture](https://github.com/beachside-compute/beachside/blob/main/apps/docs/examples/acme-native.ts) are copyable files. The [Boat adapter](https://github.com/beachside-compute/beachside/blob/main/packages/providers/boat/src/adapter.ts) is a complete recent example around a real native SDK.
 
 ## Connect and verify the account
 
@@ -193,7 +193,7 @@ Set `supports.createEnv: true` only when `CreateInput.env` becomes native sandbo
 
 `destroy` reports `computeStopped: true` only after the provider confirms termination, and lists anything that remains in `retainedResources`.
 
-Plain async methods, as in the Acme example, suit calls that either complete or fail definitively. When a call can be lost after it reaches the provider, or the provider works asynchronously, use the `{ prepare, submit, observe }` form instead. `prepare` is read-only validation, `submit` dispatches once, and `observe` reads evidence without ever submitting again. A timeout after dispatch is an unknown outcome, not a failure. See [asynchronous recovery](/docs/guides/adapter-recovery/) and the [tested async example](https://github.com/pandemicsyn/beachside/blob/main/apps/docs/examples/async-adapter.ts).
+Plain async methods, as in the Acme example, suit calls that either complete or fail definitively. When a call can be lost after it reaches the provider, or the provider works asynchronously, use the `{ prepare, submit, observe }` form instead. `prepare` is read-only validation, `submit` dispatches once, and `observe` reads evidence without ever submitting again. A timeout after dispatch is an unknown outcome, not a failure. See [asynchronous recovery](/docs/guides/adapter-recovery/) and the [tested async example](https://github.com/beachside-compute/beachside/blob/main/apps/docs/examples/async-adapter.ts).
 
 To let applications reopen a sandbox from another process, return a `reference` built with `sandboxReference(provider, scope, nativeId, { operation, submission })` from create, and implement `reopen`, which verifies the reference against the current scope with `assertResourceScope` before reading native state.
 
@@ -229,7 +229,7 @@ For processes, implement the `NativeProcess` hooks and opt in to each behavior:
 
 ### Lifetime renewal
 
-`renew` is a mutation over `RenewInput`: a verified sandbox reference and an optional positive `forSeconds`. Its read-only `prepare` resolves the setup default, validates native policy and state, and returns a positive whole-second window, rounded up where needed. Reject windows above the provider maximum before dispatch. One native call returns `RenewResult` with the reference, the resolved `requested.forSeconds`, `acknowledged: true`, and a current observation or `null`. `renewCapabilities` reports the minimum, maximum and step, and whether the clock covers the sandbox or only the running session. A later deadline alone never proves the renewal was accepted. See the [renewal example](https://github.com/pandemicsyn/beachside/blob/main/apps/docs/examples/sandbox-renew.ts).
+`renew` is a mutation over `RenewInput`: a verified sandbox reference and an optional positive `forSeconds`. Its read-only `prepare` resolves the setup default, validates native policy and state, and returns a positive whole-second window, rounded up where needed. Reject windows above the provider maximum before dispatch. One native call returns `RenewResult` with the reference, the resolved `requested.forSeconds`, `acknowledged: true`, and a current observation or `null`. `renewCapabilities` reports the minimum, maximum and step, and whether the clock covers the sandbox or only the running session. A later deadline alone never proves the renewal was accepted. See the [renewal example](https://github.com/beachside-compute/beachside/blob/main/apps/docs/examples/sandbox-renew.ts).
 
 ## Test the adapter
 
@@ -253,9 +253,9 @@ The [command line](/docs/cli/configuration/) loads any adapter through a profile
 
 - add the package to the `build:packages` and `check:built` chains in the root `package.json`, and to the fixed release group with a changeset;
 - declare its `setup` and add its id, package and export to the official list in `packages/cli/src/providers.ts`;
-- add a provider profile for [live qualification](https://github.com/pandemicsyn/beachside/blob/main/packages/sdk-qualification/provider-qualification/README.md) and a row to `providerStatus` in `packages/sdk-qualification/provider-qualification/support.ts`, which feeds [Provider support](/docs/providers/support/);
+- add a provider profile for [live qualification](https://github.com/beachside-compute/beachside/blob/main/packages/sdk-qualification/provider-qualification/README.md) and a row to `providerStatus` in `packages/sdk-qualification/provider-qualification/support.ts`, which feeds [Provider support](/docs/providers/support/);
 - have a maintainer publish a `0.0.0` placeholder and configure npm trusted publishing for the new package name before the first release, or the release cannot publish it.
 
 ## Document it
 
-Every adapter gets a provider page that states its setup options and defaults, what it guarantees, what it does not support, and its image and network prerequisites. Mark an adapter experimental until it has passed live qualification, and keep fixture-tested, packed-tested and live-tested behavior distinct in the [provider support matrix](/docs/providers/support/). Contributors working in this repository can follow the [add-provider workflow](https://github.com/pandemicsyn/beachside/blob/main/.agents/skills/add-provider/SKILL.md), and coding agents can start from the [provider integration prompt](/docs/agents/build-a-provider/).
+Every adapter gets a provider page that states its setup options and defaults, what it guarantees, what it does not support, and its image and network prerequisites. Mark an adapter experimental until it has passed live qualification, and keep fixture-tested, packed-tested and live-tested behavior distinct in the [provider support matrix](/docs/providers/support/). Contributors working in this repository can follow the [add-provider workflow](https://github.com/beachside-compute/beachside/blob/main/.agents/skills/add-provider/SKILL.md), and coding agents can start from the [provider integration prompt](/docs/agents/build-a-provider/).

@@ -40,7 +40,7 @@ export default defineConfig({
         { tag: "script", content: openSearchFromQuery },
       ],
       social: [
-        { icon: "github", label: "GitHub", href: "https://github.com/pandemicsyn/beachside" },
+        { icon: "github", label: "GitHub", href: "https://github.com/beachside-compute/beachside" },
       ],
       customCss: ["./src/styles/tokens.css", "./src/styles/docs.css"],
       components: {

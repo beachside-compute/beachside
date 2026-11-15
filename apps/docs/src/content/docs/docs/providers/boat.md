@@ -98,4 +98,4 @@ If provisioning outlasts the in-call wait, the sandbox id is already saved and B
 - Previews are public: anyone with the URL can open the port.
 - Named snapshots count toward your Boat plan's allowance and survive the sandbox, so delete them when done.
 
-See the [provider research issue](https://github.com/pandemicsyn/beachside/issues/40), [Boat API docs](https://docs.boat.dev/api/v1) and [TypeScript SDK docs](https://docs.boat.dev/sdks/typescript).
+See the [provider research issue](https://github.com/beachside-compute/beachside/issues/40), [Boat API docs](https://docs.boat.dev/api/v1) and [TypeScript SDK docs](https://docs.boat.dev/sdks/typescript).

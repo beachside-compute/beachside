@@ -54,7 +54,7 @@ The result's `outputComplete` is true only after the output stream has ended and
 
 ## Build, worker and server recipes
 
-The [interactive process examples](https://github.com/pandemicsyn/beachside/blob/main/apps/docs/examples/interactive-processes.ts) show three workflows:
+The [interactive process examples](https://github.com/beachside-compute/beachside/blob/main/apps/docs/examples/interactive-processes.ts) show three workflows:
 
 - `buildWithProgress`: read build output as it arrives and wait for exit.
 - `interactiveWorker`: send requests while reading output, then close stdin.
@@ -109,7 +109,7 @@ The supervisor tracks the child it launched. Termination does not delete a nativ
 
 ## Finite compatibility and limits
 
-Choose `output: { mode: "stream" }` for long-running or interactive work and read output promptly. Without it, output uses the default finite mode: at most 1 MiB of cumulative UTF-8 output. Set `maxOutputBytes` to a value from 1 through 1,048,576 to lower that limit. You cannot combine `maxOutputBytes` with stream mode. Adapters without stream or input support reject the requested feature before starting; their existing finite operations remain available. The [finite streaming example](https://github.com/pandemicsyn/beachside/blob/main/apps/docs/examples/text-streaming.ts) demonstrates the default mode.
+Choose `output: { mode: "stream" }` for long-running or interactive work and read output promptly. Without it, output uses the default finite mode: at most 1 MiB of cumulative UTF-8 output. Set `maxOutputBytes` to a value from 1 through 1,048,576 to lower that limit. You cannot combine `maxOutputBytes` with stream mode. Adapters without stream or input support reject the requested feature before starting; their existing finite operations remain available. The [finite streaming example](https://github.com/beachside-compute/beachside/blob/main/apps/docs/examples/text-streaming.ts) demonstrates the default mode.
 
 Process setup has a 30-second local timeout. An abort before dispatch reports `WAIT_ABORTED`. If setup is abandoned after dispatch or its acknowledgement is lost, it reports `OUTCOME_UNKNOWN`. Beachside never starts the command again to recover from an uncertain result.
 

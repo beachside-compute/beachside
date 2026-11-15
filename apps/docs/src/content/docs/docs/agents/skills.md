@@ -3,7 +3,7 @@ title: Agent skills
 description: Install Beachside skills so coding agents know how to build with the SDK and drive sandboxes from the shell.
 ---
 
-Beachside ships three agent skills from its repository: `beachside` and `beachside-cli` in [`skills/`](https://github.com/pandemicsyn/beachside/tree/main/skills), and `add-provider` in [`.agents/skills/`](https://github.com/pandemicsyn/beachside/tree/main/.agents/skills/add-provider). A skill is a `SKILL.md` file that an agent loads when a task needs it, so the guidance stays out of your prompt until it is useful.
+Beachside ships three agent skills from its repository: `beachside` and `beachside-cli` in [`skills/`](https://github.com/beachside-compute/beachside/tree/main/skills), and `add-provider` in [`.agents/skills/`](https://github.com/beachside-compute/beachside/tree/main/.agents/skills/add-provider). A skill is a `SKILL.md` file that an agent loads when a task needs it, so the guidance stays out of your prompt until it is useful.
 
 | Skill           | Teaches an agent to                                                                                                                                                                                                                                 |
 | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -31,13 +31,13 @@ Setup writes `.agents/skills/beachside-cli/`, which Codex, OpenCode, Pi and most
 Install `beachside` and `add-provider` with the [`skills`](https://github.com/vercel-labs/skills) installer, which supports Claude Code, Codex, Cursor and other agents:
 
 ```sh
-npx skills add pandemicsyn/beachside --skill beachside -g
-npx skills add pandemicsyn/beachside --skill add-provider
+npx skills add beachside-compute/beachside --skill beachside -g
+npx skills add beachside-compute/beachside --skill add-provider
 ```
 
 `-g` installs the skill for your user. Leave it out to install into the current project instead, so everyone working in the repository gets it; that suits `add-provider`, which belongs in the adapter's repository.
 
-The installer can also add `beachside-cli` (`npx skills add pandemicsyn/beachside --skill beachside-cli -g`), for example before the CLI is installed. That copy holds the whole guide from the repository's main branch rather than your installed version, and the guide tells the agent to trust `beachside <command> --help` when they differ. Use `beachside skill setup` once the CLI is installed.
+The installer can also add `beachside-cli` (`npx skills add beachside-compute/beachside --skill beachside-cli -g`), for example before the CLI is installed. That copy holds the whole guide from the repository's main branch rather than your installed version, and the guide tells the agent to trust `beachside <command> --help` when they differ. Use `beachside skill setup` once the CLI is installed.
 
 For an agent without a skill system, copy the `SKILL.md` contents into its project or user instructions.
 
