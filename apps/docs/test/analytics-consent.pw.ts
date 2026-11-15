@@ -76,8 +76,7 @@ async function observe(page: Page) {
       if (/posthog[\w.-]*\.js/.test(url.pathname)) libraries.push(url.pathname);
       await route.continue();
     } else {
-      if (url.hostname.endsWith("redditstatic.com") || url.hostname.endsWith("reddit.com"))
-        reddit.push(request.url());
+      if (/(^|\.)reddit(static)?\.com$/.test(url.hostname)) reddit.push(request.url());
       await route.abort();
     }
   });

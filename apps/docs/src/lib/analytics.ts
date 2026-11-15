@@ -190,8 +190,9 @@ export function stopAnalytics(): boolean {
   }
 
   // The Reddit Pixel can't be unloaded; drop its first-party cookie and let the caller reload.
+  // The site is served only over HTTPS, so the deletion is marked Secure like the cookie itself.
   for (const domain of ["", `; domain=${location.hostname}`, `; domain=.${location.hostname}`])
-    document.cookie = `_rdt_uuid=; Max-Age=0; path=/${domain}`;
+    document.cookie = `_rdt_uuid=; Max-Age=0; path=/; Secure; SameSite=Lax${domain}`;
 
   return Boolean(client) || pixelLoaded;
 }
