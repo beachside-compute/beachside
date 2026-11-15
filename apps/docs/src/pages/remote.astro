@@ -2,6 +2,7 @@
 import Logo from "../components/Logo.astro";
 import ThemeToggle from "../components/ThemeToggle.astro";
 import "../styles/tokens.css";
+import AnalyticsConsent from "../components/AnalyticsConsent.astro";
 
 // One landing page for Rex and Herdr users. `?for=`, `utm_campaign=` or `#rex` / `#herdr` picks the view, so each
 // ad can land on its own copy; the toggle switches in place and keeps the rest of the query.
@@ -403,9 +404,12 @@ function lineClass(line: Line) {
     <footer class="wrap footer">
       <span>Apache-2.0 · beachside.run</span>
       <span>Rex and Herdr are their makers' products. <a href="/docs/privacy/">Privacy</a></span>
+      <AnalyticsConsent ads />
     </footer>
 
     <script>
+      import { trackConversion } from "../lib/analytics";
+
       const motionOn = () => !matchMedia("(prefers-reduced-motion: reduce)").matches;
 
       // Copy buttons.
@@ -421,6 +425,8 @@ function lineClass(line: Line) {
           } catch {
             copied = false;
           }
+
+          if (copied) trackConversion("cli_install_copied", "Lead", { page: "remote" });
 
           if (label) label.textContent = copied ? "copied" : "copy failed";
           clearTimeout(reset);

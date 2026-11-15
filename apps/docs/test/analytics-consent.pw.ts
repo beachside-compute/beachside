@@ -2,6 +2,7 @@ import { expect, test, type Page, type Request } from "@playwright/test";
 import { gunzipSync } from "node:zlib";
 import { z } from "zod";
 import project from "../src/lib/analytics-project.json" with { type: "json" };
+import type {} from "../src/lib/analytics";
 
 const consentKey = "beachside-docs-analytics-consent-v1";
 
@@ -48,6 +49,7 @@ async function observe(page: Page) {
   const requests: Request[] = [];
   const libraries: string[] = [];
   const captured: CapturedEvent[] = [];
+  const reddit: string[] = [];
   await page.route("**/*", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -73,10 +75,14 @@ async function observe(page: Page) {
     } else if (url.hostname === "127.0.0.1") {
       if (/posthog[\w.-]*\.js/.test(url.pathname)) libraries.push(url.pathname);
       await route.continue();
-    } else await route.abort();
+    } else {
+      if (url.hostname.endsWith("redditstatic.com") || url.hostname.endsWith("reddit.com"))
+        reddit.push(request.url());
+      await route.abort();
+    }
   });
 
-  return { requests, libraries, captured };
+  return { requests, libraries, captured, reddit };
 }
 
 async function analyticsStorage(page: Page) {
@@ -222,4 +228,75 @@ test("blocked storage fails closed across page loads", async ({ page }) => {
   await page.reload();
   await expect(bar(page)).toBeVisible();
   expect(requests).toHaveLength(0);
+});
+
+const adsConsentKey = "beachside-ads-analytics-consent-v1";
+
+// The pixel.js request is blocked, so the stub keeps every Reddit call in its queue.
+const redditQueue = (page: Page) => page.evaluate(() => window.rdt?.callQueue);
+
+for (const path of ["/beta/", "/remote/"]) {
+  test(`${path} asks first and sends nothing until accepted`, async ({ page, context }) => {
+    const { requests, libraries, reddit } = await observe(page);
+    await page.goto(path);
+    await expect(bar(page)).toBeVisible();
+    await expect(bar(page)).toContainText("ad measurement");
+    await page.waitForTimeout(700);
+    expect(requests).toHaveLength(0);
+    expect(libraries).toHaveLength(0);
+    expect(reddit).toHaveLength(0);
+    await bar(page).getByRole("button", { name: "Reject", exact: true }).click();
+    await page.reload();
+    await page.waitForTimeout(700);
+    expect(requests).toHaveLength(0);
+    expect(reddit).toHaveLength(0);
+    expect(await context.cookies()).toEqual([]);
+    expect(await page.evaluate((key) => localStorage.getItem(key), adsConsentKey)).toBe("rejected");
+  });
+
+  test(`${path} loads PostHog and the Reddit Pixel after acceptance`, async ({ page }) => {
+    const { captured, reddit } = await observe(page);
+    await page.goto(path);
+    await bar(page).getByRole("button", { name: "Accept", exact: true }).click();
+    await expect.poll(() => captured.some((event) => event.event === "$pageview")).toBe(true);
+    await expect.poll(() => reddit.some((url) => url.includes("/ads/pixel.js"))).toBe(true);
+
+    const queued = await redditQueue(page);
+
+    expect(queued).toEqual([
+      ["init", "a2_test_pixel"],
+      ["track", "PageVisit"],
+    ]);
+  });
+}
+
+test("docs acceptance does not turn on the ad pages", async ({ page }) => {
+  const { captured, reddit } = await observe(page);
+  await page.goto("/docs/");
+  await bar(page).getByRole("button", { name: "Accept", exact: true }).click();
+  await expect.poll(() => captured.some((event) => event.event === "$pageview")).toBe(true);
+  captured.length = 0;
+  await page.goto("/beta/");
+  await expect(bar(page)).toBeVisible();
+  await page.waitForTimeout(700);
+  expect(captured).toHaveLength(0);
+  expect(reddit).toHaveLength(0);
+});
+
+test("a beta signup is a conversion only after acceptance, and never sends the email", async ({
+  page,
+}) => {
+  const { captured } = await observe(page);
+  await page.route("**/api/beta-signup", (route) => route.fulfill({ json: { ok: true } }));
+  await page.goto("/beta/");
+  await bar(page).getByRole("button", { name: "Accept", exact: true }).click();
+  await expect.poll(() => captured.some((event) => event.event === "$pageview")).toBe(true);
+  await page.locator("#email-hero").fill("person@example.com");
+  await page.locator("#email-hero").press("Enter");
+  await expect.poll(() => captured.some((event) => event.event === "beta_signup")).toBe(true);
+  expect(JSON.stringify(captured)).not.toContain("person@example.com");
+
+  const queued = await redditQueue(page);
+
+  expect(queued).toContainEqual(["track", "SignUp"]);
 });

@@ -1,9 +1,15 @@
 ---
 title: Privacy
-description: The SDK does not track usage. Learn what CLI telemetry collects and how to disable it.
+description: The SDK does not track usage. Learn what the website and CLI telemetry collect and how to turn them off.
 ---
 
 **The Beachside SDK and provider packages do not track your usage or send telemetry to Beachside. Only the CLI collects basic usage telemetry.**
+
+## Website analytics
+
+The docs and the `/beta/` and `/remote/` pages ask before recording anything. Until you accept, they send no analytics and set no analytics cookies. If you accept, they use PostHog to record page views, clicks and errors, and the `/beta/` and `/remote/` pages also load the Reddit Pixel so we can measure our Reddit ads. A beta signup or a copied install command is reported as a conversion. Your email address is never sent to PostHog or Reddit.
+
+To change your choice, use **Analytics preferences** at the bottom of the page. Rejecting stops capture and removes the stored analytics data.
 
 ## CLI telemetry
 

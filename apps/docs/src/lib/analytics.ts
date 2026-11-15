@@ -1,7 +1,10 @@
 import type { PostHog, PostHogConfig } from "posthog-js";
 import project from "./analytics-project.json";
 
-export const consentKey = "beachside-docs-analytics-consent-v1";
+const docsConsentKey = "beachside-docs-analytics-consent-v1";
+
+// Ad pages ask separately: accepting docs analytics never turns on the Reddit Pixel.
+const adsConsentKey = "beachside-ads-analytics-consent-v1";
 
 export type Consent = "accepted" | "rejected" | "pending";
 
@@ -12,6 +15,77 @@ const host = import.meta.env.PUBLIC_POSTHOG_HOST || project.host;
 
 const persistenceName = "beachside_docs";
 
+// Pages that ask for consent and record analytics: the docs and the ad landing pages.
+const landingPages = ["/beta", "/remote"];
+
+export function analyticsPage(pathname: string): boolean {
+  if (pathname === "/docs" || pathname.startsWith("/docs/")) return true;
+
+  return landingPages.some((page) => pathname === page || pathname === `${page}/`);
+}
+
+// Ad landing pages also load the Reddit Pixel after consent, to measure the Reddit ads.
+const redditPixelId = import.meta.env.PUBLIC_REDDIT_PIXEL_ID || project.redditPixelId;
+
+export const redditPixelConfigured = Boolean(redditPixelId);
+
+export function adPage(pathname: string): boolean {
+  return (
+    Boolean(redditPixelId) &&
+    landingPages.some((page) => pathname === page || pathname === `${page}/`)
+  );
+}
+
+type Rdt = ((...args: unknown[]) => void) & {
+  callQueue?: unknown[];
+  sendEvent?: (...args: unknown[]) => void;
+};
+
+declare global {
+  interface Window {
+    rdt?: Rdt;
+  }
+}
+
+let pixelLoaded = false;
+
+function startRedditPixel(): void {
+  if (pixelLoaded || !adPage(location.pathname)) return;
+  pixelLoaded = true;
+
+  // Reddit's documented base code: queue calls until pixel.js loads, then it replays them.
+  // SAFETY: the queue starts empty and only ever holds argument lists pushed below.
+  const rdt: Rdt = Object.assign(
+    (...args: unknown[]) => {
+      if (rdt.sendEvent) rdt.sendEvent(...args);
+      else rdt.callQueue?.push(args);
+    },
+    { callQueue: [] as unknown[] },
+  );
+
+  window.rdt = rdt;
+
+  const script = document.createElement("script");
+
+  script.src = "https://www.redditstatic.com/ads/pixel.js";
+  script.async = true;
+  document.head.append(script);
+  rdt("init", redditPixelId);
+  rdt("track", "PageVisit");
+}
+
+/** Record a conversion: a PostHog event, plus a Reddit Pixel event on ad pages. Does nothing without consent. */
+export function trackConversion(
+  event: string,
+  redditEvent: "SignUp" | "Lead",
+  properties: Record<string, string> = {},
+): void {
+  if (!allowed) return;
+  client?.capture(event, properties);
+
+  if (pixelLoaded) window.rdt?.("track", redditEvent);
+}
+
 export const analyticsConfigured = Boolean(key && host);
 
 let client: PostHog | undefined;
@@ -20,9 +94,14 @@ let starting: Promise<void> | undefined;
 
 let allowed = false;
 
+/** The storage key for this page's consent choice. */
+export function consentKey(): string {
+  return adPage(location.pathname) ? adsConsentKey : docsConsentKey;
+}
+
 export function readConsent(): Consent {
   try {
-    const choice = localStorage.getItem(consentKey);
+    const choice = localStorage.getItem(consentKey());
 
     return choice === "accepted" || choice === "rejected" ? choice : "pending";
   } catch {
@@ -32,16 +111,16 @@ export function readConsent(): Consent {
 
 export function saveConsent(choice: Exclude<Consent, "pending">): void {
   try {
-    localStorage.setItem(consentKey, choice);
+    localStorage.setItem(consentKey(), choice);
   } catch {
     // Consent still applies to this page; ask again next visit if storage is unavailable.
   }
 }
 
 export async function startAnalytics(): Promise<void> {
-  if (!key || !host || !(location.pathname === "/docs" || location.pathname.startsWith("/docs/")))
-    return;
+  if (!key || !host || !analyticsPage(location.pathname)) return;
   allowed = true;
+  startRedditPixel();
 
   if (starting) return starting;
   starting = import("posthog-js")
@@ -110,5 +189,9 @@ export function stopAnalytics(): boolean {
     // Storage can be blocked; capture is already disabled above.
   }
 
-  return Boolean(client);
+  // The Reddit Pixel can't be unloaded; drop its first-party cookie and let the caller reload.
+  for (const domain of ["", `; domain=${location.hostname}`, `; domain=.${location.hostname}`])
+    document.cookie = `_rdt_uuid=; Max-Age=0; path=/${domain}`;
+
+  return Boolean(client) || pixelLoaded;
 }
