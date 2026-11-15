@@ -6,6 +6,7 @@ import {
   type SetupRunOptions,
   type SetupStepOptions,
 } from "beachside";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { CliError, usage, type Output } from "./output";
 import { shellQuote } from "./transfer";
@@ -27,8 +28,13 @@ export const AddonRecord = z.strictObject({
    * setup, so `rm` still logs its device out.
    */
   state: z.enum(["setting-up", "ready", "failed"]),
-  /** How to reach it once ready: Rex's https address, or the herdr command. */
+  /** How to reach it once ready: Rex's https address, or the herdr-core `hc machine add` command. */
   connect: z.string().min(1).optional(),
+  /**
+   * herdr: `known_hosts` lines for the device's Tailscale SSH host keys, read inside the sandbox
+   * over the provider's channel, so the first connect can be checked rather than trusted.
+   */
+  knownHosts: z.array(z.string().min(1)).optional(),
 });
 
 export type AddonRecord = z.infer<typeof AddonRecord>;
@@ -64,7 +70,7 @@ export function tailnetKey(env: Record<string, string | undefined>): string {
 }
 
 /**
- * Tailnet names: `beachside-<sandbox>`. herdr's SSH device keeps the plain name; Rex, which runs
+ * Tailnet names: `beachside-<sandbox>`. Herdr's SSH device keeps the plain name; Rex, which runs
  * its own Tailscale, takes `-rex` when both are installed, so the two devices never clash.
  */
 export function addonHostname(name: AddonName, sandbox: string, all: AddonName[]): string {
@@ -289,8 +295,20 @@ const TailscaleStatus = z
   })
   .pipe(z.object({ Self: z.object({ DNSName: z.string() }) }));
 
+/** The SSH user the sandbox reports; it lands in a command people paste, so it must be plain. */
+const sshUser = /^[a-z_][a-z0-9_.-]{0,31}$/i;
+
+/** A MagicDNS name: dot-separated labels of letters, digits and inner hyphens. */
+const dnsLabel = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/i;
+
+/**
+ * A Tailscale SSH device for Herdr. The connect line adds it to herdr-core (the Herdr app's
+ * server) as a short-lived machine named after the sandbox; `--install` copies the local `hc`
+ * there on first connect, so the versions always match.
+ */
 async function setupHerdr(
   shell: Shell,
+  sandbox: string,
   hostname: string,
   key: string,
   signal: AbortSignal,
@@ -355,12 +373,64 @@ async function setupHerdr(
 
   const dnsName = parsed.success ? parsed.data.Self.DNSName.replace(/\.$/, "") : hostname;
 
-  return {
+  if (!sshUser.test(user) || !dnsLabel.test(dnsName))
+    throw new Error(`the sandbox reported an unexpected SSH user or tailnet name`);
+
+  const keys = await run(
+    shell,
+    { what: "Reading the SSH host keys", script: hostKeysScript(state), read: true },
+    signal,
+  );
+
+  const knownHosts = hostKeys(keys).map((entry) => `${dnsName} ${entry}`);
+
+  const record: AddonRecord = {
     name: "herdr",
     hostname,
     state: "ready",
-    connect: `herdr --remote ssh://${user}@${dnsName}`,
+    connect: `hc machine add ${user}@${dnsName} --temp --install --name ${sandbox}`,
   };
+
+  if (knownHosts.length) record.knownHosts = knownHosts;
+
+  return record;
+}
+
+/**
+ * The public host keys Tailscale SSH serves. For each type it takes the system key in /etc/ssh
+ * when there is one, else its own under `--statedir`, which has no `.pub` beside it.
+ */
+function hostKeysScript(state: string): string {
+  return [
+    asRoot,
+    "for t in ed25519 ecdsa rsa; do",
+    "  k=/etc/ssh/ssh_host_${t}_key",
+    `  $S test -s "$k" || k=${state}/ssh/ssh_host_\${t}_key`,
+    '  $S test -s "$k" || continue',
+    '  if $S test -s "$k.pub"; then $S cat "$k.pub"',
+    '  elif command -v ssh-keygen >/dev/null; then $S ssh-keygen -y -f "$k"; fi',
+    "done",
+    "true",
+  ].join("\n");
+}
+
+const publicKey =
+  /^(ssh-ed25519|ecdsa-sha2-nistp(?:256|384|521)|ssh-rsa) ([A-Za-z0-9+/]+={0,2})(?: |$)/;
+
+/** `<type> <base64>` for each well-formed key line, dropping comments and anything else. */
+function hostKeys(text: string): string[] {
+  return text.split("\n").flatMap((line) => {
+    const match = publicKey.exec(line.trim());
+
+    return match ? [`${match[1]} ${match[2]}`] : [];
+  });
+}
+
+/** OpenSSH's fingerprint for a `known_hosts` line or `<type> <base64>` key, as ssh prints it. */
+export function hostKeyFingerprint(entry: string): string {
+  const blob = entry.split(" ").at(-1) ?? "";
+
+  return `SHA256:${createHash("sha256").update(Buffer.from(blob, "base64")).digest("base64").replace(/=+$/, "")}`;
 }
 
 /** Saves the add-ons as they stand, so an interrupted create still leaves them on record. */
@@ -393,7 +463,7 @@ export async function setupAddons(
       addons[addons.length - 1] =
         name === "rex"
           ? await setupRex(shell, hostname, key, signal, out)
-          : await setupHerdr(shell, hostname, key, signal, out);
+          : await setupHerdr(shell, sandbox, hostname, key, signal, out);
       await save([...addons]);
     }
 
@@ -461,14 +531,33 @@ export async function teardownAddons(
 
 /** One line per add-on for human output. */
 export function addonLines(addons: AddonRecord[]): string[] {
-  return addons.map((addon) => {
+  return addons.flatMap((addon) => {
     const name = addon.name.padEnd(10);
 
     if (addon.state !== "ready")
-      return `${name}setup ${addon.state === "failed" ? "failed" : "unfinished"} (${addon.hostname})`;
+      return [
+        `${name}setup ${addon.state === "failed" ? "failed" : "unfinished"} (${addon.hostname})`,
+      ];
 
-    return addon.name === "rex"
-      ? `${name}${addon.connect}  (in Rex: Add Remote Host…)`
-      : `${name}${addon.connect}`;
+    if (addon.name === "rex") return [`${name}${addon.connect}  (in Rex: Add Remote Host…)`];
+
+    // ssh asks about the ED25519 key first, so that is the fingerprint to compare.
+    const ed25519 = addon.knownHosts?.find((entry) => entry.includes(" ssh-ed25519 "));
+
+    return [
+      `${name}${addon.connect}  (adds it to the Herdr app)`,
+      ...(ed25519
+        ? [
+            `${"".padEnd(10)}host key ${hostKeyFingerprint(ed25519)} (ED25519): check it when ssh asks`,
+          ]
+        : []),
+    ];
   });
+}
+
+/** After `rm`: herdr-core keeps a machine it was told to add until it is told to forget it. */
+export function removedAddonNotes(sandbox: string, addons: AddonRecord[]): string[] {
+  return addons.some((addon) => addon.name === "herdr" && addon.state === "ready")
+    ? [`herdr: if you added ${sandbox} to Herdr, forget it with \`hc machine rm ${sandbox}\``]
+    : [];
 }

@@ -27,7 +27,7 @@ Directory copies (`cp -r` and `push`) transfer file contents, permission bits an
 | Command | What it does |
 | --- | --- |
 | `create [--name] [--image <oci-ref> \| --prepared <id>] [--network] [--label k=v] [--if-not-exists]` | Create a sandbox, print its name |
-| `create --with rex\|herdr` | Also install a server reachable over your Tailscale tailnet (needs `TAILSCALE_AUTH_KEY`); prints how to connect. See [Remote workspace with Rex](https://beachside.run/docs/cli/rex/) |
+| `create --with rex\|herdr` | Also install a server reachable over your Tailscale tailnet (needs `TAILSCALE_AUTH_KEY`); prints how to connect: an address to add in Rex, or the `hc machine add` command that adds the sandbox to the Herdr app. See [Remote workspace with Rex](https://beachside.run/docs/cli/rex/) and [Servers in a sandbox](https://beachside.run/docs/cli/#servers-in-a-sandbox) |
 | `ls [--offline]` | List store records with live state (`running`, `gone`, `unreachable`, ...) |
 | `inspect <sandbox>` | State, expiry and reference |
 | `rm <sandbox>... \| --all [--force]` | Destroy and forget; only sandboxes this CLI created unless `--force`. `--all` skips the others and reports them |
@@ -52,7 +52,7 @@ A `<sandbox>` is a store name, a native id held in the store, or `@file.json` ho
 
 With `--json` (or `BEACHSIDE_JSON=1`) stdout holds exactly one document: `{"ok":true,"data":...}` or `{"ok":false,"error":{"code","message","retryable","outcome","hint?","known?","details?"}}`. Diagnostics go to stderr. When `rm` stops partway, `error.details` lists what was `removed`, `skipped` and `failed`.
 
-Inside Rex, or anywhere with `BEACHSIDE_PROGRAM_STATUS=on`, commands that change or wait on sandboxes report working/done/error on the terminal tab with the Program Status Protocol (OSC 7501). Reports go to stderr only when it is a terminal; `BEACHSIDE_PROGRAM_STATUS=off` turns them off. `cp` and `push` also show upload progress, and `run`, `exec` and `sh` send a desktop notification (OSC 777) when they finish after more than 30 seconds (`BEACHSIDE_NOTIFY_AFTER=<seconds>|off`).
+Inside Rex or a Herdr app (herdr-core) terminal, or anywhere with `BEACHSIDE_PROGRAM_STATUS=on`, commands that change or wait on sandboxes report working/done/error on the terminal tab with the Program Status Protocol (OSC 7501). Reports go to stderr only when it is a terminal; `BEACHSIDE_PROGRAM_STATUS=off` turns them off. `cp` and `push` also show upload progress, and `run`, `exec` and `sh` send a desktop notification (OSC 777) when they finish after more than 30 seconds (`BEACHSIDE_NOTIFY_AFTER=<seconds>|off`).
 
 | Code | Meaning |
 | --- | --- |

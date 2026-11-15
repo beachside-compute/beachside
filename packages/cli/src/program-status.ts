@@ -1,11 +1,12 @@
 import type { Env } from "./config";
 
 /**
- * Program Status Protocol (OSC 7501) reports, so terminals such as Rex can show a command's
- * state on its tab: `ESC ] 7501 ; state=working:app=beachside:msg=<base64> ESC \`.
+ * Program Status Protocol (OSC 7501) reports, so terminals such as Rex and Herdr can show a
+ * command's state on its tab: `ESC ] 7501 ; state=working:app=beachside:msg=<base64> ESC \`.
  *
  * Reports go to stderr and only to a terminal, so piped output and `--json` stay byte-clean.
- * `BEACHSIDE_PROGRAM_STATUS=on|off` overrides the default, which reports inside Rex only.
+ * `BEACHSIDE_PROGRAM_STATUS=on|off` overrides the default, which reports inside Rex and inside
+ * herdr-core terminals (the Herdr app) only.
  */
 export type ProgramState = "working" | "done" | "error";
 
@@ -16,8 +17,12 @@ export type ProgramStatus = {
   notify(title: string, body: string): void;
 };
 
-/** The record id, so a program in the sandbox reporting its own root record never replaces ours. */
-const id = "beachside";
+/**
+ * Rex takes the record id `beachside`, so a program in the sandbox reporting its own root record
+ * never replaces ours. herdr-core shows only the root record, so everywhere else the report is
+ * the root.
+ */
+const rexRecord = "beachside";
 
 /** The protocol allows 2048 decoded bytes; one short line is all a tab or picker shows. */
 const maxMessageBytes = 512;
@@ -30,23 +35,35 @@ export function programStatus(
   write: (text: string) => void,
 ): ProgramStatus {
   const setting = env.BEACHSIDE_PROGRAM_STATUS?.toLowerCase();
-  const wanted = setting === "on" || (setting !== "off" && Boolean(env.REX_SESSION));
+  const rex = Boolean(env.REX_SESSION);
+  const herdr = Boolean(env.HC_TERMINAL_ID);
+  const wanted = setting === "on" || (setting !== "off" && (rex || herdr));
 
   if (!wanted || !terminal) return silentStatus;
 
+  const id = rex ? rexRecord : undefined;
+
   return {
-    report: (state, message, progress) => write(sequence(state, message, progress)),
+    report: (state, message, progress) => write(sequence(state, message, progress, id)),
     notify: (title, body) => write(notification(title, body)),
   };
 }
 
-export function sequence(state: ProgramState, message: string, progress?: number): string {
+/** One report; `id` names a secondary record, and without it the report is the root record. */
+export function sequence(
+  state: ProgramState,
+  message: string,
+  progress?: number,
+  id?: string,
+): string {
   const percent =
     state === "working" && progress !== undefined
       ? `:progress=${Math.max(0, Math.min(100, Math.floor(progress)))}`
       : "";
 
-  return `\x1b]7501;state=${state}:id=${id}:app=beachside${percent}:msg=${encode(message)}\x1b\\`;
+  const record = id ? `:id=${id}` : "";
+
+  return `\x1b]7501;state=${state}${record}:app=beachside${percent}:msg=${encode(message)}\x1b\\`;
 }
 
 /** OSC 777 desktop notification. Fields are plain text, so `;` and control characters go. */

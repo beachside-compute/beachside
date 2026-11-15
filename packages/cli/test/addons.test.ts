@@ -6,6 +6,8 @@ import { startFakeProviderServer } from "@beachside-internal/provider-fake/serve
 import {
   addonHostname,
   addonLines,
+  hostKeyFingerprint,
+  removedAddonNotes,
   parseAddons,
   setupAddons,
   tailnetKey,
@@ -37,6 +39,12 @@ function scriptedShell(replies: [RegExp, Reply][]) {
 
   return { shell, calls };
 }
+
+/** A throwaway key; its fingerprint is what `ssh-keygen -lf` printed for it. */
+const fixtureKey =
+  "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHN0O4xR7Qmd1HlEAEfyJhxvoVewkD+/p6lN32r12xJJ";
+
+const fixtureFingerprint = "SHA256:NKRhYS3A2e3YAkoEK2+tsFziu50IZKY8dQ/LfGH3maE";
 
 function quietOutput(): Output {
   return new Output(true, { stdout: () => {}, stderr: () => {} });
@@ -110,9 +118,10 @@ describe("setupAddons", () => {
     ]);
   }, 90_000);
 
-  test("herdr: Tailscale SSH device and the herdr command for it", async () => {
+  test("herdr: Tailscale SSH device and the herdr-core command that adds it", async () => {
     const { shell, calls } = scriptedShell([
       [/status --json/, { stdout: `ubuntu\n{"Self":{"DNSName":"beachside-web.tail1.ts.net."}}` }],
+      [/ssh_host_/, { stdout: `${fixtureKey} root@fixture\nnot a key\n` }],
     ]);
 
     const result = await setupAddons(
@@ -132,7 +141,8 @@ describe("setupAddons", () => {
         name: "herdr",
         hostname: "beachside-web",
         state: "ready",
-        connect: "herdr --remote ssh://ubuntu@beachside-web.tail1.ts.net",
+        connect: "hc machine add ubuntu@beachside-web.tail1.ts.net --temp --install --name web",
+        knownHosts: [`beachside-web.tail1.ts.net ${fixtureKey}`],
       },
     ]);
     const join = calls.find((call) => call.stdin === key)!;
@@ -141,8 +151,69 @@ describe("setupAddons", () => {
     );
     expect(calls.some((call) => call.script.includes("--statedir="))).toBe(true);
     expect(addonLines(result.addons)).toEqual([
-      "herdr     herdr --remote ssh://ubuntu@beachside-web.tail1.ts.net",
+      "herdr     hc machine add ubuntu@beachside-web.tail1.ts.net --temp --install --name web  (adds it to the Herdr app)",
+      `          host key ${fixtureFingerprint} (ED25519): check it when ssh asks`,
     ]);
+    // System keys first, Tailscale's own under --statedir otherwise.
+    const read = calls.find((call) => call.script.includes("ssh_host_"))!;
+    expect(read.script).toContain("/etc/ssh/ssh_host_${t}_key");
+    expect(read.script).toContain('/.local/state/beachside/tailscale"/ssh/ssh_host_${t}_key');
+  });
+
+  test("herdr: no host keys found leaves no knownHosts and no fingerprint line", async () => {
+    const { shell } = scriptedShell([
+      [/status --json/, { stdout: `ubuntu\n{"Self":{"DNSName":"beachside-web.tail1.ts.net."}}` }],
+    ]);
+
+    const result = await setupAddons(
+      shell,
+      "web",
+      ["herdr"],
+      key,
+      AbortSignal.timeout(10_000),
+      quietOutput(),
+      async () => {},
+    );
+
+    expect(result.addons[0]!.knownHosts).toBeUndefined();
+    expect(addonLines(result.addons)).toHaveLength(1);
+  });
+
+  test("host key fingerprints match ssh-keygen -l", () => {
+    expect(hostKeyFingerprint(fixtureKey)).toBe(fixtureFingerprint);
+    expect(hostKeyFingerprint(`beachside-web.tail1.ts.net ${fixtureKey}`)).toBe(fixtureFingerprint);
+  });
+
+  test("herdr: refuses a reported user or name that is not safe to paste", async () => {
+    const { shell } = scriptedShell([
+      [
+        /status --json/,
+        { stdout: `x;rm -rf ~\n{"Self":{"DNSName":"beachside-web.tail1.ts.net."}}` },
+      ],
+    ]);
+
+    const result = await setupAddons(
+      shell,
+      "web",
+      ["herdr"],
+      key,
+      AbortSignal.timeout(10_000),
+      quietOutput(),
+      async () => {},
+    );
+
+    expect(result.addons).toEqual([{ name: "herdr", hostname: "beachside-web", state: "failed" }]);
+    expect(result.failure?.message).toContain("unexpected SSH user or tailnet name");
+  });
+
+  test("rm notes how to forget a ready herdr machine in herdr-core", () => {
+    expect(
+      removedAddonNotes("web", [{ name: "herdr", hostname: "beachside-web", state: "ready" }]),
+    ).toEqual(["herdr: if you added web to Herdr, forget it with `hc machine rm web`"]);
+    expect(
+      removedAddonNotes("web", [{ name: "herdr", hostname: "beachside-web", state: "failed" }]),
+    ).toEqual([]);
+    expect(removedAddonNotes("web", [])).toEqual([]);
   });
 
   test("a failed step keeps what was ready and names the step", async () => {

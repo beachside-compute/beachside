@@ -64,6 +64,7 @@ import { resolveEnvReferences } from "./config";
 import {
   addonLines,
   parseAddons,
+  removedAddonNotes,
   sandboxShell,
   setupShell,
   setupAddons,
@@ -1905,6 +1906,13 @@ async function removeOne(
   const { record } = target;
   const refused = refusal(record);
 
+  const removed = (item: Extract<RemoveResult, { kind: "removed" }>["item"]): RemoveResult => {
+    for (const note of removedAddonNotes(record.name, record.addons ?? []))
+      session.ctx.out.note(note);
+
+    return { kind: "removed", item };
+  };
+
   if (refused && !force) {
     // --all only touches what this CLI owns; a named sandbox that cannot be removed is an error.
     if (all)
@@ -1918,10 +1926,7 @@ async function removeOne(
   if (!record.reference) {
     await forget(store, target);
 
-    return {
-      kind: "removed",
-      item: { name: record.name, result: "forgotten", retainedResources: [] },
-    };
+    return removed({ name: record.name, result: "forgotten", retainedResources: [] });
   }
 
   let box: SandboxHandle<true>;
@@ -1932,7 +1937,7 @@ async function removeOne(
     if (!(cause instanceof BeachsideError) || cause.code !== "NOT_FOUND") throw cause;
     await forget(store, target);
 
-    return { kind: "removed", item: { name: record.name, result: "gone", retainedResources: [] } };
+    return removed({ name: record.name, result: "gone", retainedResources: [] });
   }
 
   if (record.addons?.length)
@@ -1940,14 +1945,11 @@ async function removeOne(
   const destroyed = await box.destroy({ signal: session.ctx.signal });
   await forget(store, target);
 
-  return {
-    kind: "removed",
-    item: {
-      name: record.name,
-      result: "destroyed",
-      retainedResources: destroyed.retainedResources,
-    },
-  };
+  return removed({
+    name: record.name,
+    result: "destroyed",
+    retainedResources: destroyed.retainedResources,
+  });
 }
 
 export async function rmCommand(session: Session, flags: Flags): Promise<number> {
