@@ -263,7 +263,7 @@ for (const path of ["/beta/", "/remote/"]) {
     const queued = await redditQueue(page);
 
     expect(queued).toEqual([
-      ["init", "a2_test_pixel"],
+      ["init", "p2_test_pixel"],
       ["track", "PageVisit"],
     ]);
   });

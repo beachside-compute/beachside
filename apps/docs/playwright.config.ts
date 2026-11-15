@@ -21,7 +21,7 @@ export default defineConfig({
       PUBLIC_POSTHOG_KEY: "",
       PUBLIC_POSTHOG_HOST: "",
       // A stand-in ID so the ad pages load the Reddit Pixel; its requests are recorded and blocked.
-      PUBLIC_REDDIT_PIXEL_ID: "a2_test_pixel",
+      PUBLIC_REDDIT_PIXEL_ID: "p2_test_pixel",
     },
   },
 });
