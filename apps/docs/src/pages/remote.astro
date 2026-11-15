@@ -395,7 +395,7 @@ function lineClass(line: Line) {
             <a class="band-link only-rex" href="/docs/cli/rex/">Read the Rex guide →</a>
             <a class="band-link only-herdr" href="/docs/cli/#servers-in-a-sandbox">Read the Herdr setup →</a>
             <a class="band-link" href="/">What is Beachside? →</a>
-            <a class="band-link" href={github}>Star on GitHub →</a>
+            <a class="band-link" href={github} data-track="github_star_click">Star on GitHub →</a>
           </div>
         </div>
       </section>
@@ -403,14 +403,16 @@ function lineClass(line: Line) {
 
     <footer class="wrap footer">
       <span>Apache-2.0 · beachside.run</span>
-      <span>Rex and Herdr are their makers' products. <a href="/docs/privacy/">Privacy</a></span>
+      <span>Product names and trademarks are the property of their respective owners. <a href="/docs/privacy/">Privacy</a></span>
       <AnalyticsConsent ads />
     </footer>
 
     <script>
-      import { trackConversion } from "../lib/analytics";
+      import { trackClicks, trackConversion } from "../lib/analytics";
 
       const motionOn = () => !matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+      trackClicks("remote");
 
       // Copy buttons.
       document.querySelectorAll<HTMLButtonElement>("[data-copy]").forEach((button) => {

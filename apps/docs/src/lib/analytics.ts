@@ -86,6 +86,18 @@ export function trackConversion(
   if (pixelLoaded) window.rdt?.("track", redditEvent);
 }
 
+// A named PostHog event for a click worth reporting on its own (not an ad conversion).
+export function trackEvent(event: string, properties: Record<string, string> = {}): void {
+  if (allowed) client?.capture(event, properties);
+}
+
+// Links marked data-track="<event>" report that event when clicked, once consent allows it.
+export function trackClicks(page: string): void {
+  document.querySelectorAll<HTMLElement>("[data-track]").forEach((link) => {
+    link.addEventListener("click", () => trackEvent(link.dataset.track ?? "", { page }));
+  });
+}
+
 export const analyticsConfigured = Boolean(key && host);
 
 let client: PostHog | undefined;
