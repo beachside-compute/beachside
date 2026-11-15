@@ -601,6 +601,16 @@ Star on GitHub</a>
   // Terminal tabs: pick Rex or Herdr and boxd or Freestyle; one rendered session shows at a time.
   const picked = { server: "rex", provider: "boxd" };
 
+  // Ads pick the view like /remote/ does: ?for=, a utm_campaign containing rex or herdr
+  // (for example "reddit-herdr-nov"), or #rex / #herdr. Rex stays the default.
+  const campaign = /\b(rex|herdr)\b/.exec(query.get("utm_campaign") ?? "")?.[1];
+
+  const wanted = [query.get("for"), campaign, location.hash.slice(1)].find(
+    (value) => value === "rex" || value === "herdr",
+  );
+
+  if (wanted) picked.server = wanted;
+
   const labels = new Map([
     ["boxd", "boxd"],
     ["freestyle", "Freestyle"],
