@@ -51,8 +51,8 @@ function lines(server: "rex" | "herdr", provider: keyof typeof providers): Line[
     ...setup,
     cmd("beachside create --name agents --ttl 8h --with herdr"),
     note("herdr: putting beachside-agents on your tailnet with Tailscale SSH"),
-    out(`herdr     ${remote}`),
-    note("          adds it to the Herdr app"),
+    out("agents"),
+    out(`herdr     ${remote}  (adds it to the Herdr app)`),
     note("          host key SHA256:… (ED25519): check it when ssh asks"),
     cmd(remote),
   ];

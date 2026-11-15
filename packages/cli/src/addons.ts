@@ -6,6 +6,7 @@ import {
   type SetupRunOptions,
   type SetupStepOptions,
 } from "beachside";
+import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { CliError, usage, type Output } from "./output";
@@ -303,8 +304,8 @@ const dnsLabel = /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?
 
 /**
  * A Tailscale SSH device for Herdr. The connect line adds it to herdr-core (the Herdr app's
- * server) as a short-lived machine named after the sandbox; `--install` copies the local `hc`
- * there on first connect, so the versions always match.
+ * server) as a short-lived machine named after the sandbox; `--install` puts a matching `hc`
+ * there on first connect.
  */
 async function setupHerdr(
   shell: Shell,
@@ -329,6 +330,12 @@ async function setupHerdr(
         "$S systemctl disable --now tailscaled >/dev/null 2>&1 || true",
       ].join("\n"),
     },
+    signal,
+  );
+
+  await run(
+    shell,
+    { what: "Preparing SSH host keys", script: hostKeysPrepareScript(state) },
     signal,
   );
 
@@ -388,7 +395,7 @@ async function setupHerdr(
     name: "herdr",
     hostname,
     state: "ready",
-    connect: `hc machine add ${user}@${dnsName} --temp --install --name ${sandbox}`,
+    connect: `hc machine add ${user}@${dnsName} --temp --install${hcName(sandbox)}`,
   };
 
   if (knownHosts.length) record.knownHosts = knownHosts;
@@ -397,25 +404,50 @@ async function setupHerdr(
 }
 
 /**
- * The public host keys Tailscale SSH serves. For each type it takes the system key in /etc/ssh
- * when there is one, else its own under `--statedir`, which has no `.pub` beside it.
+ * herdr-core refuses a machine name over 32 characters or shaped like a terminal id (`t7`, `t1b`).
+ * Without `--name` it names the machine after the host's first label, adding a suffix if taken.
  */
+function hcName(sandbox: string): string {
+  return sandbox.length <= 32 && !/^t\d+[a-z]?$/.test(sandbox) ? ` --name ${sandbox}` : "";
+}
+
+/**
+ * Tailscale SSH serves, for each key type, the system key in /etc/ssh when there is one, else its
+ * own under `--statedir`. It writes its own as PKCS#8 with no `.pub`, which `ssh-keygen` cannot
+ * read for ED25519, so before tailscaled starts, any missing type is made here with `ssh-keygen`,
+ * which writes the `.pub` too. Without `ssh-keygen`, Tailscale makes them and no keys are known.
+ */
+function hostKeysPrepareScript(state: string): string {
+  return [
+    asRoot,
+    "command -v ssh-keygen >/dev/null || exit 0",
+    // The state folder stays the user's: the next step writes tailscaled's log there unprivileged.
+    `mkdir -p ${state}`,
+    `$S mkdir -p -m 700 ${state}/ssh`,
+    "for t in ed25519 ecdsa rsa; do",
+    '  $S test -s "/etc/ssh/ssh_host_${t}_key" && continue',
+    `  k=${state}/ssh/ssh_host_\${t}_key`,
+    '  $S test -s "$k" || $S ssh-keygen -q -t "$t" -N "" -C beachside -f "$k" </dev/null',
+    "done",
+  ].join("\n");
+}
+
+/** The public half of each key `hostKeysPrepareScript` left Tailscale SSH to serve. */
 function hostKeysScript(state: string): string {
   return [
     asRoot,
     "for t in ed25519 ecdsa rsa; do",
     "  k=/etc/ssh/ssh_host_${t}_key",
     `  $S test -s "$k" || k=${state}/ssh/ssh_host_\${t}_key`,
-    '  $S test -s "$k" || continue',
-    '  if $S test -s "$k.pub"; then $S cat "$k.pub"',
-    '  elif command -v ssh-keygen >/dev/null; then $S ssh-keygen -y -f "$k"; fi',
+    '  $S test -s "$k.pub" && $S cat "$k.pub"',
     "done",
     "true",
   ].join("\n");
 }
 
+/** A public key's type and base64 blob, anywhere in a line (a `.pub` file or `known_hosts`). */
 const publicKey =
-  /^(ssh-ed25519|ecdsa-sha2-nistp(?:256|384|521)|ssh-rsa) ([A-Za-z0-9+/]+={0,2})(?: |$)/;
+  /(?:^|\s)(ssh-ed25519|ecdsa-sha2-nistp(?:256|384|521)|ssh-rsa)\s+([A-Za-z0-9+/]+={0,2})(?=\s|$)/;
 
 /** `<type> <base64>` for each well-formed key line, dropping comments and anything else. */
 function hostKeys(text: string): string[] {
@@ -426,9 +458,12 @@ function hostKeys(text: string): string[] {
   });
 }
 
-/** OpenSSH's fingerprint for a `known_hosts` line or `<type> <base64>` key, as ssh prints it. */
+/**
+ * OpenSSH's fingerprint, as ssh prints it, for a `<type> <base64>` key, a `.pub` line or a
+ * `known_hosts` line, comments included.
+ */
 export function hostKeyFingerprint(entry: string): string {
-  const blob = entry.split(" ").at(-1) ?? "";
+  const blob = publicKey.exec(entry.trim())?.[2] ?? "";
 
   return `SHA256:${createHash("sha256").update(Buffer.from(blob, "base64")).digest("base64").replace(/=+$/, "")}`;
 }
@@ -555,9 +590,77 @@ export function addonLines(addons: AddonRecord[]): string[] {
   });
 }
 
-/** After `rm`: herdr-core keeps a machine it was told to add until it is told to forget it. */
-export function removedAddonNotes(sandbox: string, addons: AddonRecord[]): string[] {
-  return addons.some((addon) => addon.name === "herdr" && addon.state === "ready")
-    ? [`herdr: if you added ${sandbox} to Herdr, forget it with \`hc machine rm ${sandbox}\``]
-    : [];
+/** A machine herdr-core knows, as `hc machine ls --json` lists it. */
+export type HcMachine = { name: string; target: string };
+
+const HcMachines = z.object({
+  machines: z.array(z.object({ name: z.string(), target: z.string().nullable().optional() })),
+});
+
+/**
+ * The machines this computer's herdr-core knows, or null when `hc` is not here or does not
+ * answer. Read only: Beachside never adds or forgets machines itself.
+ */
+export async function hcMachines(
+  env: Record<string, string | undefined>,
+): Promise<HcMachine[] | null> {
+  const stdout = await new Promise<string | null>((resolve) => {
+    execFile(
+      "hc",
+      ["machine", "ls", "--json"],
+      { env, timeout: 5000, encoding: "utf8" },
+      (error, text) => resolve(error ? null : text),
+    );
+  });
+
+  if (stdout === null) return null;
+
+  try {
+    const parsed = HcMachines.safeParse(JSON.parse(stdout));
+
+    return parsed.success
+      ? parsed.data.machines.flatMap((machine) =>
+          machine.target ? [{ name: machine.name, target: machine.target }] : [],
+        )
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The `user@address` a ready herdr add-on's connect line hands to `hc machine add`. */
+function herdrTarget(addon: AddonRecord): string | undefined {
+  return addon.connect?.match(/^hc machine add (\S+)/)?.[1];
+}
+
+/** Whether removing the sandbox needs a word about herdr-core, which keeps machines it added. */
+export function hasHerdr(addons: AddonRecord[]): boolean {
+  return addons.some((addon) => addon.name === "herdr" && addon.state === "ready");
+}
+
+/**
+ * After `rm` or `gc`: herdr-core keeps a machine until it is told to forget it, and its name may
+ * not be the sandbox's (a taken name gets a suffix), so name the ones whose target is this
+ * sandbox's. `machines` null means `hc` could not be asked here.
+ */
+export function removedAddonNotes(
+  sandbox: string,
+  addons: AddonRecord[],
+  machines: HcMachine[] | null,
+): string[] {
+  return addons.flatMap((addon) => {
+    const target =
+      addon.name === "herdr" && addon.state === "ready" ? herdrTarget(addon) : undefined;
+
+    if (!target) return [];
+
+    if (!machines)
+      return [
+        `herdr: if you added ${sandbox} to Herdr, forget it with \`hc machine rm <name>\`, using the name \`hc machine ls\` shows for ${target}`,
+      ];
+
+    return machines
+      .filter((machine) => machine.target === target)
+      .map((machine) => `herdr: forget ${sandbox} in Herdr with \`hc machine rm ${machine.name}\``);
+  });
 }

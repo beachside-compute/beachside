@@ -204,7 +204,9 @@ It installs the server, puts it on the user's tailnet and prints how to connect 
 - It needs `TAILSCALE_AUTH_KEY` in the environment. If that's missing, ask the user for it rather than signing in by link. The tailnet setup (tag, access rules, key) is the user's job: https://beachside.run/docs/cli/rex.md.
 - `--with` implies `--network internet`. Daytona's lower tiers refuse that.
 - If setup fails after the sandbox exists, `create` exits 8 and keeps the sandbox. Read the error, then fix it or `beachside rm` it.
-- Remove the sandbox with `beachside rm` when the user is done. If it was added to Herdr, also run `hc machine rm web`.
+- The machine's name in Herdr is the one `hc machine add` prints. It is usually the sandbox's, but herdr-core may pick another, so use the printed name with `hc run --on`.
+- Remove the sandbox with `beachside rm` when the user is done. If it was added to Herdr, `rm` (and `gc`) print the exact `hc machine rm <name>` to run; never guess the name.
+- No fingerprint and no `knownHosts` means the sandbox has no `ssh-keygen`. Tell the user the host key could not be read, rather than skipping the check.
 
 ## Discover more
 

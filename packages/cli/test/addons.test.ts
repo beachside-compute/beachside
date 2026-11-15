@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startFakeProviderServer } from "@beachside-internal/provider-fake/server";
@@ -154,10 +154,37 @@ describe("setupAddons", () => {
       "herdr     hc machine add ubuntu@beachside-web.tail1.ts.net --temp --install --name web  (adds it to the Herdr app)",
       `          host key ${fixtureFingerprint} (ED25519): check it when ssh asks`,
     ]);
-    // System keys first, Tailscale's own under --statedir otherwise.
-    const read = calls.find((call) => call.script.includes("ssh_host_"))!;
-    expect(read.script).toContain("/etc/ssh/ssh_host_${t}_key");
-    expect(read.script).toContain('/.local/state/beachside/tailscale"/ssh/ssh_host_${t}_key');
+    // Host keys are made before tailscaled starts, so Tailscale serves keys whose .pub exists.
+    const order = calls.map((call) => call.script);
+    expect(order.findIndex((script) => script.includes("ssh-keygen -q"))).toBeLessThan(
+      order.findIndex((script) => script.includes("setsid -f tailscaled")),
+    );
+  });
+
+  test("herdr: names the machine after the sandbox only when herdr-core accepts the name", async () => {
+    async function connect(sandbox: string) {
+      const { shell } = scriptedShell([
+        [/status --json/, { stdout: `ubuntu\n{"Self":{"DNSName":"beachside-x.tail1.ts.net."}}` }],
+      ]);
+
+      const result = await setupAddons(
+        shell,
+        sandbox,
+        ["herdr"],
+        key,
+        AbortSignal.timeout(10_000),
+        quietOutput(),
+        async () => {},
+      );
+
+      return result.addons[0]!.connect;
+    }
+
+    expect(await connect("t12ab")).toEndWith("--install --name t12ab");
+    // Shaped like a terminal id, or longer than 32: hc picks the name from the host instead.
+    expect(await connect("t14")).toEndWith("--temp --install");
+    expect(await connect("t1b")).toEndWith("--temp --install");
+    expect(await connect("a".repeat(33))).toEndWith("--temp --install");
   });
 
   test("herdr: no host keys found leaves no knownHosts and no fingerprint line", async () => {
@@ -179,9 +206,13 @@ describe("setupAddons", () => {
     expect(addonLines(result.addons)).toHaveLength(1);
   });
 
-  test("host key fingerprints match ssh-keygen -l", () => {
+  test("host key fingerprints match ssh-keygen -l, for keys, .pub lines and known_hosts lines", () => {
     expect(hostKeyFingerprint(fixtureKey)).toBe(fixtureFingerprint);
+    expect(hostKeyFingerprint(`${fixtureKey} root@fixture`)).toBe(fixtureFingerprint);
     expect(hostKeyFingerprint(`beachside-web.tail1.ts.net ${fixtureKey}`)).toBe(fixtureFingerprint);
+    expect(hostKeyFingerprint(`beachside-web.tail1.ts.net ${fixtureKey} a comment`)).toBe(
+      fixtureFingerprint,
+    );
   });
 
   test("herdr: refuses a reported user or name that is not safe to paste", async () => {
@@ -206,14 +237,37 @@ describe("setupAddons", () => {
     expect(result.failure?.message).toContain("unexpected SSH user or tailnet name");
   });
 
-  test("rm notes how to forget a ready herdr machine in herdr-core", () => {
+  test("rm and gc name the herdr-core machine whose target is this sandbox", () => {
+    const ready: AddonRecord = {
+      name: "herdr",
+      hostname: "beachside-web",
+      state: "ready",
+      connect: "hc machine add ubuntu@beachside-web.tail1.ts.net --temp --install --name web",
+    };
+
+    const target = "ubuntu@beachside-web.tail1.ts.net";
+
+    // `web` was taken by another machine, so herdr-core called this one web-2.
     expect(
-      removedAddonNotes("web", [{ name: "herdr", hostname: "beachside-web", state: "ready" }]),
-    ).toEqual(["herdr: if you added web to Herdr, forget it with `hc machine rm web`"]);
+      removedAddonNotes(
+        "web",
+        [ready],
+        [
+          { name: "web", target: "me@web.example.com" },
+          { name: "web-2", target },
+        ],
+      ),
+    ).toEqual(["herdr: forget web in Herdr with `hc machine rm web-2`"]);
+    // Never added here: nothing to forget.
     expect(
-      removedAddonNotes("web", [{ name: "herdr", hostname: "beachside-web", state: "failed" }]),
+      removedAddonNotes("web", [ready], [{ name: "web", target: "me@web.example.com" }]),
     ).toEqual([]);
-    expect(removedAddonNotes("web", [])).toEqual([]);
+    // No hc to ask: say how to find the name, never guess it.
+    expect(removedAddonNotes("web", [ready], null)).toEqual([
+      `herdr: if you added web to Herdr, forget it with \`hc machine rm <name>\`, using the name \`hc machine ls\` shows for ${target}`,
+    ]);
+    expect(removedAddonNotes("web", [{ ...ready, state: "failed" }], null)).toEqual([]);
+    expect(removedAddonNotes("web", [], null)).toEqual([]);
   });
 
   test("a failed step keeps what was ready and names the step", async () => {
@@ -259,6 +313,129 @@ describe("teardownAddons", () => {
       "rex server tailscale logout",
       '$S tailscale --socket="$HOME/.local/state/beachside/tailscale/tailscaled.sock" logout',
     ]);
+  });
+});
+
+const sshKeygen = Bun.which("ssh-keygen");
+
+// The host-key scripts as a sandbox runs them: /etc/ssh and $HOME point into a temp folder, sudo
+// just runs its command, and PATH holds only the tools a test allows.
+describe.skipIf(!sshKeygen)("herdr host keys in a shell", () => {
+  async function herdrScripts() {
+    const { shell, calls } = scriptedShell([
+      [/status --json/, { stdout: `ubuntu\n{"Self":{"DNSName":"beachside-web.tail1.ts.net."}}` }],
+    ]);
+
+    await setupAddons(
+      shell,
+      "web",
+      ["herdr"],
+      "tskey-test",
+      AbortSignal.timeout(10_000),
+      quietOutput(),
+      async () => {},
+    );
+
+    return {
+      prepare: calls.find((call) => call.script.includes("ssh-keygen -q"))!.script,
+      read: calls.find((call) => call.script.includes('cat "$k.pub"'))!.script,
+    };
+  }
+
+  async function inSandbox(
+    options: { keygen: boolean; system?: (dir: string) => void },
+    check: (result: { prepare: number; read: string; state: string; system: string }) => void,
+  ) {
+    const root = await mkdtemp(join(tmpdir(), "beachside-hostkeys-"));
+    const home = join(root, "home");
+    const system = join(root, "etc-ssh");
+    const bin = join(root, "bin");
+
+    try {
+      for (const dir of [home, system, bin]) await mkdir(dir, { recursive: true });
+      await writeFile(join(bin, "sudo"), `#!/bin/sh\nshift\nexec "$@"\n`, { mode: 0o755 });
+
+      for (const tool of ["mkdir", "cat", "test", ...(options.keygen ? ["ssh-keygen"] : [])])
+        await symlink(Bun.which(tool)!, join(bin, tool));
+      options.system?.(system);
+
+      const { prepare, read } = await herdrScripts();
+
+      const sh = (script: string) =>
+        Bun.spawnSync(["/bin/sh", "-c", script.replaceAll("/etc/ssh", system)], {
+          env: { PATH: bin, HOME: home },
+        });
+
+      const prepared = sh(prepare);
+      const keys = sh(read);
+
+      expect(keys.exitCode).toBe(0);
+      check({
+        prepare: prepared.exitCode,
+        read: keys.stdout.toString(),
+        state: join(home, ".local/state/beachside/tailscale/ssh"),
+        system,
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }
+
+  const keygenFingerprint = (pub: string) =>
+    Bun.spawnSync([sshKeygen!, "-lf", pub]).stdout.toString().split(" ")[1];
+
+  test("makes each missing type with its .pub before tailscaled starts, and reads them back", async () => {
+    await inSandbox({ keygen: true }, ({ prepare, read, state }) => {
+      expect(prepare).toBe(0);
+      const lines = read.trim().split("\n");
+
+      expect(lines.map((line) => line.split(" ")[0])).toEqual([
+        "ssh-ed25519",
+        "ecdsa-sha2-nistp256",
+        "ssh-rsa",
+      ]);
+      // The fingerprint `create` prints is the one ssh-keygen (and so ssh) computes.
+      expect(hostKeyFingerprint(lines[0]!)).toBe(
+        keygenFingerprint(join(state, "ssh_host_ed25519_key.pub")),
+      );
+    });
+  }, 30_000);
+
+  test("leaves a type to the system key in /etc/ssh, which Tailscale prefers", async () => {
+    await inSandbox(
+      {
+        keygen: true,
+        system: (dir) => {
+          Bun.spawnSync([
+            sshKeygen!,
+            "-q",
+            "-t",
+            "ed25519",
+            "-N",
+            "",
+            "-C",
+            "system",
+            "-f",
+            join(dir, "ssh_host_ed25519_key"),
+          ]);
+        },
+      },
+      ({ read, state, system }) => {
+        const ed25519 = read.split("\n").find((line) => line.startsWith("ssh-ed25519"))!;
+
+        expect(hostKeyFingerprint(ed25519)).toBe(
+          keygenFingerprint(join(system, "ssh_host_ed25519_key.pub")),
+        );
+        expect(Bun.spawnSync(["test", "-e", join(state, "ssh_host_ed25519_key")]).exitCode).toBe(1);
+      },
+    );
+  }, 30_000);
+
+  test("without ssh-keygen it makes and reads nothing, and setup goes on", async () => {
+    await inSandbox({ keygen: false }, ({ prepare, read }) => {
+      expect(prepare).toBe(0);
+      expect(read).toBe("");
+    });
   });
 });
 

@@ -63,6 +63,8 @@ import {
 import { resolveEnvReferences } from "./config";
 import {
   addonLines,
+  hasHerdr,
+  hcMachines,
   parseAddons,
   removedAddonNotes,
   sandboxShell,
@@ -1428,6 +1430,18 @@ function requireAddons(record: SandboxRecord, names: AddonName[]): void {
     );
 }
 
+/** After a sandbox with a ready herdr add-on goes: how to forget it in this computer's herdr-core. */
+export async function noteForgetHerdr(
+  session: Session,
+  sandbox: string,
+  addons: AddonRecord[],
+): Promise<void> {
+  if (!hasHerdr(addons)) return;
+
+  for (const note of removedAddonNotes(sandbox, addons, await hcMachines(session.ctx.env)))
+    session.ctx.out.note(note);
+}
+
 /** Run `--with` setup, saving each add-on's state as it goes. */
 async function installAddons(
   session: Session,
@@ -1906,9 +1920,10 @@ async function removeOne(
   const { record } = target;
   const refused = refusal(record);
 
-  const removed = (item: Extract<RemoveResult, { kind: "removed" }>["item"]): RemoveResult => {
-    for (const note of removedAddonNotes(record.name, record.addons ?? []))
-      session.ctx.out.note(note);
+  const removed = async (
+    item: Extract<RemoveResult, { kind: "removed" }>["item"],
+  ): Promise<RemoveResult> => {
+    await noteForgetHerdr(session, record.name, record.addons ?? []);
 
     return { kind: "removed", item };
   };
