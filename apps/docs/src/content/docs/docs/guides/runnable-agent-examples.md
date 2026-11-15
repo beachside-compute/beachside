@@ -5,8 +5,8 @@ description: Run OpenCode inside a Daytona or E2B sandbox, capture its answer, o
 
 Run two small TypeScript applications from the Beachside checkout. They use the same public execution and file API with either official provider:
 
-| Workflow | What it does                                                                                                                                    | Source                                                                                                       |
-| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Workflow | What it does                                                                                                                                    | Source                                                                                                             |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | `hello`  | Asks OpenCode “What is 2 + 2?” and prints captured stdout/stderr.                                                                               | [Hello application](https://github.com/beachside-compute/beachside/blob/main/examples/agent-hello-world/main.ts)   |
 | `edit`   | Uploads `message.txt`, asks OpenCode to replace `NAME` with `Beachside`, and reads back `Hello, Beachside!`. The local fixture stays unchanged. | [File-edit application](https://github.com/beachside-compute/beachside/blob/main/examples/agent-edit-file/main.ts) |
 
