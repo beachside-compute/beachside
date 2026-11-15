@@ -128,4 +128,4 @@ A refused create carries a matching code and boxd's reason, for example `CAPACIT
 - Background processes end with the command that started them; use `processes.start()` and `detach()` for servers.
 - Disks survive destroy and must be deleted explicitly. Closing the client destroys nothing.
 
-See the [provider research issue](https://github.com/pandemicsyn/beachside/issues/41), [live test evidence](https://github.com/pandemicsyn/beachside/blob/main/packages/providers/boxd/qualification/live-qualification.md) and the [boxd TypeScript SDK docs](https://docs.boxd.sh/reference/typescript-sdk).
+See the [provider research issue](https://github.com/beachside-compute/beachside/issues/41), [live test evidence](https://github.com/beachside-compute/beachside/blob/main/packages/providers/boxd/qualification/live-qualification.md) and the [boxd TypeScript SDK docs](https://docs.boxd.sh/reference/typescript-sdk).

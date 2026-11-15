@@ -20,7 +20,7 @@ jobs:
       E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
     steps:
       - uses: actions/checkout@v4
-      - uses: pandemicsyn/beachside/actions/setup-beachside@main
+      - uses: beachside-compute/beachside/actions/setup-beachside@main
         with:
           adapters: e2b
           provider: e2b
@@ -90,7 +90,7 @@ env:
   BEACHSIDE_PROJECT_SETUPS: "1"
 steps:
   - uses: actions/checkout@v4
-  - uses: pandemicsyn/beachside/actions/setup-beachside@main
+  - uses: beachside-compute/beachside/actions/setup-beachside@main
     id: beachside
     with:
       adapters: e2b
@@ -142,7 +142,7 @@ jobs:
     env:
       E2B_API_KEY: ${{ secrets.E2B_API_KEY }}
     steps:
-      - uses: pandemicsyn/beachside/actions/setup-beachside@main
+      - uses: beachside-compute/beachside/actions/setup-beachside@main
         with:
           adapters: e2b
           provider: e2b

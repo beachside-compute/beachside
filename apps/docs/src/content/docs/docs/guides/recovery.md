@@ -45,7 +45,7 @@ An uncertain restore has outcome kind `snapshot_restore`. It preserves selected 
 
 If compute cleanup is uncertain, `outcome.retainedVolumes` keeps known volume references. Removing compute and deleting storage are separate operations. Keep those references and follow the [volume deletion safeguards](/docs/guides/snapshots-and-volumes/#save-and-reopen-references) before deleting storage.
 
-The [compiled recovery example](https://github.com/pandemicsyn/beachside/blob/main/apps/docs/examples/recovery-outcomes.ts) shows how to save references, reopen resources and use partial capture results.
+The [compiled recovery example](https://github.com/beachside-compute/beachside/blob/main/apps/docs/examples/recovery-outcomes.ts) shows how to save references, reopen resources and use partial capture results.
 
 ## Reopen compute and recover lifecycle changes
 

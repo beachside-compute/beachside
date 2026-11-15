@@ -76,7 +76,7 @@ Each call signs a new URL; earlier ones keep working until they expire, and they
 
 ## Modal connect tokens and tunnels
 
-Modal defaults to protected access: each `preview(port)` mints a Modal connect token for that port and returns it as an `Authorization: Bearer` header. For public links, set `preview: { access: "public", ports: [3000] }` together with `network: "internet"` or an allowlist; Modal publishes those ports as HTTPS tunnels when the sandbox is created or restored, and cannot add more later. Modal refuses tunnels on a blocked network, so public setup with the default `blocked` network rejects at connect. Neither mode has been live-tested. See the [Modal adapter README](https://github.com/pandemicsyn/beachside/tree/main/packages/providers/modal#previews).
+Modal defaults to protected access: each `preview(port)` mints a Modal connect token for that port and returns it as an `Authorization: Bearer` header. For public links, set `preview: { access: "public", ports: [3000] }` together with `network: "internet"` or an allowlist; Modal publishes those ports as HTTPS tunnels when the sandbox is created or restored, and cannot add more later. Modal refuses tunnels on a blocked network, so public setup with the default `blocked` network rejects at connect. Neither mode has been live-tested. See the [Modal adapter README](https://github.com/beachside-compute/beachside/tree/main/packages/providers/modal#previews).
 
 Some providers' previews carry an `expiresAt` timestamp. When it is present, ask for a new preview before it passes.
 
@@ -108,4 +108,4 @@ URLs and headers are temporary access information. Do not log them or use them a
 
 Beachside validates that response URLs use HTTPS and contain no username, password, query or fragment. It excludes returned access details from diagnostics and recovery state.
 
-The complete [preview recipe](https://github.com/pandemicsyn/beachside/blob/main/apps/docs/examples/sandbox-preview.ts) uses an image that starts its own server. Offline tests cover the SDK and provider boundaries. Daytona protected access and E2B explicit public access passed live tests at `3188e33`, with sandbox cleanup confirmed. See [tested provider support](/docs/providers/support/) for the exact scope and remaining gaps.
+The complete [preview recipe](https://github.com/beachside-compute/beachside/blob/main/apps/docs/examples/sandbox-preview.ts) uses an image that starts its own server. Offline tests cover the SDK and provider boundaries. Daytona protected access and E2B explicit public access passed live tests at `3188e33`, with sandbox cleanup confirmed. See [tested provider support](/docs/providers/support/) for the exact scope and remaining gaps.

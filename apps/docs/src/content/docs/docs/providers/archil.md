@@ -119,4 +119,4 @@ Beachside sends each mutation once and the adapter adds no retries; the SDK's ow
 - Destroying a sandbox with mounted disks needs `destroy({ storage: "allow-unconfirmed" })`, and a mounted disk cannot be deleted.
 - The Free plan allows 5 concurrent sandboxes and 30-minute sessions, and only Archil's managed network (`network: "archil-managed"`); `blocked`, `internet` and allowlists need a paid plan.
 
-See the [provider research issue](https://github.com/pandemicsyn/beachside/issues/188) and the [Archil documentation](https://docs.archil.com/compute/sandboxes/introduction).
+See the [provider research issue](https://github.com/beachside-compute/beachside/issues/188) and the [Archil documentation](https://docs.archil.com/compute/sandboxes/introduction).

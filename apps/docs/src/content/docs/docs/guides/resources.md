@@ -101,7 +101,7 @@ if (info.expires.status === "known") console.log(info.expires.at, info.expires.s
 
 A missing or deleted sandbox returns `NOT_FOUND`. Other problems, such as denied access or a scope mismatch, have their own errors. A saved reference cannot move a sandbox to another provider.
 
-`box.reference` can be `null`, including when an adapter cannot verify identity during creation. Try `inspect()` and check its returned `reference`; do not construct one from `box.id`. For E2B credential rotation, configure the verified `teamId` when establishing the original connection. See the [reopening example](https://github.com/pandemicsyn/beachside/blob/main/apps/docs/examples/sandbox-reopen.ts).
+`box.reference` can be `null`, including when an adapter cannot verify identity during creation. Try `inspect()` and check its returned `reference`; do not construct one from `box.id`. For E2B credential rotation, configure the verified `teamId` when establishing the original connection. See the [reopening example](https://github.com/beachside-compute/beachside/blob/main/apps/docs/examples/sandbox-reopen.ts).
 
 Inspection reports state, provider state, observation time, expiry, idle-stop policy, retention policy, and execution identity when known. Unknown expiry does not mean unlimited lifetime. A past expiry time alone does not prove that the sandbox was deleted.
 
@@ -195,7 +195,7 @@ Renewal sets a new expiry window from when the provider processes the request. I
 
 Provider account limits can be tighter. `renewed.requested.forSeconds` reports the resolved setting. `acknowledged: true` means the provider accepted the request, even if the follow-up read failed and `observation` is `null`. If the acknowledgement is lost, recover the operation instead of automatically renewing again.
 
-The [boxd](/docs/providers/boxd/) and experimental [Archil](/docs/providers/archil/) adapters also support renewal; Archil's window is 60 seconds to 24 hours and applies to the current powered-on session. [Vercel Sandbox](/docs/providers/vercel/#lifetime-cleanup-and-reopening) renewal instead **adds** 1–86,400 seconds per request to the running session; Vercel caps total session time by plan. See the [renewal example](https://github.com/pandemicsyn/beachside/blob/main/apps/docs/examples/sandbox-renew.ts) for saving and reopening a sandbox before renewal.
+The [boxd](/docs/providers/boxd/) and experimental [Archil](/docs/providers/archil/) adapters also support renewal; Archil's window is 60 seconds to 24 hours and applies to the current powered-on session. [Vercel Sandbox](/docs/providers/vercel/#lifetime-cleanup-and-reopening) renewal instead **adds** 1–86,400 seconds per request to the running session; Vercel caps total session time by plan. See the [renewal example](https://github.com/beachside-compute/beachside/blob/main/apps/docs/examples/sandbox-renew.ts) for saving and reopening a sandbox before renewal.
 
 ### Suspend and resume
 
@@ -226,7 +226,7 @@ For E2B and Daytona, configure `lifecycle: { suspension: { preserve: "filesystem
 
 On E2B and Daytona, suspending an already inactive sandbox or resuming a running one returns `CONFLICT`. Avoid concurrent lifecycle changes from your application or other controllers. Recover uncertain operations using their saved references; cancellation does not undo a submitted change. Destroy the sandbox when you no longer need its saved state.
 
-`submitSuspend()`, `submitResume()`, and `submitRenew()` let you separate submission from waiting. See the [suspend/resume example](https://github.com/pandemicsyn/beachside/blob/main/apps/docs/examples/sandbox-suspend-resume.ts).
+`submitSuspend()`, `submitResume()`, and `submitRenew()` let you separate submission from waiting. See the [suspend/resume example](https://github.com/beachside-compute/beachside/blob/main/apps/docs/examples/sandbox-suspend-resume.ts).
 
 ## Pass arguments literally
 

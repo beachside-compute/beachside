@@ -107,4 +107,4 @@ Beachside sends each mutation once. The adapter sends a request again only when 
 - The image needs `sh`, core utilities and Python 3. Without `fallocate`, the output bound limits what is returned but not what a command writes to disk.
 - Tokens are per-command: a token without `ssh` cannot run anything in a VM, and one without `share` cannot make public previews. A tag-scoped key sees only VMs with its tag.
 
-See the [provider research issue](https://github.com/pandemicsyn/beachside/issues/42) and the [exe.dev documentation](https://exe.dev/docs).
+See the [provider research issue](https://github.com/beachside-compute/beachside/issues/42) and the [exe.dev documentation](https://exe.dev/docs).

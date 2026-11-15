@@ -84,4 +84,4 @@ Beachside sends each mutation once and the adapter adds no retries. Creates and 
 - Suspend keeps the disk only; memory and connections are lost.
 - Shutdown is refused while a disk snapshot is in progress.
 
-See the [provider research issue](https://github.com/pandemicsyn/beachside/issues/47) and the [Runloop API reference](https://docs.runloop.ai/docs/api-reference).
+See the [provider research issue](https://github.com/beachside-compute/beachside/issues/47) and the [Runloop API reference](https://docs.runloop.ai/docs/api-reference).

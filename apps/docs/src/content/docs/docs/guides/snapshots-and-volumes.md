@@ -93,7 +93,7 @@ Close the connection in an outer `finally`, as in [Getting started](/docs/direct
 | Archil                                             | Private disk, RAM and process state       | Pause, fork, then resume                  | Resume captured processes in a dependent fork    |
 | Archil, `Preserve.FILESYSTEM`                      | Private disk                              | Stop, fork, then restart                  | Fresh processes in a dependent fork              |
 
-Daytona captures Linux VMs the same way as containers. It leaves an already-stopped source stopped. Configure `snapshots: { restartAfterCapture: false }` on the adapter to also leave a running source stopped after capture. E2B requires a running source with envd `v0.5.0` or newer. Modal has no snapshot listing, so save the returned reference; see the [Modal adapter notes](https://github.com/pandemicsyn/beachside/tree/main/packages/providers/modal#snapshots).
+Daytona captures Linux VMs the same way as containers. It leaves an already-stopped source stopped. Configure `snapshots: { restartAfterCapture: false }` on the adapter to also leave a running source stopped after capture. E2B requires a running source with envd `v0.5.0` or newer. Modal has no snapshot listing, so save the returned reference; see the [Modal adapter notes](https://github.com/beachside-compute/beachside/tree/main/packages/providers/modal#snapshots).
 
 ```ts
 const captured = await source.snapshot({
@@ -249,7 +249,7 @@ Daytona requires a ready snapshot known to have no recorded mounts, with filesys
 
 If restore fails with an uncertain outcome, save the operation reference and the known sandbox and volume references from `error.outcome` with kind `snapshot_restore`. Inspect those resources instead of submitting another restore. Destroying the restored sandbox retains application volumes and still follows the configured storage cleanup policy.
 
-The [compiled storage example](https://github.com/pandemicsyn/beachside/blob/main/apps/docs/examples/storage-composition.ts) covers shared data, separate empty data, private-only restore and reopening full references. See [provider support](/docs/providers/support/) for what has been tested live.
+The [compiled storage example](https://github.com/beachside-compute/beachside/blob/main/apps/docs/examples/storage-composition.ts) covers shared data, separate empty data, private-only restore and reopening full references. See [provider support](/docs/providers/support/) for what has been tested live.
 
 ### Current combinations
 
@@ -316,7 +316,7 @@ try {
 await saveResource(JSON.stringify(retainedSnapshot));
 ```
 
-An uncertain restart reports `OUTCOME_UNKNOWN` and keeps known capture details. Neither case is a reason to submit another capture. A failure in your save function is separate from capture: keep the returned handle and reference. The [tested recovery examples](https://github.com/pandemicsyn/beachside/blob/main/apps/docs/examples/recovery-outcomes.ts) show this separation.
+An uncertain restart reports `OUTCOME_UNKNOWN` and keeps known capture details. Neither case is a reason to submit another capture. A failure in your save function is separate from capture: keep the returned handle and reference. The [tested recovery examples](https://github.com/beachside-compute/beachside/blob/main/apps/docs/examples/recovery-outcomes.ts) show this separation.
 
 Capture, restore, volume creation and deletion also have `submit…` methods. Save operation references when a result becomes uncertain or a wait is cancelled, then use `beachside.recover(reference)` to observe the original operation without repeating it. Some staged operations support explicit `continue()`; see [Results, errors and saved resources](/docs/guides/recovery/) before using it.
 

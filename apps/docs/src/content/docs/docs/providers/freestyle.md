@@ -102,4 +102,4 @@ Beachside sends each mutation once and the adapter adds no retries; Freestyle's 
 - Freestyle may limit pause and snapshots by plan; a plan refusal surfaces as Freestyle's own error.
 - Listed VMs report `ownership: "unknown"`.
 
-See the [provider research issue](https://github.com/pandemicsyn/beachside/issues/129) and the [Freestyle documentation](https://www.freestyle.sh/docs).
+See the [provider research issue](https://github.com/beachside-compute/beachside/issues/129) and the [Freestyle documentation](https://www.freestyle.sh/docs).
