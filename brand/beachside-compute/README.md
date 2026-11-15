@@ -6,6 +6,8 @@ The parent-company identity pairs a sunset with three compute-server bars.
 
 ## Files
 
+- `social-preview-1280x640.svg` / `.png`: 1280 × 640 repository social-preview image on navy.
+
 - `github-avatar.png`: upload-ready 1024 × 1024 organization avatar, navy background with padding for circular crops. Editable master: `github-avatar.svg`.
 - `logo-navy.svg` / `.png`: full horizontal logo on navy (PNG: 2176 × 832).
 - `logo-on-dark.svg` / `.png`: transparent horizontal logo with cream lettering.
