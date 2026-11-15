@@ -6,7 +6,8 @@ import { z } from "zod";
 
 export type Env = {
   ASSETS: { fetch(request: Request): Promise<Response> };
-  RESEND_API_KEY?: string;
+  // Secrets Store binding (wrangler.jsonc secrets_store_secrets); absent until the store is wired up.
+  RESEND_API_KEY?: { get(): Promise<string> };
 };
 
 const resendApi = "https://api.resend.com";
@@ -53,11 +54,15 @@ type ContactCreate = {
 
 type EventSend = { event: string; email: string; payload: { source: string } };
 
-async function resend(env: Env, path: string, body: ContactCreate | EventSend): Promise<Response> {
+async function resend(
+  apiKey: string,
+  path: string,
+  body: ContactCreate | EventSend,
+): Promise<Response> {
   return fetch(`${resendApi}${path}`, {
     method: "POST",
     headers: {
-      authorization: `Bearer ${env.RESEND_API_KEY}`,
+      authorization: `Bearer ${apiKey}`,
       "content-type": "application/json",
     },
     body: JSON.stringify(body),
@@ -74,13 +79,15 @@ async function alreadyExists(response: Response): Promise<boolean> {
 }
 
 export async function signUp(env: Env, signup: Signup): Promise<Outcome> {
-  if (!env.RESEND_API_KEY)
+  const apiKey = await env.RESEND_API_KEY?.get().catch(() => "");
+
+  if (!apiKey)
     return {
       status: 503,
       body: { ok: false, message: "Signups are not open yet. Please try again later." },
     };
 
-  const contact = await resend(env, "/contacts", {
+  const contact = await resend(apiKey, "/contacts", {
     email: signup.email,
     unsubscribed: false,
     segments: [{ id: betaSegment }],
@@ -93,7 +100,7 @@ export async function signUp(env: Env, signup: Signup): Promise<Outcome> {
     return { status: 502, body: { ok: false, message: "Something went wrong. Please try again." } };
   }
 
-  const event = await resend(env, "/events/send", {
+  const event = await resend(apiKey, "/events/send", {
     event: signupEvent,
     email: signup.email,
     payload: { source: signup.source },

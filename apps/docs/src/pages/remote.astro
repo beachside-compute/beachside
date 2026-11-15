@@ -19,7 +19,7 @@ const cliInstall = "npm install -g @beachside/cli";
 
 const tailnet = "tail1234.ts.net";
 
-// Providers verified end to end with `--with rex` and `--with herdr`, in the site's provider order.
+// Providers where `--with rex` and `--with herdr` were run live (Rex: see /docs/cli/rex/), in the site's provider order.
 const providers = [
   { id: "boxd", label: "boxd", env: "BOXD_API_KEY=... BOXD_ORG=...", user: "root" },
   { id: "freestyle", label: "Freestyle", env: "FREESTYLE_API_KEY=...", user: "ubuntu" },
@@ -123,7 +123,10 @@ function lineClass(line: Line) {
         // Ads tag their links with ?for=, utm_campaign= or #rex / #herdr; any of them picks the view.
         const query = new URLSearchParams(location.search);
 
-        const wanted = [query.get("for"), query.get("utm_campaign"), location.hash.slice(1)].find(
+        // Campaign names like "reddit-herdr-nov" count too.
+        const campaign = /\b(rex|herdr)\b/.exec(query.get("utm_campaign") ?? "")?.[1];
+
+        const wanted = [query.get("for"), campaign, location.hash.slice(1)].find(
           (value) => value === "rex" || value === "herdr",
         );
 
@@ -153,6 +156,14 @@ function lineClass(line: Line) {
               <button type="button" data-for-choice="rex" aria-pressed="true">Rex</button>
               <button type="button" data-for-choice="herdr" aria-pressed="false">Herdr</button>
             </div>
+            <script is:inline>
+              // The head script already picked the view; mark the matching button before paint.
+              document
+                .querySelectorAll("[data-for-choice]")
+                .forEach((button) =>
+                  button.setAttribute("aria-pressed", String(button.dataset.forChoice === document.documentElement.dataset.for)),
+                );
+            </script>
 
             <h1>
               <span class="only-rex">Your Rex workspace,</span>
@@ -210,7 +221,7 @@ function lineClass(line: Line) {
               </svg>
             </div>
 
-            <div class="code-card term" data-sessions={JSON.stringify(sessions)}>
+            <div class="code-card term" data-sessions={JSON.stringify(sessions)} data-providers={JSON.stringify(providers)}>
               <div class="code-bar">
                 <span class="dot" style="background:var(--sb-pink)"></span>
                 <span class="dot" style="background:var(--sb-coral)"></span>
@@ -290,9 +301,13 @@ function lineClass(line: Line) {
             <li class="step">
               <span class="step-n">2</span>
               <h3>Set up Tailscale once</h3>
-              <p>
+              <p class="only-rex">
                 In your tailnet policy, add a <code>tag:beachside</code> that members can reach on port 443. Then make a reusable,
                 ephemeral, pre-approved auth key with that tag.
+              </p>
+              <p class="only-herdr">
+                In your tailnet policy, add a <code>tag:beachside</code>. Then make a reusable, ephemeral, pre-approved auth key
+                with that tag.
               </p>
               <p class="only-herdr">Herdr attaches over Tailscale SSH, so add an <code>ssh</code> rule too:</p>
               <pre class="step-code only-herdr"><code>{sshRule}</code></pre>
@@ -312,9 +327,9 @@ function lineClass(line: Line) {
                 accept the host key and installs its server.
               </p>
               <pre class="step-code only-rex"><code><span class="prompt">$ </span>beachside create --name rex --ttl 2h --with rex
-<span class="out">https://beachside-rex.{tailnet}</span></code></pre>
+<span class="out">https://beachside-rex.&lt;your-tailnet&gt;.ts.net</span></code></pre>
               <pre class="step-code only-herdr"><code><span class="prompt">$ </span>beachside create --name dev --ttl 2h --with herdr
-<span class="prompt">$ </span>herdr --remote ssh://<span data-provider-user>root</span>@beachside-dev.{tailnet}</code></pre>
+<span class="prompt">$ </span>herdr --remote ssh://<span data-provider-user>root</span>@beachside-dev.&lt;your-tailnet&gt;.ts.net</code></pre>
               <a class="step-link only-rex" href="/docs/cli/rex/">What <code>--with rex</code> does →</a>
               <a class="step-link only-herdr" href="/docs/cli/#servers-in-a-sandbox">What <code>--with herdr</code> does →</a>
             </li>
@@ -333,8 +348,8 @@ function lineClass(line: Line) {
           </p>
           <ul class="more-list">
             <li><code>--setup-cmd</code> or <code>--setup</code> runs install steps once the sandbox starts.</li>
-            <li><code>beachside push</code> copies your checkout in.</li>
-            <li><code>--image</code> starts from your own image. If it already has Rex, setup skips the install.</li>
+            <li><code>beachside push</code> copies your checkout into <code>~/work</code>.</li>
+            <li><code>--image</code> starts from your own image.<span class="only-rex"> If it already has Rex, setup skips the install.</span></li>
             <li><code>beachside ls</code> shows what's running, and <code>rm --all</code> clears it.</li>
           </ul>
         </div>
@@ -343,11 +358,9 @@ function lineClass(line: Line) {
           <pre class="code"><code><span class="only-rex"><span class="prompt">$ </span>beachside create --name rex --ttl 4h --with rex \
     --setup-cmd 'sudo apt-get install -y ripgrep'
 <span class="prompt">$ </span>beachside push rex
-<span class="cli-out">/home/user/work</span>
 <span class="prompt">$ </span>beachside rm rex</span><span class="only-herdr"><span class="prompt">$ </span>beachside create --name dev --ttl 4h --with herdr \
     --setup-cmd 'sudo apt-get install -y ripgrep'
 <span class="prompt">$ </span>beachside push dev
-<span class="cli-out">/home/user/work</span>
 <span class="prompt">$ </span>beachside rm dev</span></code></pre>
         </div>
       </section>
@@ -401,13 +414,15 @@ function lineClass(line: Line) {
         let reset: ReturnType<typeof setTimeout> | undefined;
 
         button.addEventListener("click", async () => {
+          let copied = true;
+
           try {
             await navigator.clipboard.writeText(button.dataset.copy ?? "");
           } catch {
-            return;
+            copied = false;
           }
 
-          if (label) label.textContent = "copied";
+          if (label) label.textContent = copied ? "copied" : "copy failed";
           clearTimeout(reset);
           reset = setTimeout(() => label && (label.textContent = "copy"), 1400);
         });
@@ -436,16 +451,17 @@ function lineClass(line: Line) {
       // SAFETY: the server renders data-sessions from the sessions object in this file.
       const sessions = JSON.parse(term?.dataset.sessions ?? "{}") as Record<Server, Record<string, Line[]>>;
 
-      const providerFacts = {
-        boxd: { env: "BOXD_API_KEY=... BOXD_ORG=...", user: "root", label: "boxd" },
-        freestyle: { env: "FREESTYLE_API_KEY=...", user: "ubuntu", label: "Freestyle" },
-        e2b: { env: "E2B_API_KEY=...", user: "user", label: "E2B" },
-      } satisfies Record<string, { env: string; user: string; label: string }>;
+      type ProviderFacts = { id: string; label: string; env: string; user: string };
 
-      type ProviderId = keyof typeof providerFacts;
+      // SAFETY: the server renders data-providers from the providers list in this file.
+      const providerFacts = new Map(
+        (JSON.parse(term?.dataset.providers ?? "[]") as ProviderFacts[]).map((facts) => [facts.id, facts]),
+      );
+
+      type ProviderId = string;
 
       const isProvider = (value: string | undefined): value is ProviderId =>
-        value !== undefined && Object.hasOwn(providerFacts, value);
+        value !== undefined && providerFacts.has(value);
 
       let server: Server = root.dataset.for === "herdr" ? "herdr" : "rex";
 
@@ -460,7 +476,7 @@ function lineClass(line: Line) {
 
         if (statusDot) statusDot.style.background = color;
 
-        if (statusVia) statusVia.textContent = `via ${providerFacts[provider].label}`;
+        if (statusVia) statusVia.textContent = `via ${providerFacts.get(provider)?.label ?? provider}`;
       }
 
       function lineNode(line: Line) {
@@ -481,15 +497,50 @@ function lineClass(line: Line) {
       }
 
       // Scoped styles only match elements carrying this page's Astro scope class.
+      // Astro scopes by class or by data-astro-cid-* attribute depending on config; copy whichever this build uses.
       const scope = [...(screen?.classList ?? [])].find((name) => name.startsWith("astro-"));
 
+      const scopeAttr = screen?.getAttributeNames().find((name) => name.startsWith("data-astro-cid-"));
+
       function scoped(node: HTMLElement) {
-        if (scope) {
-          node.classList.add(scope);
-          node.querySelectorAll("*").forEach((child) => child.classList.add(scope));
+        for (const element of [node, ...node.querySelectorAll("*")]) {
+          if (scope) element.classList.add(scope);
+
+          if (scopeAttr) element.setAttribute(scopeAttr, "");
         }
 
         return node;
+      }
+
+      function fullRender(lines: Line[]) {
+        return lines.map((line) => {
+          const node = scoped(lineNode(line));
+
+          if ("cmd" in line) node.childNodes[1]!.textContent = line.cmd;
+
+          return node;
+        });
+      }
+
+      // Hold the tallest session's height on the <pre> (min-height does nothing on the inline <code>), so the card
+      // doesn't collapse and grow while lines are typed or when switching sessions. Measured once, synchronously.
+      function holdTallest() {
+        const box = screen?.closest<HTMLElement>("pre");
+
+        if (!screen || !box || box.style.minHeight) return;
+
+        const before = [...screen.childNodes];
+
+        let tallest = box.offsetHeight;
+
+        for (const byProvider of Object.values(sessions))
+          for (const lines of Object.values(byProvider)) {
+            screen.replaceChildren(...fullRender(lines));
+            tallest = Math.max(tallest, box.offsetHeight);
+          }
+
+        screen.replaceChildren(...before);
+        box.style.minHeight = `${tallest}px`;
       }
 
       function play() {
@@ -500,19 +551,10 @@ function lineClass(line: Line) {
 
         if (!screen) return;
 
-        // Hold the tallest session's height so the page doesn't shift while lines appear.
-        if (!screen.style.minHeight) screen.style.minHeight = `${screen.offsetHeight}px`;
+        holdTallest();
 
         if (!motionOn()) {
-          screen.replaceChildren(
-            ...lines.map((line) => {
-              const node = scoped(lineNode(line));
-
-              if ("cmd" in line) node.childNodes[1]!.textContent = line.cmd;
-
-              return node;
-            }),
-          );
+          screen.replaceChildren(...fullRender(lines));
           setStatus("ready · on your tailnet", "var(--sb-aqua)");
 
           return;
@@ -545,7 +587,9 @@ function lineClass(line: Line) {
       }
 
       function fillProvider() {
-        const facts = providerFacts[provider];
+        const facts = providerFacts.get(provider);
+
+        if (!facts) return;
 
         document.querySelectorAll("[data-provider-id]").forEach((node) => (node.textContent = provider));
         document.querySelectorAll("[data-provider-env]").forEach((node) => (node.textContent = facts.env));

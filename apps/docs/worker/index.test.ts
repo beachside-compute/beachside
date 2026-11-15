@@ -4,6 +4,8 @@ import worker, { type Env } from "./index";
 
 const realFetch = globalThis.fetch;
 
+const testKey: Env["RESEND_API_KEY"] = { get: async () => "re_test" };
+
 const assets: Env["ASSETS"] = { fetch: async () => new Response("asset") };
 
 type SignupBody = { email: string; source: string; website?: string };
@@ -57,7 +59,7 @@ describe("beta signup worker", () => {
       post({ email: "a@example.com", source: "beachside.run/beta reddit rex" }),
       {
         ASSETS: assets,
-        RESEND_API_KEY: "re_test",
+        RESEND_API_KEY: testKey,
       },
     );
 
@@ -83,7 +85,7 @@ describe("beta signup worker", () => {
 
     const response = await worker.fetch(post({ email: "a@example.com", source: "x" }), {
       ASSETS: assets,
-      RESEND_API_KEY: "re_test",
+      RESEND_API_KEY: testKey,
     });
 
     expect(response.status).toBe(200);
@@ -92,7 +94,7 @@ describe("beta signup worker", () => {
   test("rejects bad email, foreign origins and missing keys", async () => {
     const calls = stubResend(200);
 
-    const env = { ASSETS: assets, RESEND_API_KEY: "re_test" };
+    const env = { ASSETS: assets, RESEND_API_KEY: testKey };
 
     expect((await worker.fetch(post({ email: "nope", source: "x" }), env)).status).toBe(400);
     expect(
@@ -117,7 +119,7 @@ describe("beta signup worker", () => {
       post({ email: "a@example.com", source: "x", website: "spam" }),
       {
         ASSETS: assets,
-        RESEND_API_KEY: "re_test",
+        RESEND_API_KEY: testKey,
       },
     );
 

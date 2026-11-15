@@ -3,7 +3,8 @@
   // replaces the worker's whole domain list on deploy, so every attached domain must be listed.
   "name": "sandbar-docs",
   "compatibility_date": "2026-09-25",
-  // Static assets first; the worker only answers /api/beta-signup (RESEND_API_KEY is a worker secret).
+  // Static assets first; the worker only answers /api/beta-signup. RESEND_API_KEY comes from Secrets Store
+  // (add a secrets_store_secrets binding with the store id); without it signups answer 503.
   "main": "./worker/index.ts",
   "routes": [
     { "pattern": "beachside.run", "custom_domain": true },
