@@ -8,6 +8,8 @@ export type Env = {
   ASSETS: { fetch(request: Request): Promise<Response> };
   // Secrets Store binding (wrangler.jsonc secrets_store_secrets); absent until the store is wired up.
   RESEND_API_KEY?: { get(): Promise<string> };
+  // Rate limiting binding (wrangler.jsonc ratelimits), keyed by client IP.
+  SIGNUP_LIMITER?: { limit(options: { key: string }): Promise<{ success: boolean }> };
 };
 
 const resendApi = "https://api.resend.com";
@@ -54,19 +56,26 @@ type ContactCreate = {
 
 type EventSend = { event: string; email: string; payload: { source: string } };
 
+// A network failure reads as a 503 from Resend, so callers handle one kind of failure.
 async function resend(
   apiKey: string,
   path: string,
   body: ContactCreate | EventSend,
 ): Promise<Response> {
-  return fetch(`${resendApi}${path}`, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${apiKey}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
+  try {
+    return await fetch(`${resendApi}${path}`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (error) {
+    console.error("resend request failed", path, error instanceof Error ? error.message : error);
+
+    return new Response(null, { status: 503 });
+  }
 }
 
 // A contact that already exists is fine: the person signed up before, so the signup still counts.
@@ -115,9 +124,19 @@ export async function signUp(env: Env, signup: Signup): Promise<Outcome> {
 export async function handleSignup(request: Request, env: Env): Promise<Response> {
   if (request.method !== "POST") return reply({ status: 405, body: { ok: false } });
 
+  // Browsers always send Origin on a form POST, so a missing one is not a person on the site.
   const origin = request.headers.get("origin");
 
-  if (origin && !allowedOrigins.has(origin)) return reply({ status: 403, body: { ok: false } });
+  if (!origin || !allowedOrigins.has(origin)) return reply({ status: 403, body: { ok: false } });
+
+  const client = request.headers.get("cf-connecting-ip") ?? "unknown";
+  const allowed = (await env.SIGNUP_LIMITER?.limit({ key: client }))?.success ?? true;
+
+  if (!allowed)
+    return reply({
+      status: 429,
+      body: { ok: false, message: "Too many tries. Please wait a minute and try again." },
+    });
 
   const parsed = signupSchema.safeParse(await request.json().catch(() => null));
 

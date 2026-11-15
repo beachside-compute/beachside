@@ -112,6 +112,77 @@ describe("beta signup worker", () => {
     expect(calls).toEqual([]);
   });
 
+  test("rejects requests without an Origin header", async () => {
+    const calls = stubResend(200);
+
+    const request = new Request("https://beachside.run/api/beta-signup", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "a@example.com", source: "x" }),
+    });
+
+    const response = await worker.fetch(request, { ASSETS: assets, RESEND_API_KEY: testKey });
+
+    expect(response.status).toBe(403);
+    expect(calls).toEqual([]);
+  });
+
+  test("answers 429 when the client is over its rate limit", async () => {
+    const calls = stubResend(200);
+    const keys: string[] = [];
+
+    const limiter: Env["SIGNUP_LIMITER"] = {
+      limit: async ({ key }) => {
+        keys.push(key);
+
+        return { success: false };
+      },
+    };
+
+    const request = post({ email: "a@example.com", source: "x" });
+
+    request.headers.set("cf-connecting-ip", "203.0.113.7");
+
+    const response = await worker.fetch(request, {
+      ASSETS: assets,
+      RESEND_API_KEY: testKey,
+      SIGNUP_LIMITER: limiter,
+    });
+
+    expect(response.status).toBe(429);
+    expect(keys).toEqual(["203.0.113.7"]);
+    expect(calls).toEqual([]);
+  });
+
+  test("a Resend network failure answers 502, and a failed event still saves the signup", async () => {
+    const env = { ASSETS: assets, RESEND_API_KEY: testKey };
+
+    globalThis.fetch = Object.assign(
+      async () => {
+        throw new TypeError("network down");
+      },
+      { preconnect() {} },
+    );
+
+    const failed = await worker.fetch(post({ email: "a@example.com", source: "x" }), env);
+
+    expect(failed.status).toBe(502);
+    expect(await failed.json()).toMatchObject({ ok: false });
+
+    globalThis.fetch = Object.assign(
+      async (input: RequestInfo | URL) => {
+        if (String(input).endsWith("/contacts")) return new Response("{}", { status: 200 });
+
+        throw new TypeError("network down");
+      },
+      { preconnect() {} },
+    );
+
+    expect((await worker.fetch(post({ email: "a@example.com", source: "x" }), env)).status).toBe(
+      200,
+    );
+  });
+
   test("honeypot submissions get a quiet success and save nothing", async () => {
     const calls = stubResend(200);
 
