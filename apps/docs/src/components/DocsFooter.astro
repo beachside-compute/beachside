@@ -3,6 +3,7 @@ import DefaultFooter from "@astrojs/starlight/components/Footer.astro";
 import AnalyticsConsent from "./AnalyticsConsent.astro";
 
 const year = new Date().getFullYear();
+
 const isDocs = Astro.url.pathname === "/docs" || Astro.url.pathname.startsWith("/docs/");
 ---
 
