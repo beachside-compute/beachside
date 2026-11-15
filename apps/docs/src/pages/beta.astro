@@ -224,7 +224,7 @@ const sessions = (["rex", "herdr"] as const).flatMap((server) =>
 <article style="padding: 28px 24px; border-radius: 16px; border: 1px solid var(--line); background: var(--surface); display: flex; flex-direction: column; gap: 10px">
 <span aria-hidden="true" style="width: 34px; height: 4px; border-radius: 2px; background: #8E7CF0"></span>
 <h3 style="margin: 6px 0 0; font-size: 18px">Yours, end to end</h3>
-<p style="margin: 0; color: var(--muted); font-size: 15px">No third-party agent service holds your code or keys. Reach sandboxes over your tailnet, or however you'd like to, and <code style="font-family: 'JetBrains Mono', monospace; font-size: 0.9em; color: var(--ink)">beachside rm</code> logs them out.</p>
+<p style="margin: 0; color: var(--muted); font-size: 15px">No third-party agent service holds your code or keys. Reach sandboxes over your tailnet, or however you'd like to, and <code class="inline-code">beachside rm</code> logs them out.</p>
 </article>
 </div>
 </section>
@@ -235,7 +235,7 @@ const sessions = (["rex", "herdr"] as const).flatMap((server) =>
 <div style="flex: 1 1 400px; min-width: 0; display: flex; flex-direction: column; gap: 18px">
 <span style="align-self: flex-start; padding: 4px 12px; border-radius: 999px; background: #BDB2FF; color: #1b1f3b; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700">For your agent</span>
 <h2 style="margin: 0; font-size: clamp(32px, 3.6vw, 46px); line-height: 1.1; letter-spacing: -0.025em; font-weight: 700">Ask your agent for a machine. It makes one.</h2>
-<p style="margin: 0; max-width: 30em; font-size: 18px; color: #C9CCE0">Your coding agent can start a sandbox, launch Herdr or Rex on it, push your checkout and hand the long job off, then clean up when it's done. You watch from Herdr's sidebar or a Rex tab, even from your phone.</p>
+<p style="margin: 0; max-width: 30em; font-size: 18px; color: #C9CCE0">Your coding agent can start a sandbox, launch Herdr or Rex in it, push your checkout and hand the long job off, then clean up when it's done. You watch from Herdr's sidebar or a Rex tab, even from your phone.</p>
 <div style="display: flex; flex-direction: column; gap: 8px; padding: 18px 20px; border-radius: 14px; background: #0A0F1E; border: 1px solid rgba(255,255,255,0.08)">
 <span style="font-size: 14px; font-weight: 600; color: #F4EDE3">First, teach your agent. Two commands:</span>
 <code style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #EAF2FF; line-height: 1.9; white-space: pre-wrap"><span style="color: #FF86B7">$ </span>npm install -g @beachside/cli
@@ -313,7 +313,7 @@ const sessions = (["rex", "herdr"] as const).flatMap((server) =>
 <div style="flex: 1 1 420px; min-width: 0; display: flex; flex-direction: column; gap: 14px">
 <span style="align-self: flex-start; padding: 4px 12px; border-radius: 999px; background: #1FB5A8; color: #1b1f3b; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700">Open source</span>
 <h2 style="margin: 0; font-size: clamp(30px, 3.2vw, 40px); line-height: 1.1; letter-spacing: -0.025em; font-weight: 700">Read every line that touches your sandbox.</h2>
-<p style="margin: 0; max-width: 34em; font-size: 17px; color: var(--muted)">The CLI, the TypeScript SDK and every provider adapter are Apache-2.0. Missing a provider? Write an adapter with <code style="font-family: 'JetBrains Mono', monospace; font-size: 0.9em; color: var(--ink)">defineAdapter</code> and everything here works on it.</p>
+<p style="margin: 0; max-width: 34em; font-size: 17px; color: var(--muted)">The CLI, the TypeScript SDK and every provider adapter are Apache-2.0. Missing a provider? Write an adapter with <code class="inline-code">defineAdapter</code> and everything here works on it.</p>
 </div>
 <div style="flex: 0 1 auto; display: flex; flex-wrap: wrap; gap: 12px">
 <a href="https://github.com/beachside-compute/beachside" style="display: inline-flex; align-items: center; gap: 10px; min-height: 52px; padding: 0 24px; border-radius: 999px; background: var(--ink); color: var(--bg); font-weight: 700; text-decoration: none">
@@ -662,6 +662,7 @@ body { margin: 0; background: var(--bg); }
 .signup-status[data-state="error"] { background: rgba(239,79,145,0.14) !important; color: var(--pink-ink) !important; }
 #join .signup-status[data-state="error"] { color: #FF86B7 !important; }
 .signup-fields[hidden] { display: none !important; }
+.beta .inline-code { padding: 1px 6px; border-radius: 6px; background: var(--sunk); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 0.85em; word-spacing: -0.15em; white-space: nowrap; }
 .hp-field { position: absolute; left: -10000px; width: 1px; height: 1px; opacity: 0; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 button:disabled { opacity: 0.6; cursor: progress !important; }
