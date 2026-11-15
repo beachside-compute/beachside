@@ -63,6 +63,7 @@ const sessions = (["rex", "herdr"] as const).flatMap((server) =>
     lines: lines(server, provider),
   })),
 );
+
 const year = new Date().getFullYear();
 ---
 <!doctype html>
