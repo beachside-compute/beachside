@@ -1,0 +1,666 @@
+---
+import Logo from "../components/Logo.astro";
+import ThemeToggle from "../components/ThemeToggle.astro";
+
+// Lead-capture landing page for the 1.0 beta. Both signup forms post to the Loops form endpoint, which is built
+// for browsers (no API key). Ad links can tag the signup with utm_campaign / utm_source.
+const title = "Beachside | Always-on cloud agents you own";
+
+const description =
+  "Launch a Rex or Herdr workspace in a sandbox on boxd, Freestyle or another provider with one open source CLI command. Sign up for the Beachside 1.0 beta.";
+
+const fonts =
+  "https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;800&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap";
+
+type Line = { prompt: string; text: string; color: string };
+
+const providers = {
+  boxd: { env: "BOXD_API_KEY=… BOXD_ORG=…", user: "root" },
+  freestyle: { env: "FREESTYLE_API_KEY=…", user: "ubuntu" },
+} satisfies Record<string, { env: string; user: string }>;
+
+const cmd = (text: string): Line => ({ prompt: "$ ", text, color: "#EAF2FF" });
+
+const note = (text: string): Line => ({ prompt: "", text, color: "#8189AE" });
+
+const out = (text: string): Line => ({ prompt: "", text, color: "#6FE6D6" });
+
+// Output matches `beachside create --with`: progress notes, then the connect line.
+function lines(server: "rex" | "herdr", provider: keyof typeof providers): Line[] {
+  const setup = [
+    cmd(`beachside adapter add ${provider}`),
+    cmd(`export BEACHSIDE_PROVIDER=${provider} ${providers[provider].env}`),
+    cmd("export TAILSCALE_AUTH_KEY=tskey-auth-…"),
+  ];
+
+  if (server === "rex")
+    return [
+      ...setup,
+      cmd("beachside create --name rex --ttl 8h --with rex"),
+      note("rex: installing in beachside-rex"),
+      note("rex: waiting for its https certificate (up to a minute)"),
+      out("rex  https://beachside-rex.tail1234.ts.net"),
+      note("     in Rex: Add Remote Host…"),
+    ];
+
+  const remote = `herdr --remote ssh://${providers[provider].user}@beachside-agents.tail1234.ts.net`;
+
+  return [
+    ...setup,
+    cmd("beachside create --name agents --ttl 8h --with herdr"),
+    note("herdr: putting beachside-agents on your tailnet with Tailscale SSH"),
+    out(`herdr  ${remote}`),
+    cmd(remote),
+  ];
+}
+
+const sessions = (["rex", "herdr"] as const).flatMap((server) =>
+  (["boxd", "freestyle"] as const).map((provider) => ({
+    server,
+    provider,
+    lines: lines(server, provider),
+  })),
+);
+---
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="description" content={description} />
+<link rel="canonical" href="https://beachside.run/beta/" />
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<link rel="sitemap" href="/sitemap-index.xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href={fonts} />
+<meta property="og:title" content="Always-on cloud agents you own" />
+<meta property="og:description" content={description} />
+<meta property="og:url" content="https://beachside.run/beta/" />
+<meta property="og:type" content="website" />
+<title>{title}</title>
+<script is:inline>
+  // Same theme choice as the rest of the site, before paint.
+  (() => {
+    let stored = null;
+
+    try {
+      stored = localStorage.getItem("starlight-theme");
+    } catch {}
+
+    document.documentElement.dataset.theme =
+      stored === "light" || stored === "dark"
+        ? stored
+        : matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light";
+  })();
+</script>
+</head>
+<body>
+<div class="beta" style="font-family: 'Instrument Sans', system-ui, sans-serif; color: var(--ink); background: var(--bg); line-height: 1.6">
+<!-- Header -->
+<header style="border-bottom: 1px solid var(--line); background: var(--bg)">
+<div class="beta-header">
+<a href="/" aria-label="Beachside home" style="display: flex; color: var(--ink); text-decoration: none"><Logo /></a>
+<nav aria-label="Main" class="beta-nav">
+<a class="wide-only" href="/docs/cli/">Docs</a>
+<a class="wide-only" href="#roadmap">Roadmap</a>
+<a class="wide-only" href="https://github.com/pandemicsyn/beachside">GitHub</a>
+<a class="beta-nav-cta" href="#join">Join the 1.0 beta</a>
+<ThemeToggle />
+</nav>
+</div>
+</header>
+
+<!-- Hero -->
+<section style="position: relative; overflow: hidden; border-bottom: 1px solid var(--line)">
+<div style="max-width: 1180px; margin: 0 auto; padding: 72px 24px 88px; display: flex; flex-wrap: wrap; gap: 56px; align-items: center">
+
+<div style="flex: 1 1 460px; min-width: 0; display: flex; flex-direction: column; gap: 26px">
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<span style="padding: 5px 12px; border-radius: 999px; background: var(--ink); color: var(--bg); font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600">Open source · Apache-2.0</span>
+<span style="padding: 5px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--aqua-ink); font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600">Rex · Herdr</span>
+</div>
+<h1 style="margin: 0; font-size: clamp(44px, 6vw, 76px); line-height: 1.02; letter-spacing: -0.035em; font-weight: 700">Always-on cloud agents <span style="display: inline-block; font-family: Unbounded, sans-serif; font-weight: 800; color: #EF4F91; transform: skewX(-8deg)">you own.</span></h1>
+<p style="margin: 0; max-width: 32em; font-size: 19px; color: var(--muted)">One command, from you or your agent, launches a <a href="https://www.superlogical.com/rex/" style="color: var(--ink)">Rex</a> or <a href="https://herdr.dev" style="color: var(--ink)">Herdr</a> workspace in a sandbox on providers like boxd or Freestyle and joins it to your tailnet. It keeps working when your laptop sleeps. No hosted agent cloud in the middle: it's your account, your keys and open source code.</p>
+
+<form class="loops-form" data-source="hero" style="display: flex; flex-direction: column; gap: 10px; max-width: 520px">
+<label for="email-hero" style="font-size: 14px; font-weight: 600">Sign up to secure your place in the Beachside 1.0 beta</label>
+<div class="loops-fields" style="display: flex; flex-wrap: wrap; gap: 10px">
+<input id="email-hero" name="email" type="email" required autocomplete="email" placeholder="Enter your email" style="flex: 1 1 240px; min-width: 0; height: 52px; padding: 0 20px; border: 1.5px solid var(--ink); border-radius: 999px; background: var(--surface); color: var(--ink); font: inherit; font-size: 16px" />
+<button type="submit" style="height: 52px; padding: 0 26px; border: 0; border-radius: 999px; background: #EF4F91; color: #FFFFFF; font: inherit; font-size: 16px; font-weight: 700; box-shadow: 0 5px 0 var(--pink-ink); cursor: pointer">Save my spot</button>
+</div>
+<p class="loops-status" role="status" hidden style="margin: 0; padding: 14px 20px; border-radius: 16px; background: rgba(31,181,168,0.14); color: var(--aqua-ink); font-weight: 600"></p>
+<span style="font-size: 13px; color: var(--muted)">We'll let you know when the 1.0 beta is available, and about any open source releases along the way.</span>
+</form>
+
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: 14px; color: var(--muted)">
+<span>Or start now with the preview releases:</span>
+<code style="padding: 8px 16px; border-radius: 999px; border: 1.5px dashed var(--line); background: var(--surface); color: var(--ink); font-family: 'JetBrains Mono', monospace; font-size: 13px"><span style="color: var(--pink-ink)">$</span> npm install -g @beachside/cli</code>
+</div>
+</div>
+
+<!-- Terminal with sun -->
+<div style="flex: 1 1 480px; min-width: 0; position: relative; padding-top: 140px">
+<div aria-hidden="true" style="position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: min(420px, 88%); aspect-ratio: 2 / 1; border-radius: 420px 420px 0 0; overflow: hidden; display: flex; flex-direction: column; gap: 7px">
+<div style="flex: 5; background: #FF7A59"></div>
+<div style="flex: 3; background: #FF6A7F"></div>
+<div style="flex: 2; background: #EF4F91"></div>
+<div style="flex: 1.4; background: #C85BD0"></div>
+<div style="flex: 1; background: #8E7CF0"></div>
+</div>
+<svg aria-hidden="true" viewBox="0 0 200 300" style="position: absolute; top: -40px; right: 4%; width: 190px; height: 285px; fill: var(--palm); transform: scaleX(-1)">
+<path d="M92 300 C96 230 104 150 114 72 L122 74 C114 150 108 230 106 300 Z"></path>
+<path d="M118 70 C150 50 190 60 200 100 C180 78 150 72 118 74 Z"></path>
+<path d="M118 70 C85 48 40 55 20 95 C45 72 85 70 118 76 Z"></path>
+<path d="M118 70 C135 35 165 20 190 30 C160 35 138 50 120 74 Z"></path>
+<path d="M118 70 C100 30 70 15 42 22 C72 30 98 48 116 74 Z"></path>
+<path d="M118 72 C145 80 170 110 175 145 C160 115 140 95 116 78 Z"></path>
+<path d="M118 72 C90 82 65 110 58 142 C75 112 95 95 120 78 Z"></path>
+</svg>
+
+<div style="position: relative; border-radius: 16px; overflow: hidden; background: #17203D; color: #EAF2FF; box-shadow: 0 30px 60px -20px rgba(23,32,61,0.5)">
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 14px; background: #1E2950">
+<span aria-hidden="true" style="display: flex; gap: 7px"><span style="width: 10px; height: 10px; border-radius: 50%; background: #EF4F91"></span><span style="width: 10px; height: 10px; border-radius: 50%; background: #FF7A59"></span><span style="width: 10px; height: 10px; border-radius: 50%; background: #1FB5A8"></span></span>
+<div role="group" aria-label="Workspace" class="term-tabs">
+<button type="button" data-pick="server" data-value="rex" aria-pressed="true">Rex</button>
+<button type="button" data-pick="server" data-value="herdr" aria-pressed="false">Herdr</button>
+</div>
+<div role="group" aria-label="Provider" class="term-tabs" style="margin-left: auto">
+<button type="button" data-pick="provider" data-value="boxd" aria-pressed="true">boxd</button>
+<button type="button" data-pick="provider" data-value="freestyle" aria-pressed="false">Freestyle</button>
+</div>
+</div>
+{sessions.map((s) => (
+<pre class="term-session" data-server={s.server} data-provider={s.provider} style="margin: 0; padding: 22px; min-height: 250px; font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.85; white-space: pre-wrap; overflow-wrap: anywhere">{s.lines.map((line) => (<span style={`display: block; color: ${line.color}`}><span style="color: #FF86B7">{line.prompt}</span>{line.text}</span>))}</pre>
+))}
+<div style="display: flex; align-items: center; gap: 10px; padding: 12px 22px; border-top: 1px solid rgba(255,255,255,0.08); font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #8189AE">
+<span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 50%; background: #1FB5A8"></span>
+<span style="color: #EAF2FF">ready · private to your tailnet</span>
+<span style="margin-left: auto">via <span class="term-provider">boxd</span></span>
+</div>
+</div>
+</div>
+</div>
+</section>
+
+<!-- Providers strip -->
+<section aria-label="Providers" style="background: var(--surface); border-bottom: 1px solid var(--line)">
+<div style="max-width: 1180px; margin: 0 auto; padding: 22px 24px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px 14px; font-size: 15px">
+<span style="margin-right: 8px; font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--aqua-ink)">Runs on</span>
+<a class="chip-link" href="/docs/providers/boxd/" style="padding: 7px 16px; border-radius: 999px; background: var(--ink); color: var(--bg); font-weight: 700; text-decoration: none">boxd</a>
+<a class="chip-link" href="/docs/providers/freestyle/" style="padding: 7px 16px; border-radius: 999px; background: var(--ink); color: var(--bg); font-weight: 700; text-decoration: none">Freestyle</a>
+<a class="chip-link" href="/docs/providers/e2b/" style="padding: 7px 16px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink); font-weight: 600; text-decoration: none">E2B</a>
+<a class="chip-link" href="/docs/providers/daytona/" style="padding: 7px 16px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink); font-weight: 600; text-decoration: none">Daytona</a>
+<a class="chip-link" href="/docs/providers/boat/" style="padding: 7px 16px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); font-weight: 500; text-decoration: none">Boat*</a>
+<a class="chip-link" href="/docs/providers/runloop/" style="padding: 7px 16px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); font-weight: 500; text-decoration: none">Runloop*</a>
+<a class="chip-link" href="/docs/providers/archil/" style="padding: 7px 16px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); font-weight: 500; text-decoration: none">Archil*</a>
+<a class="chip-link" href="/docs/providers/exe-dev/" style="padding: 7px 16px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); font-weight: 500; text-decoration: none">exe.dev*</a>
+<a class="chip-link" href="/docs/providers/vercel/" style="padding: 7px 16px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); font-weight: 500; text-decoration: none">Vercel*</a>
+<a class="chip-link" href="/docs/providers/support/" style="padding: 7px 16px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); font-weight: 500; text-decoration: none">Modal*</a>
+<a class="chip-link" href="/docs/guides/write-an-adapter/" style="padding: 7px 16px; border-radius: 999px; border: 1px dashed var(--muted); color: var(--muted); font-weight: 500; text-decoration: none">+ write your own adapter</a>
+<span style="flex-basis: 100%; font-size: 13px; color: var(--muted)">* These adapters are still experimental.</span>
+</div>
+</section>
+
+<!-- Features -->
+<section style="max-width: 1180px; margin: 0 auto; padding: 104px 24px 96px">
+<h2 style="margin: 0 0 44px; max-width: 18em; font-size: clamp(32px, 3.6vw, 46px); line-height: 1.1; letter-spacing: -0.025em; font-weight: 700">Remote agents, without renting someone's agent cloud. <span style="color: var(--muted)">Built from parts you already trust.</span></h2>
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px">
+<article style="padding: 28px 24px; border-radius: 16px; border: 1px solid var(--line); background: var(--surface); display: flex; flex-direction: column; gap: 10px">
+<span aria-hidden="true" style="width: 34px; height: 4px; border-radius: 2px; background: #EF4F91"></span>
+<h3 style="margin: 6px 0 0; font-size: 18px">Your pick of the best providers</h3>
+<p style="margin: 0; color: var(--muted); font-size: 15px">Use one, or use many. Run Rex on boxd and your agents on Freestyle side by side, each set up once as a profile. The command and the workspace are the same on every one.</p>
+</article>
+<article style="padding: 28px 24px; border-radius: 16px; border: 1px solid var(--line); background: var(--surface); display: flex; flex-direction: column; gap: 10px">
+<span aria-hidden="true" style="width: 34px; height: 4px; border-radius: 2px; background: #FF7A59"></span>
+<h3 style="margin: 6px 0 0; font-size: 18px">Easy for your agent</h3>
+<p style="margin: 0; color: var(--muted); font-size: 15px">Your agent can hook you up. The beachside CLI is made for agents, so just ask yours for a Rex or Herdr box and it sets one up.</p>
+</article>
+<article style="padding: 28px 24px; border-radius: 16px; border: 1px solid var(--line); background: var(--surface); display: flex; flex-direction: column; gap: 10px">
+<span aria-hidden="true" style="width: 34px; height: 4px; border-radius: 2px; background: #1FB5A8"></span>
+<h3 style="margin: 6px 0 0; font-size: 18px">Works with any harness</h3>
+<p style="margin: 0; color: var(--muted); font-size: 15px">Claude Code, Codex, opencode, pi or your own loop. If it runs in a terminal, it runs in the sandbox, and Rex or Herdr shows it on your screen.</p>
+</article>
+<article style="padding: 28px 24px; border-radius: 16px; border: 1px solid var(--line); background: var(--surface); display: flex; flex-direction: column; gap: 10px">
+<span aria-hidden="true" style="width: 34px; height: 4px; border-radius: 2px; background: #8E7CF0"></span>
+<h3 style="margin: 6px 0 0; font-size: 18px">Yours, end to end</h3>
+<p style="margin: 0; color: var(--muted); font-size: 15px">No third-party agent service holds your code or keys. Reach sandboxes over your tailnet, or however you'd like to, and <code style="font-family: 'JetBrains Mono', monospace; font-size: 0.9em; color: var(--ink)">beachside rm</code> logs them out.</p>
+</article>
+</div>
+</section>
+
+<!-- Agent section -->
+<section style="background: var(--band); color: #F4EDE3">
+<div style="max-width: 1180px; margin: 0 auto; padding: 104px 24px; display: flex; flex-wrap: wrap; gap: 48px; align-items: center">
+<div style="flex: 1 1 400px; min-width: 0; display: flex; flex-direction: column; gap: 18px">
+<span style="align-self: flex-start; padding: 4px 12px; border-radius: 999px; background: #BDB2FF; color: #1b1f3b; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700">For your agent</span>
+<h2 style="margin: 0; font-size: clamp(32px, 3.6vw, 46px); line-height: 1.1; letter-spacing: -0.025em; font-weight: 700">Ask your agent for a machine. It makes one.</h2>
+<p style="margin: 0; max-width: 30em; font-size: 18px; color: #C9CCE0">Your coding agent can start a sandbox, put Herdr or Rex on it, push your checkout and hand the long job off, then clean up when it's done. You watch from Herdr's sidebar or a Rex tab, even from your phone.</p>
+<div style="display: flex; flex-direction: column; gap: 8px; padding: 18px 20px; border-radius: 14px; background: #0A0F1E; border: 1px solid rgba(255,255,255,0.08)">
+<span style="font-size: 14px; font-weight: 600; color: #F4EDE3">First, teach your agent. Two commands:</span>
+<code style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #EAF2FF; line-height: 1.9; white-space: pre-wrap"><span style="color: #FF86B7">$ </span>npm install -g @beachside/cli
+<span style="color: #FF86B7">$ </span>beachside skill setup</code>
+<span style="font-size: 13px; color: #A3A8C3">Installs the Beachside skill for Claude Code, Codex and other agents that read skills.</span>
+</div>
+<ul style="margin: 0; padding-left: 20px; color: #C9CCE0; font-size: 16px; display: flex; flex-direction: column; gap: 6px">
+<li>Stable JSON output and exit codes</li>
+<li>An optional sandbox cap so a runaway agent can't run up a bill</li>
+<li>Optional TTLs, and <code style="font-family: 'JetBrains Mono', monospace; color: #F4EDE3">rm --all</code> to sweep up</li>
+</ul>
+</div>
+<div style="flex: 1 1 480px; min-width: 0; border-radius: 16px; overflow: hidden; background: #0A0F1E; border: 1px solid rgba(255,255,255,0.08)">
+<div style="padding: 12px 18px; background: #121A33; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #8189AE">agent session · excerpt</div>
+<div style="padding: 22px; display: flex; flex-direction: column; gap: 16px; font-size: 15px">
+<p style="margin: 0; align-self: flex-end; max-width: 85%; padding: 12px 16px; border-radius: 16px 16px 4px 16px; background: #EF4F91; color: #FFFFFF">Spin up a Herdr box on Freestyle and run the integration tests there. I'm heading out.</p>
+<div style="max-width: 92%; padding: 14px 16px; border-radius: 16px 16px 16px 4px; background: #17203D; color: #EAF2FF; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere"><span style="color: #FF86B7">$ </span>beachside create --name tests --ttl 4h --with herdr --json
+<span style="color: #8189AE">&#123; "name": "tests", "provider": "freestyle", "state": "running",</span>
+<span style="color: #8189AE">  "addons": [&#123; "name": "herdr", "state": "ready", … &#125;] &#125;</span>
+<span style="color: #FF86B7">$ </span>beachside push tests
+<span style="color: #6FE6D6">/home/ubuntu/work</span></div>
+<p style="margin: 0; max-width: 85%; padding: 12px 16px; border-radius: 16px 16px 16px 4px; background: #17203D; color: #EAF2FF">Done. The tests are running in <strong>tests</strong> on Freestyle. It shows up in Herdr as beachside-tests, and it removes itself in 4 hours.</p>
+</div>
+</div>
+</div>
+</section>
+
+<!-- Comparison -->
+<section style="max-width: 1180px; margin: 0 auto; padding: 104px 24px 32px">
+<h2 style="margin: 0 0 12px; font-size: clamp(32px, 3.6vw, 46px); line-height: 1.1; letter-spacing: -0.025em; font-weight: 700">Roll your own, in one command</h2>
+<p style="margin: 0 0 36px; max-width: 36em; font-size: 18px; color: var(--muted)">Hosted agent clouds are convenient until you want your own provider, your own network rules or your code in your own account. Beachside gives you the same always-on setup, built from open parts.</p>
+<div style="overflow-x: auto; border: 1px solid var(--line); border-radius: 16px; background: var(--surface)">
+<table style="width: 100%; min-width: 640px; border-collapse: collapse; font-size: 15px">
+<thead>
+<tr style="text-align: left">
+<th scope="col" style="padding: 18px 22px; border-bottom: 1px solid var(--line); color: var(--muted); font-weight: 600; width: 24%"></th>
+<th scope="col" style="padding: 18px 22px; border-bottom: 1px solid var(--line); color: var(--muted); font-weight: 600">A hosted agent cloud</th>
+<th scope="col" style="padding: 18px 22px; border-bottom: 1px solid var(--line); background: rgba(239,79,145,0.08); color: var(--pink-ink); font-weight: 700">Beachside</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<th scope="row" style="padding: 16px 22px; border-bottom: 1px solid var(--line); text-align: left; font-weight: 600">Where agents run</th>
+<td style="padding: 16px 22px; border-bottom: 1px solid var(--line); color: var(--muted)">The service's machines</td>
+<td style="padding: 16px 22px; border-bottom: 1px solid var(--line); background: rgba(239,79,145,0.05)">Your own <a href="/docs/providers/boxd/">boxd</a> or <a href="/docs/providers/freestyle/">Freestyle</a> account, or any of the 8 other providers you like</td>
+</tr>
+<tr>
+<th scope="row" style="padding: 16px 22px; border-bottom: 1px solid var(--line); text-align: left; font-weight: 600">Who holds code and keys</th>
+<td style="padding: 16px 22px; border-bottom: 1px solid var(--line); color: var(--muted)">The service</td>
+<td style="padding: 16px 22px; border-bottom: 1px solid var(--line); background: rgba(239,79,145,0.05)">You. Keys come from your env or password manager</td>
+</tr>
+<tr>
+<th scope="row" style="padding: 16px 22px; border-bottom: 1px solid var(--line); text-align: left; font-weight: 600">How you reach it</th>
+<td style="padding: 16px 22px; border-bottom: 1px solid var(--line); color: var(--muted)">The service's app and access rules</td>
+<td style="padding: 16px 22px; border-bottom: 1px solid var(--line); background: rgba(239,79,145,0.05)">Rex or Herdr over your tailnet, or however you'd like to</td>
+</tr>
+<tr>
+<th scope="row" style="padding: 16px 22px; border-bottom: 1px solid var(--line); text-align: left; font-weight: 600">Providers</th>
+<td style="padding: 16px 22px; border-bottom: 1px solid var(--line); color: var(--muted)">The one the service picked</td>
+<td style="padding: 16px 22px; border-bottom: 1px solid var(--line); background: rgba(239,79,145,0.05)">Use one, or use many side by side</td>
+</tr>
+<tr>
+<th scope="row" style="padding: 16px 22px; text-align: left; font-weight: 600">Source code</th>
+<td style="padding: 16px 22px; color: var(--muted)">Closed</td>
+<td style="padding: 16px 22px; background: rgba(239,79,145,0.05)">Apache-2.0 on GitHub</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<!-- Open source -->
+<section style="max-width: 1180px; margin: 0 auto; padding: 72px 24px 104px">
+<div style="display: flex; flex-wrap: wrap; gap: 32px 48px; align-items: center; padding: 48px; border-radius: 24px; background: var(--sunk)">
+<div style="flex: 1 1 420px; min-width: 0; display: flex; flex-direction: column; gap: 14px">
+<span style="align-self: flex-start; padding: 4px 12px; border-radius: 999px; background: #1FB5A8; color: #1b1f3b; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700">Open source</span>
+<h2 style="margin: 0; font-size: clamp(30px, 3.2vw, 40px); line-height: 1.1; letter-spacing: -0.025em; font-weight: 700">Read every line that touches your sandbox.</h2>
+<p style="margin: 0; max-width: 34em; font-size: 17px; color: var(--muted)">The CLI, the TypeScript SDK and every provider adapter are Apache-2.0. Missing a provider? Write an adapter with <code style="font-family: 'JetBrains Mono', monospace; font-size: 0.9em; color: var(--ink)">defineAdapter</code> and everything here works on it.</p>
+</div>
+<div style="flex: 0 1 auto; display: flex; flex-wrap: wrap; gap: 12px">
+<a href="https://github.com/pandemicsyn/beachside" style="display: inline-flex; align-items: center; gap: 10px; min-height: 52px; padding: 0 24px; border-radius: 999px; background: var(--ink); color: var(--bg); font-weight: 700; text-decoration: none">
+<svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l3 6.5 7 .9-5.2 4.8 1.4 7L12 17.8 5.8 21.2l1.4-7L2 9.4l7-.9z"></path></svg>
+Star on GitHub</a>
+<a href="/docs/guides/write-an-adapter/" style="display: inline-flex; align-items: center; min-height: 52px; padding: 0 24px; border-radius: 999px; border: 1.5px solid var(--ink); color: var(--ink); font-weight: 700; text-decoration: none">Write an adapter</a>
+</div>
+</div>
+</section>
+
+<!-- Roadmap -->
+<section id="roadmap" style="max-width: 1180px; margin: 0 auto; padding: 0 24px 104px">
+<span style="display: inline-block; margin-bottom: 14px; padding: 4px 12px; border-radius: 999px; background: #EF4F91; color: #FFFFFF; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700">Roadmap</span>
+<h2 style="margin: 0 0 12px; font-size: clamp(32px, 3.6vw, 46px); line-height: 1.1; letter-spacing: -0.025em; font-weight: 700">The road to 1.0</h2>
+<p style="margin: 0 0 36px; max-width: 36em; font-size: 18px; color: var(--muted)">Sign up for beta access and help influence the roadmap.</p>
+<ol style="list-style: none; margin: 0 0 32px; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px">
+<li class="rm-card" tabindex="0" aria-label="Orca support. Orca workspaces in a sandbox. Run Orca workspaces in a beachside sandbox, on whichever provider you pick.">
+<div class="rm-inner" aria-hidden="true">
+<div class="rm-face rm-front">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: var(--pink-ink)">01</span>
+<p style="margin: 0; font-size: 17px; font-weight: 600; line-height: 1.3">Orca support</p>
+<p style="margin: 0; font-size: 14px; color: var(--muted)">Orca workspaces in a sandbox</p>
+<span class="rm-corner"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"></path><path d="M3 21v-5h5"></path></svg></span>
+</div>
+<div class="rm-face rm-back">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: #FF86B7">01 · Orca support</span>
+<p style="margin: 0; font-size: 15px; line-height: 1.5">Run Orca workspaces in a beachside sandbox, on whichever provider you pick.</p>
+</div>
+</div>
+</li>
+<li class="rm-card" tabindex="0" aria-label="Pi extension and Pi durable support. One sandbox per Pi session. Run the Pi coding agent's tools in a sandbox, one box per Pi session, and keep sessions going when you close your laptop.">
+<div class="rm-inner" aria-hidden="true">
+<div class="rm-face rm-front">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: var(--pink-ink)">02</span>
+<p style="margin: 0; font-size: 17px; font-weight: 600; line-height: 1.3">Pi extension and Pi durable support</p>
+<p style="margin: 0; font-size: 14px; color: var(--muted)">One sandbox per Pi session</p>
+<span class="rm-corner"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"></path><path d="M3 21v-5h5"></path></svg></span>
+</div>
+<div class="rm-face rm-back">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: #FF86B7">02 · Pi extension and Pi durable support</span>
+<p style="margin: 0; font-size: 15px; line-height: 1.5">Run the Pi coding agent's tools in a sandbox, one box per Pi session, and keep sessions going when you close your laptop.</p>
+</div>
+</div>
+</li>
+<li class="rm-card" tabindex="0" aria-label="Artifact handling. Get files back from your agents. Get the files your agents make out of the sandbox and back to you.">
+<div class="rm-inner" aria-hidden="true">
+<div class="rm-face rm-front">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: var(--pink-ink)">03</span>
+<p style="margin: 0; font-size: 17px; font-weight: 600; line-height: 1.3">Artifact handling</p>
+<p style="margin: 0; font-size: 14px; color: var(--muted)">Get files back from your agents</p>
+<span class="rm-corner"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"></path><path d="M3 21v-5h5"></path></svg></span>
+</div>
+<div class="rm-face rm-back">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: #FF86B7">03 · Artifact handling</span>
+<p style="margin: 0; font-size: 15px; line-height: 1.5">Get the files your agents make out of the sandbox and back to you.</p>
+</div>
+</div>
+</li>
+<li class="rm-card" tabindex="0" aria-label="Credential brokers and a secrets proxy. Keep real keys out of the sandbox. Keep real API keys out of the sandbox. The proxy adds them to outbound requests, only for the hosts you allow.">
+<div class="rm-inner" aria-hidden="true">
+<div class="rm-face rm-front">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: var(--pink-ink)">04</span>
+<p style="margin: 0; font-size: 17px; font-weight: 600; line-height: 1.3">Credential brokers and a secrets proxy</p>
+<p style="margin: 0; font-size: 14px; color: var(--muted)">Keep real keys out of the sandbox</p>
+<span class="rm-corner"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"></path><path d="M3 21v-5h5"></path></svg></span>
+</div>
+<div class="rm-face rm-back">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: #FF86B7">04 · Credential brokers and a secrets proxy</span>
+<p style="margin: 0; font-size: 15px; line-height: 1.5">Keep real API keys out of the sandbox. The proxy adds them to outbound requests, only for the hosts you allow.</p>
+</div>
+</div>
+</li>
+<li class="rm-card" tabindex="0" aria-label="Protected, shareable URLs. Behind a reverse proxy. Share an app running in a sandbox behind a login or token, instead of an open public link.">
+<div class="rm-inner" aria-hidden="true">
+<div class="rm-face rm-front">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: var(--pink-ink)">05</span>
+<p style="margin: 0; font-size: 17px; font-weight: 600; line-height: 1.3">Protected, shareable URLs</p>
+<p style="margin: 0; font-size: 14px; color: var(--muted)">Behind a reverse proxy</p>
+<span class="rm-corner"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"></path><path d="M3 21v-5h5"></path></svg></span>
+</div>
+<div class="rm-face rm-back">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: #FF86B7">05 · Protected, shareable URLs</span>
+<p style="margin: 0; font-size: 15px; line-height: 1.5">Share an app running in a sandbox behind a login or token, instead of an open public link.</p>
+</div>
+</div>
+</li>
+<li class="rm-card" tabindex="0" aria-label="Config and env syncing. The same setup in every sandbox. Keep your dotfiles, agent config and env vars the same across all your sandboxes.">
+<div class="rm-inner" aria-hidden="true">
+<div class="rm-face rm-front">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: var(--pink-ink)">06</span>
+<p style="margin: 0; font-size: 17px; font-weight: 600; line-height: 1.3">Config and env syncing</p>
+<p style="margin: 0; font-size: 14px; color: var(--muted)">The same setup in every sandbox</p>
+<span class="rm-corner"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"></path><path d="M3 21v-5h5"></path></svg></span>
+</div>
+<div class="rm-face rm-back">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: #FF86B7">06 · Config and env syncing</span>
+<p style="margin: 0; font-size: 15px; line-height: 1.5">Keep your dotfiles, agent config and env vars the same across all your sandboxes.</p>
+</div>
+</div>
+</li>
+<li class="rm-card" tabindex="0" aria-label="Workspace and config backups. Save and restore your workspace. Back up a sandbox's workspace and config, and restore them later.">
+<div class="rm-inner" aria-hidden="true">
+<div class="rm-face rm-front">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: var(--pink-ink)">07</span>
+<p style="margin: 0; font-size: 17px; font-weight: 600; line-height: 1.3">Workspace and config backups</p>
+<p style="margin: 0; font-size: 14px; color: var(--muted)">Save and restore your workspace</p>
+<span class="rm-corner"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"></path><path d="M3 21v-5h5"></path></svg></span>
+</div>
+<div class="rm-face rm-back">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: #FF86B7">07 · Workspace and config backups</span>
+<p style="margin: 0; font-size: 15px; line-height: 1.5">Back up a sandbox's workspace and config, and restore them later.</p>
+</div>
+</div>
+</li>
+<li class="rm-card" tabindex="0" aria-label="Agent inboxes and message boards. For swarms. Let the agents in a swarm send each other messages and post to shared boards.">
+<div class="rm-inner" aria-hidden="true">
+<div class="rm-face rm-front">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: var(--pink-ink)">08</span>
+<p style="margin: 0; font-size: 17px; font-weight: 600; line-height: 1.3">Agent inboxes and message boards</p>
+<p style="margin: 0; font-size: 14px; color: var(--muted)">For swarms</p>
+<span class="rm-corner"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"></path><path d="M3 21v-5h5"></path></svg></span>
+</div>
+<div class="rm-face rm-back">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: #FF86B7">08 · Agent inboxes and message boards</span>
+<p style="margin: 0; font-size: 15px; line-height: 1.5">Let the agents in a swarm send each other messages and post to shared boards.</p>
+</div>
+</div>
+</li>
+<li class="rm-card" tabindex="0" aria-label="Persistent memory service. Memory that outlives a session. Memory your agents keep across sandboxes and sessions.">
+<div class="rm-inner" aria-hidden="true">
+<div class="rm-face rm-front">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: var(--pink-ink)">09</span>
+<p style="margin: 0; font-size: 17px; font-weight: 600; line-height: 1.3">Persistent memory service</p>
+<p style="margin: 0; font-size: 14px; color: var(--muted)">Memory that outlives a session</p>
+<span class="rm-corner"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"></path><path d="M3 21v-5h5"></path></svg></span>
+</div>
+<div class="rm-face rm-back">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: #FF86B7">09 · Persistent memory service</span>
+<p style="margin: 0; font-size: 15px; line-height: 1.5">Memory your agents keep across sandboxes and sessions.</p>
+</div>
+</div>
+</li>
+<li class="rm-card" tabindex="0" aria-label="Webhook trigger gateway. Start agents from events. Start an agent in a sandbox when a webhook fires, like a new GitHub issue or pull request.">
+<div class="rm-inner" aria-hidden="true">
+<div class="rm-face rm-front">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: var(--pink-ink)">10</span>
+<p style="margin: 0; font-size: 17px; font-weight: 600; line-height: 1.3">Webhook trigger gateway</p>
+<p style="margin: 0; font-size: 14px; color: var(--muted)">Start agents from events</p>
+<span class="rm-corner"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"></path><path d="M3 21v-5h5"></path></svg></span>
+</div>
+<div class="rm-face rm-back">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: #FF86B7">10 · Webhook trigger gateway</span>
+<p style="margin: 0; font-size: 15px; line-height: 1.5">Start an agent in a sandbox when a webhook fires, like a new GitHub issue or pull request.</p>
+</div>
+</div>
+</li>
+<li class="rm-card" tabindex="0" aria-label="Lifecycle and cost guardrails. Never spend more than you want. Caps, TTLs and spend tracking across your providers, so a runaway agent can't run up a bill.">
+<div class="rm-inner" aria-hidden="true">
+<div class="rm-face rm-front">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: var(--pink-ink)">11</span>
+<p style="margin: 0; font-size: 17px; font-weight: 600; line-height: 1.3">Lifecycle and cost guardrails</p>
+<p style="margin: 0; font-size: 14px; color: var(--muted)">Never spend more than you want</p>
+<span class="rm-corner"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"></path><path d="M3 21v-5h5"></path></svg></span>
+</div>
+<div class="rm-face rm-back">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: #FF86B7">11 · Lifecycle and cost guardrails</span>
+<p style="margin: 0; font-size: 15px; line-height: 1.5">Caps, TTLs and spend tracking across your providers, so a runaway agent can't run up a bill.</p>
+</div>
+</div>
+</li>
+<li class="rm-card" tabindex="0" aria-label="More providers. DigitalOcean MicroVM, Fly Sprites, Upstash Box, and more! New adapters for more sandbox providers, with the same CLI and SDK on every one.">
+<div class="rm-inner" aria-hidden="true">
+<div class="rm-face rm-front">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: var(--pink-ink)">12</span>
+<p style="margin: 0; font-size: 17px; font-weight: 600; line-height: 1.3">More providers</p>
+<p style="margin: 0; font-size: 14px; color: var(--muted)">DigitalOcean MicroVM, Fly Sprites, Upstash Box, and more!</p>
+<span class="rm-corner"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 15.5-6.2L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-15.5 6.2L3 16"></path><path d="M3 21v-5h5"></path></svg></span>
+</div>
+<div class="rm-face rm-back">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: #FF86B7">12 · More providers</span>
+<p style="margin: 0; font-size: 15px; line-height: 1.5">New adapters for more sandbox providers, with the same CLI and SDK on every one.</p>
+</div>
+</div>
+</li>
+</ol>
+<a href="#join" style="display: inline-flex; align-items: center; min-height: 52px; padding: 0 24px; border-radius: 999px; background: #EF4F91; color: #FFFFFF; font-weight: 700; text-decoration: none; box-shadow: 0 5px 0 var(--pink-ink)">Get beta access</a>
+</section>
+
+<!-- Final capture -->
+<section id="join" style="background: var(--band); color: #F4EDE3">
+<div style="max-width: 760px; margin: 0 auto; padding: 104px 24px; display: flex; flex-direction: column; align-items: center; gap: 22px; text-align: center">
+<h2 style="margin: 0; font-size: clamp(34px, 4vw, 52px); line-height: 1.08; letter-spacing: -0.03em; font-weight: 700">Give your agents a machine that never sleeps.</h2>
+<p style="margin: 0; max-width: 32em; font-size: 18px; color: #C9CCE0">Sign up to secure your place in the Beachside 1.0 beta.</p>
+<form class="loops-form" data-source="footer" style="width: 100%; max-width: 540px">
+<div class="loops-fields" style="display: flex; flex-wrap: wrap; gap: 10px">
+<label for="email-footer" class="visually-hidden">Email address</label>
+<input id="email-footer" name="email" type="email" required autocomplete="email" placeholder="Enter your email" style="flex: 1 1 240px; min-width: 0; height: 54px; padding: 0 22px; border: 1.5px solid rgba(255,255,255,0.25); border-radius: 999px; background: #0A0F1E; color: #EAF2FF; font: inherit; font-size: 16px" />
+<button type="submit" style="height: 54px; padding: 0 28px; border: 0; border-radius: 999px; background: #EF4F91; color: #FFFFFF; font: inherit; font-size: 16px; font-weight: 700; box-shadow: 0 5px 0 var(--pink-ink); cursor: pointer">Save my spot</button>
+</div>
+<p class="loops-status" role="status" hidden style="margin: 0; padding: 16px 20px; border-radius: 16px; background: rgba(111,230,214,0.14); color: #6FE6D6; font-weight: 600"></p>
+</form>
+<p style="margin: 0; font-size: 13px; color: #A3A8C3">We'll let you know when the 1.0 beta is available, and about any open source releases along the way. <a href="/docs/privacy/" style="color: #FF86B7">Privacy</a></p>
+</div>
+</section>
+
+<footer style="max-width: 1180px; margin: 0 auto; padding: 28px 24px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--muted)">
+<span>Apache-2.0 · <a href="/" style="color: inherit">beachside.run</a></span>
+<span>Rex, Herdr, boxd and Freestyle are their makers' products.</span>
+</footer>
+</div>
+<script>
+  // Loops' public form endpoint: no key, urlencoded body, { success, message } JSON back, 429 when rate limited.
+  const loopsForm = "https://app.loops.so/api/newsletter-form/cmwgmpbgf15wy0jwfc9kqwh78";
+
+  const query = new URLSearchParams(location.search);
+
+  // Tag each signup with where it came from, e.g. "beachside.run/beta reddit rex".
+  const source = ["beachside.run/beta", query.get("utm_source"), query.get("utm_campaign")]
+    .filter(Boolean)
+    .join(" ");
+
+  type Reply = { saved: boolean; message: string };
+
+  // Parse Loops' reply at the boundary: { success: true } or { success: false, message }.
+  async function parseReply(response: Response): Promise<Reply> {
+    const body: { success?: boolean; message?: string } = await response.json().catch(() => ({}));
+
+    if (response.ok && body.success === true) return { saved: true, message: "" };
+
+    if (response.status === 429)
+      return { saved: false, message: "Too many signups from your network just now. Try again in a minute." };
+
+    return { saved: false, message: body.message || "Something went wrong. Please try again." };
+  }
+
+  for (const form of document.querySelectorAll<HTMLFormElement>(".loops-form")) {
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+
+      const input = form.querySelector<HTMLInputElement>("input[name=email]");
+
+      const button = form.querySelector<HTMLButtonElement>("button[type=submit]");
+
+      const fields = form.querySelector<HTMLElement>(".loops-fields");
+
+      const status = form.querySelector<HTMLElement>(".loops-status");
+
+      if (!input || !button || !fields || !status) return;
+
+      const email = input.value.trim();
+
+      button.disabled = true;
+      status.hidden = true;
+
+      try {
+        const response = await fetch(loopsForm, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ email, userGroup: "1.0 beta", source }).toString(),
+        });
+
+        const reply = await parseReply(response);
+
+        if (reply.saved) {
+          fields.hidden = true;
+          status.textContent = `Your spot in the 1.0 beta is saved for ${email}.`;
+          status.dataset.state = "done";
+        } else {
+          status.textContent = reply.message;
+          status.dataset.state = "error";
+        }
+      } catch {
+        status.textContent = "Something went wrong. Please try again.";
+        status.dataset.state = "error";
+      }
+
+      status.hidden = false;
+      button.disabled = false;
+    });
+  }
+
+  // Terminal tabs: pick Rex or Herdr and boxd or Freestyle; one rendered session shows at a time.
+  const picked = { server: "rex", provider: "boxd" };
+
+  const labels = new Map([
+    ["boxd", "boxd"],
+    ["freestyle", "Freestyle"],
+  ]);
+
+  function showSession() {
+    for (const pre of document.querySelectorAll<HTMLElement>(".term-session"))
+      pre.hidden = pre.dataset.server !== picked.server || pre.dataset.provider !== picked.provider;
+
+    for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-pick]")) {
+      const key = tab.dataset.pick === "server" ? "server" : "provider";
+
+      tab.setAttribute("aria-pressed", String(picked[key] === tab.dataset.value));
+    }
+
+    const via = document.querySelector(".term-provider");
+
+    if (via) via.textContent = labels.get(picked.provider) ?? picked.provider;
+  }
+
+  for (const tab of document.querySelectorAll<HTMLButtonElement>("[data-pick]")) {
+    tab.addEventListener("click", () => {
+      const key = tab.dataset.pick === "server" ? "server" : "provider";
+
+      picked[key] = tab.dataset.value ?? picked[key];
+      showSession();
+    });
+  }
+
+  showSession();
+</script>
+</body>
+</html>
+<style is:global>
+:root[data-theme="light"] .beta, .beta{--bg:#FBF4EA;--surface:#FFFBF5;--sunk:#F3E8D8;--ink:#1B1F3B;--muted:#5D6180;--line:#E6D8C4;--pink-ink:#B81E5E;--aqua-ink:#087169;--band:#1B1F3B;--palm:#1B1F3B}
+:root[data-theme="dark"] .beta{--bg:#0F1528;--surface:#151C33;--sunk:#0B1020;--ink:#F4EDE3;--muted:#A3A8C3;--line:#26304F;--pink-ink:#FF7BB0;--aqua-ink:#4FE0CF;--band:#151C33;--palm:#3B2F6E}
+.beta a{color:var(--pink-ink)}.beta a:hover{color:var(--aqua-ink)}
+.beta input::placeholder{color:#8A8070}
+.rm-card { height: 150px; perspective: 1000px; cursor: pointer; border-radius: 14px; outline-offset: 3px; }
+.rm-inner { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transition: transform .5s cubic-bezier(.2,.7,.2,1); }
+.rm-card:hover .rm-inner, .rm-card:focus .rm-inner { transform: rotateY(180deg); }
+.rm-face { position: absolute; inset: 0; box-sizing: border-box; display: flex; flex-direction: column; gap: 6px; padding: 18px 20px; border-radius: 14px; -webkit-backface-visibility: hidden; backface-visibility: hidden; }
+.rm-front { border: 1px solid var(--line); background: var(--surface); }
+.rm-back { justify-content: center; gap: 10px; transform: rotateY(180deg); background: #1b1f3b; color: #F4EDE3; border: 1px solid #EF4F91; }
+.rm-corner { position: absolute; top: 16px; right: 16px; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); transition: color .2s, border-color .2s; }
+.rm-card:hover .rm-corner { color: var(--pink-ink); border-color: var(--pink-ink); }
+@media (prefers-reduced-motion: reduce) { .rm-inner { transition: none; } .rm-card:hover .rm-inner, .rm-card:focus .rm-inner { transform: none; } .rm-back { transform: none; opacity: 0; transition: opacity .2s; } .rm-card:hover .rm-back, .rm-card:focus .rm-back { opacity: 1; } }
+.chip-link:hover, .chip-link:focus-visible { text-decoration: underline !important; text-underline-offset: 3px; }
+body { margin: 0; background: var(--bg); }
+.beta-header { max-width: 1180px; margin: 0 auto; padding: 0 24px; height: 68px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.beta-nav { display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 500; }
+.beta .beta-nav a { padding: 8px 12px; color: var(--muted); text-decoration: none; }
+.beta .beta-nav a.beta-nav-cta { padding: 10px 18px; border-radius: 999px; background: var(--ink); color: var(--bg); font-weight: 600; }
+.term-tabs { display: flex; gap: 4px; padding: 3px; border-radius: 999px; background: rgba(255,255,255,0.07); }
+.term-tabs button { min-height: 30px; padding: 2px 14px; border: 0; border-radius: 999px; background: transparent; color: #8189AE; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; cursor: pointer; }
+.term-tabs button[aria-pressed="true"] { background: #6FE6D6; color: #17203D; }
+.term-session[hidden] { display: none; }
+.loops-status[data-state="error"] { background: rgba(239,79,145,0.14) !important; color: var(--pink-ink) !important; }
+#join .loops-status[data-state="error"] { color: #FF86B7 !important; }
+.loops-fields[hidden] { display: none !important; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+button:disabled { opacity: 0.6; cursor: progress !important; }
+@media (max-width: 640px) { .wide-only { display: none; } }
+</style>
