@@ -206,6 +206,7 @@ It installs the server, puts it on the user's tailnet and prints how to connect 
 - If setup fails after the sandbox exists, `create` exits 8 and keeps the sandbox. Read the error, then fix it or `beachside rm` it.
 - The machine's name in Herdr is the one `hc machine add` prints. It is usually the sandbox's, but herdr-core may pick another, so use the printed name with `hc run --on`.
 - Remove the sandbox with `beachside rm` when the user is done. If it was added to Herdr, `rm` (and `gc`) print the exact `hc machine rm <name>` to run; never guess the name.
+- A matching fingerprint shows the address reaches a sandbox's keys, not which sandbox: default images can ship one host key for every sandbox made from them.
 - No fingerprint and no `knownHosts` means the sandbox has no `ssh-keygen`. Tell the user the host key could not be read, rather than skipping the check.
 
 ## Discover more
