@@ -12,7 +12,11 @@
   },
   "dependencies": {
     "beachside": "workspace:*",
+    "@beachside/boxd": "workspace:*",
     "@beachside/daytona": "workspace:*",
-    "@beachside/e2b": "workspace:*"
+    "@beachside/e2b": "workspace:*",
+    "@beachside/freestyle": "workspace:*",
+    "@beachside/runloop": "workspace:*",
+    "@beachside/vercel": "workspace:*"
   }
 }

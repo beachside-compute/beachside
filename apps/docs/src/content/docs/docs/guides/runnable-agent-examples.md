@@ -56,9 +56,11 @@ bun run --cwd examples box down
 ```
 
 - `up` uploads your tracked and unignored files plus `.git` to the same path in the sandbox, starts `opencode2 serve` with a random password and waits until it is healthy.
-- `attach` connects your local `opencode2 --server` through a localhost proxy that adds the provider's preview headers, so it works with Daytona's protected previews as well as E2B's public ones.
+- `attach` connects your local `opencode2 --server` through a localhost proxy that adds the provider's preview headers, so it works with Daytona's and Runloop's protected previews as well as public ones.
 - `pull` copies the project back over your checkout, `.git` included, so the agent's commits show up in your `git log`. It refuses while your checkout has uncommitted changes unless you pass `--force`.
 - `down` destroys the sandbox.
+
+`box` runs on Daytona, E2B, boxd, Freestyle, Vercel and Runloop: pass the name to `--provider` and set that provider's credentials in `examples/.env.local`.
 
 Set `GH_TOKEN` in `examples/.env.local` to let the agent push to GitHub from the sandbox; use a fine-grained token limited to the repository, since the agent can read it. Add `gh` to your image if the agent should open pull requests. The [examples README](https://github.com/pandemicsyn/beachside/blob/main/examples/README.md#opencode-2-in-a-box) lists guest requirements and limits.
 

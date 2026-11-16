@@ -17,6 +17,7 @@ import {
   uploadProject,
   waitHealthy,
 } from "./main";
+import { connectBox, isProvider, PROVIDERS } from "./providers";
 
 const signal = new AbortController().signal;
 
@@ -182,6 +183,7 @@ test("git setup passes the local identity as arguments, never in the script", as
     },
     "Ada; rm -rf /",
     "ada@example.com",
+    { GH_TOKEN: "t" },
     signal,
   );
 
@@ -189,6 +191,7 @@ test("git setup passes the local identity as arguments, never in the script", as
   expect(args.slice(-2)).toEqual(["Ada; rm -rf /", "ada@example.com"]);
   expect(args[2]).not.toContain("Ada");
   expect(args[2]).toContain("credential.https://github.com.helper");
+  expect(calls[0]).toMatchObject({ env: { GH_TOKEN: "t" } });
 });
 
 test("the server starts detached in the project with the password in its environment", async () => {
@@ -330,5 +333,20 @@ test("the preview proxy adds preview headers to HTTP and WebSocket traffic", asy
   } finally {
     await proxy.stop(true);
     await upstream.stop(true);
+  }
+});
+
+test("every listed provider has setup, and missing credentials fail before connecting", async () => {
+  expect(PROVIDERS).toEqual(["daytona", "e2b", "boxd", "freestyle", "vercel", "runloop"]);
+  expect(isProvider("boxd")).toBe(true);
+  expect(isProvider("modal")).toBe(false);
+
+  const saved = process.env.FREESTYLE_API_KEY;
+  delete process.env.FREESTYLE_API_KEY;
+
+  try {
+    expect(() => connectBox("freestyle", 3600)).toThrow("Set FREESTYLE_API_KEY");
+  } finally {
+    if (saved !== undefined) process.env.FREESTYLE_API_KEY = saved;
   }
 });

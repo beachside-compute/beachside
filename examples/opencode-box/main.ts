@@ -3,13 +3,12 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
-import { Beachside, type SandboxHandle, type SandboxReference } from "beachside";
+import { type SandboxHandle, type SandboxReference } from "beachside";
 import { modelKey } from "../shared/opencode";
-import { providerAdapter, reportFailure } from "../shared/provider";
+import { reportFailure } from "../shared/provider";
+import { connectBox, isProvider, PORT, PROVIDERS, type Provider } from "./providers";
 
 export const OPENCODE2_VERSION = "2.2.3";
-
-export const PORT = 4096;
 
 // Installed outside the project so `pull` never copies it back.
 export const OPENCODE2 = "$HOME/.beachside-opencode-box/opencode2";
@@ -17,8 +16,6 @@ export const OPENCODE2 = "$HOME/.beachside-opencode-box/opencode2";
 const LOG = "$HOME/.beachside-opencode-box/serve.log";
 
 const ARCHIVE = "/tmp/beachside-opencode-box.tar.gz";
-
-type Provider = "daytona" | "e2b";
 
 export interface BoxRecord {
   name: string;
@@ -134,13 +131,14 @@ rm -f "$2"`,
 }
 
 /**
- * Commit as the local git identity. With GH_TOKEN in the sandbox environment, git pushes to
+ * Commit as the local git identity. With GH_TOKEN in the box environment, git pushes to
  * GitHub over HTTPS with that token, and `gh` (when the image has it) uses it too.
  */
 export async function configureGit(
   box: BoxCommands,
   name: string,
   email: string,
+  env: Record<string, string>,
   signal: AbortSignal,
 ) {
   await box.exec(
@@ -157,6 +155,7 @@ fi`,
         name,
         email,
       ),
+      env,
       deadlineSeconds: 30,
       maxOutputBytes: 16_384,
     },
@@ -355,8 +354,9 @@ async function loadRecord(name: string): Promise<BoxRecord> {
   return JSON.parse(await readFile(path, "utf8")) as BoxRecord;
 }
 
-// Create-time environment: every command in the box, the agent's included, can read it.
-function boxEnv() {
+// Passed to the server, so every command the agent runs inherits it and can read it. It goes on
+// commands rather than create-time env because boxd has none.
+export function boxEnv() {
   const entries: [string, string][] = [];
   const key = modelKey();
   const token = process.env.GH_TOKEN?.trim();
@@ -383,14 +383,14 @@ function flag(args: string[], name: string) {
 }
 
 const USAGE = `Usage:
-  box up --provider daytona|e2b --project <dir> [--name <name>] [--hours <n>]
+  box up --provider ${PROVIDERS.join("|")} --project <dir> [--name <name>] [--hours <n>]
   box attach [--name <name>]
   box pull [--name <name>] [--force]
   box down [--name <name>]`;
 
 async function connect(record: BoxRecord) {
   // Reopen with the setup the box was created with.
-  const client = await Beachside.connect(providerAdapter(record.provider, record.lifetimeSeconds));
+  const client = await connectBox(record.provider, record.lifetimeSeconds);
 
   return { client, box: await client.sandboxes.get(record.reference) };
 }
@@ -399,7 +399,7 @@ async function up(args: string[], name: string, signal: AbortSignal) {
   const provider = flag(args, "--provider");
   const project = flag(args, "--project");
 
-  if (provider !== "daytona" && provider !== "e2b") throw new Error(USAGE);
+  if (!isProvider(provider)) throw new Error(USAGE);
 
   if (!project) throw new Error(USAGE);
 
@@ -414,11 +414,12 @@ async function up(args: string[], name: string, signal: AbortSignal) {
   const files = await projectFiles(root);
   const password = randomBytes(24).toString("base64url");
   const lifetimeSeconds = Math.ceil(hours * 3600);
-  const client = await Beachside.connect(providerAdapter(provider, lifetimeSeconds));
+  const client = await connectBox(provider, lifetimeSeconds);
 
   try {
     const box = await client.sandboxes.create(
-      { env, labels: { "beachside-example": "opencode-box", "opencode-box": name } },
+      // Vercel rejects label keys that start with "beachside".
+      { labels: { example: "opencode-box", "opencode-box": name } },
       { signal },
     );
 
@@ -436,10 +437,11 @@ async function up(args: string[], name: string, signal: AbortSignal) {
         box,
         (await output(["git", "config", "user.name"], root).catch(() => "")).trim(),
         (await output(["git", "config", "user.email"], root).catch(() => "")).trim(),
+        env,
         signal,
       );
 
-      await startServer(box, root, serverEnv(password), signal);
+      await startServer(box, root, { ...env, ...serverEnv(password) }, signal);
       const preview = await box.preview(PORT, { signal });
       const headers = preview.access === "protected" ? preview.headers : {};
       await waitHealthy(preview.url, headers, password, signal);

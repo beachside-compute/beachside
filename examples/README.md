@@ -1,6 +1,6 @@
 # Run OpenCode with Beachside
 
-Three small TypeScript applications run OpenCode in a Daytona or E2B sandbox:
+Three small TypeScript applications run OpenCode in a sandbox. `hello` and `edit` use Daytona or E2B; `box` also runs on boxd, Freestyle, Vercel and Runloop:
 
 - `hello` asks **“What is 2 + 2?”** and prints captured stdout/stderr. It does not create an answer file.
 - `edit` uploads [message.txt](agent-edit-file/message.txt), asks OpenCode to replace `NAME` with `Beachside`, then reads and displays the changed remote file. The local fixture stays unchanged.
@@ -94,17 +94,32 @@ bun run --cwd examples box pull
 bun run --cwd examples box down
 ```
 
-`--project` takes any directory in a git checkout; relative paths resolve from `examples/`, so prefer an absolute path. Pass `--name <name>` to run several boxes, and `--hours <n>` to `up` for a lifetime other than one hour (24 at most).
+`--project` takes any directory in a git checkout; relative paths resolve from `examples/`, so prefer an absolute path. `--provider` is `daytona`, `e2b`, `boxd`, `freestyle`, `vercel` or `runloop`. Pass `--name <name>` to run several boxes, and `--hours <n>` to `up` for a lifetime other than one hour (24 at most).
 
 **Up** creates the sandbox and downloads **OpenCode `2.2.3`** for Linux straight from the npm registry tarball, checking its pinned SHA-256 digest (no Node or npm in the guest). It uploads your project's tracked files, untracked files that are not ignored, and `.git` to the same absolute path in the sandbox, so the local client and the server agree on the directory. It copies your git `user.name` and `user.email`, starts `opencode2 serve` on port 4096 with a random password, and waits until its API answers with that password through the provider's preview URL. The sandbox reference and password are saved under `~/.local/state/beachside-opencode-box/`, readable only by you.
 
-**Attach** reopens the sandbox and runs your local `opencode2 --server` against a localhost proxy. The proxy adds the provider's preview headers (Daytona's preview token), which the OpenCode client cannot send itself, and refuses redirects so those headers cannot leak. Install the client with `npm install -g @opencode/cli`.
+**Attach** reopens the sandbox and runs your local `opencode2 --server` against a localhost proxy. The proxy adds the provider's preview headers (Daytona's and Runloop's preview tokens), which the OpenCode client cannot send itself, and refuses redirects so those headers cannot leak. Install the client with `npm install -g @opencode/cli`.
 
 **Pull** copies the project back over your checkout, `.git` included, so commits the agent made appear in your local `git log`. Files the agent deleted stay on your side. It refuses to run while your checkout has uncommitted changes; pass `--force` to overwrite them anyway. **Down** destroys the sandbox and forgets it.
 
 ### Git and GitHub
 
-Set `GH_TOKEN` in `examples/.env.local` to let the agent fetch, rebase and push to GitHub from the sandbox. `up` passes it as sandbox environment and configures git to use it for `https://github.com`. Use a fine-grained token limited to the repository: every command in the sandbox, the agent's included, can read it. `gh pr create` and other `gh` commands also need `gh` in the image (an E2B template or Daytona snapshot with it installed); without it, plain `git push` still works.
+Set `GH_TOKEN` in `examples/.env.local` to let the agent fetch, rebase and push to GitHub from the sandbox. `up` passes it to the OpenCode server, so the agent's commands inherit it, and configures git to use it for `https://github.com`. Use a fine-grained token limited to the repository: every command in the sandbox, the agent's included, can read it. `gh pr create` and other `gh` commands also need `gh` in the image (for example an E2B template or Daytona snapshot with it installed); without it, plain `git push` still works.
+
+### Providers
+
+Each provider needs its credentials in `examples/.env.local`. Every box gets open internet egress (OpenCode's download and your model service) and a preview route to port 4096.
+
+| Provider | Variables | Notes |
+| --- | --- | --- |
+| `daytona` | `DAYTONA_API_KEY`, `DAYTONA_TARGET`, `DAYTONA_SNAPSHOT` | Protected previews; the proxy sends the token. Egress follows `daytona-default`, which must allow `registry.npmjs.org` and your model service. |
+| `e2b` | `E2B_API_KEY`, optional `E2B_TEMPLATE_ID` | Public previews. |
+| `boxd` | `BOXD_API_KEY`, `BOXD_ORG`, optional `BOXD_REGION` | Routes port 4096 publicly. |
+| `freestyle` | `FREESTYLE_API_KEY` | Public `style.dev` preview on port 4096. |
+| `vercel` | `VERCEL_TOKEN`, `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID` | Publishes port 4096 on the universal image. |
+| `runloop` | `RUNLOOP_API_KEY` | Protected previews; the proxy sends the token. |
+
+On public previews anyone with the URL reaches the server, so the random server password is the only gate for its API. Modal and Boat are missing because their adapters have no previews.
 
 ### Models
 
@@ -112,9 +127,9 @@ The server uses `OPENCODE_MODEL` when set, otherwise OpenCode's default. A keyed
 
 ### Requirements and limits
 
-The guest needs Linux on x64 or arm64 with `curl`, `sha256sum`, GNU `tar`, `git`, `setsid` and `/bin/sh`, outbound access to `registry.npmjs.org` and your model service, and `sudo` when the project path does not exist and the sandbox user cannot create it. The host needs `git` and `tar`. The box keeps running until `down` or its lifetime ends, and is billed meanwhile; sandboxes carry the labels `beachside-example=opencode-box` and `opencode-box=<name>`, so `beachside gc --label beachside-example=opencode-box` finds strays.
+The guest needs Linux on x64 or arm64 with `curl`, `sha256sum`, GNU `tar`, `git`, `setsid` and `/bin/sh`, outbound access to `registry.npmjs.org` and your model service, and `sudo` when the project path does not exist and the sandbox user cannot create it. The host needs `git` and `tar`. The box keeps running until `down` or its lifetime ends, and is billed meanwhile; sandboxes carry the labels `example=opencode-box` and `opencode-box=<name>`, so `beachside gc --label example=opencode-box` finds strays.
 
-`up`, `pull` and `down` passed live on E2B (`base` template) on November 8, 2026: the server kept running after `up`, its API answered with the password through the preview proxy, and `pull` brought a commit made in the box back to the checkout. Not yet run live: an agent edit with a keyed model, the interactive `attach` client, and Daytona.
+`up`, `pull` and `down` passed live on E2B (`base` template) on November 8, 2026: the server kept running after `up`, its API answered with the password through the preview proxy, and `pull` brought a commit made in the box back to the checkout. Not yet run live: an agent edit with a keyed model, the interactive `attach` client, and the other providers.
 
 For offline checks after package builds:
 
