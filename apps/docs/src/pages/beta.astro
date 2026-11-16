@@ -3,6 +3,7 @@ import Logo from "../components/Logo.astro";
 import ThemeToggle from "../components/ThemeToggle.astro";
 import "../styles/tokens.css";
 import AnalyticsConsent from "../components/AnalyticsConsent.astro";
+import MadeIn from "../components/MadeIn.astro";
 
 // Lead-capture landing page for the 1.0 beta. Both signup forms post to /api/beta-signup (apps/docs/worker), which
 // saves the contact in Resend. Ad links can tag the signup with utm_campaign / utm_source.
@@ -128,14 +129,14 @@ const year = new Date().getFullYear();
 <p style="margin: 0; max-width: 32em; font-size: 19px; color: var(--muted)">One command, from you or your agent, launches a <a href="https://www.superlogical.com/rex/" style="color: var(--ink)">Rex</a> or <a href="https://herdr.dev" style="color: var(--ink)">Herdr</a> workspace in a sandbox on providers like boxd or Freestyle and joins it to your tailnet. It keeps working when your laptop sleeps. No hosted agent cloud in the middle: it's your account and your keys, powered by open source code.</p>
 
 <form class="signup-form" data-source="hero" style="display: flex; flex-direction: column; gap: 10px; max-width: 520px">
-<label for="email-hero" style="font-size: 14px; font-weight: 600">Sign up to secure your place in the Beachside 1.0 beta</label>
+<label for="email-hero" style="font-size: 14px; font-weight: 600">Get a spot in the Beachside beta.</label>
 <input class="hp-field" type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" />
 <div class="signup-fields" style="display: flex; flex-wrap: wrap; gap: 10px">
 <input id="email-hero" name="email" type="email" required autocomplete="email" placeholder="Enter your email" style="flex: 1 1 240px; min-width: 0; height: 52px; padding: 0 20px; border: 1.5px solid var(--ink); border-radius: 999px; background: var(--surface); color: var(--ink); font: inherit; font-size: 16px" />
 <button type="submit" style="height: 52px; padding: 0 26px; border: 0; border-radius: 999px; background: #EF4F91; color: #FFFFFF; font: inherit; font-size: 16px; font-weight: 700; box-shadow: 0 5px 0 var(--pink-ink); cursor: pointer">Save my spot</button>
 </div>
 <p class="signup-status" role="status" hidden style="margin: 0; padding: 14px 20px; border-radius: 16px; background: rgba(31,181,168,0.14); color: var(--aqua-ink); font-weight: 600"></p>
-<span style="font-size: 13px; color: var(--muted)">We'll let you know when the 1.0 beta is available, and about any open source releases along the way.</span>
+<span style="font-size: 13px; color: var(--muted)">We'll send you an invite when it's ready, and keep you in the loop on major preview releases along the way.</span>
 </form>
 
 <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px; font-size: 14px; color: var(--muted)">
@@ -209,12 +210,12 @@ const year = new Date().getFullYear();
 
 <!-- Features -->
 <section style="max-width: 1180px; margin: 0 auto; padding: 104px 24px 96px">
-<h2 style="margin: 0 0 44px; max-width: 18em; font-size: clamp(32px, 3.6vw, 46px); line-height: 1.1; letter-spacing: -0.025em; font-weight: 700">Remote agents, without renting someone's agent cloud. <span style="color: var(--muted)">Built on top of <em>your</em> stack.</span></h2>
+<h2 style="margin: 0 0 44px; max-width: 18em; font-size: clamp(32px, 3.6vw, 46px); line-height: 1.1; letter-spacing: -0.025em; font-weight: 700">Remote agents. <span style="color: var(--muted)">Built on top of <em>your</em> stack.</span></h2>
 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px">
 <article style="padding: 28px 24px; border-radius: 16px; border: 1px solid var(--line); background: var(--surface); display: flex; flex-direction: column; gap: 10px">
 <span aria-hidden="true" style="width: 34px; height: 4px; border-radius: 2px; background: #EF4F91"></span>
 <h3 style="margin: 6px 0 0; font-size: 18px">Your pick of the best providers</h3>
-<p style="margin: 0; color: var(--muted); font-size: 15px">Use one, or use many. Run Rex on boxd and your agents on Freestyle side by side, each set up once as a profile. The command and the workspace are the same on every one.</p>
+<p style="margin: 0; color: var(--muted); font-size: 15px">Use one provider or many. Run Rex on Freestyle and your Pi agents on Archil. Easily switch between providers and setups with named profiles.</p>
 </article>
 <article style="padding: 28px 24px; border-radius: 16px; border: 1px solid var(--line); background: var(--surface); display: flex; flex-direction: column; gap: 10px">
 <span aria-hidden="true" style="width: 34px; height: 4px; border-radius: 2px; background: #FF7A59"></span>
@@ -229,7 +230,7 @@ const year = new Date().getFullYear();
 <article style="padding: 28px 24px; border-radius: 16px; border: 1px solid var(--line); background: var(--surface); display: flex; flex-direction: column; gap: 10px">
 <span aria-hidden="true" style="width: 34px; height: 4px; border-radius: 2px; background: #8E7CF0"></span>
 <h3 style="margin: 6px 0 0; font-size: 18px">Yours, end to end</h3>
-<p style="margin: 0; color: var(--muted); font-size: 15px">No third-party agent service holds your code or keys. Reach sandboxes over your tailnet, or however you'd like to, and <code class="inline-code">beachside rm</code> logs them out.</p>
+<p style="margin: 0; color: var(--muted); font-size: 15px">No third-party agent service holds your code or keys. Reach sandboxes over your tailnet, or however you'd like to, and beachside helps you keep tabs on them and clean up when you're done.</p>
 </article>
 </div>
 </section>
@@ -514,7 +515,7 @@ Star on GitHub</a>
 <section id="join" style="background: var(--band); color: #F4EDE3">
 <div style="max-width: 760px; margin: 0 auto; padding: 104px 24px; display: flex; flex-direction: column; align-items: center; gap: 22px; text-align: center">
 <h2 style="margin: 0; font-size: clamp(34px, 4vw, 52px); line-height: 1.08; letter-spacing: -0.03em; font-weight: 700">Give your agents a machine that never sleeps.</h2>
-<p style="margin: 0; max-width: 32em; font-size: 18px; color: #C9CCE0">Sign up to secure your place in the Beachside 1.0 beta.</p>
+<p style="margin: 0; max-width: 32em; font-size: 18px; color: #C9CCE0">Get a spot in the Beachside beta.</p>
 <form class="signup-form" data-source="footer" style="width: 100%; max-width: 540px">
 <input class="hp-field" type="text" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" />
 <div class="signup-fields" style="display: flex; flex-wrap: wrap; gap: 10px">
@@ -524,13 +525,13 @@ Star on GitHub</a>
 </div>
 <p class="signup-status" role="status" hidden style="margin: 0; padding: 16px 20px; border-radius: 16px; background: rgba(111,230,214,0.14); color: #6FE6D6; font-weight: 600"></p>
 </form>
-<p style="margin: 0; font-size: 13px; color: #A3A8C3">We'll let you know when the 1.0 beta is available, and about any open source releases along the way. <a href="/docs/privacy/" style="color: #FF86B7">Privacy</a></p>
+<p style="margin: 0; font-size: 13px; color: #A3A8C3">We'll send you an invite when it's ready, and keep you in the loop on major preview releases along the way. <a href="/docs/privacy/" style="color: #FF86B7">Privacy</a></p>
 </div>
 </section>
 
 <footer class="beta-footer">
 <div class="beta-footer-row">
-<p class="beta-footer-copyright">© {year} Beachside Compute <span>Apache-2.0</span></p>
+<p class="beta-footer-copyright">© {year} Beachside Compute <span>Apache-2.0</span> <MadeIn /></p>
 <nav class="beta-footer-links" aria-label="Footer">
 <a href="/">beachside.run</a>
 <a href="https://github.com/beachside-compute/beachside">GitHub</a>

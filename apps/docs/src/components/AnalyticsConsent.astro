@@ -52,7 +52,8 @@ const ads = Astro.props.ads === true && redditPixelConfigured;
         if (choice !== "accepted" && choice !== "rejected") return;
         saveConsent(choice);
         applyChoice(choice);
-        settings.focus();
+        // Hand focus to the footer button without scrolling the page down to it.
+        settings.focus({ preventScroll: true });
       });
     });
     window.addEventListener("storage", (event) => {

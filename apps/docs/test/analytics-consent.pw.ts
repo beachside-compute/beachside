@@ -212,6 +212,25 @@ test("desktop consent notice fits its content in the bottom-right corner", async
   await page.screenshot({ path: testInfo.outputPath("consent-desktop-dark.png") });
 });
 
+for (const [path, choice] of [
+  ["/docs/", "Accept"],
+  ["/beta/", "Accept"],
+  ["/remote/", "Reject"],
+] as const) {
+  test(`${path} keeps the scroll position when ${choice} is chosen`, async ({ page }) => {
+    await observe(page);
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto(path);
+    await expect(bar(page)).toBeVisible();
+    await bar(page).getByRole("button", { name: choice, exact: true }).click();
+    await expect(bar(page)).toBeHidden();
+    // Focus moves to the footer preferences button, but the page must not jump down to it.
+    await expect(page.getByRole("button", { name: "Analytics preferences" })).toBeFocused();
+    await page.waitForTimeout(300);
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  });
+}
+
 test("blocked storage fails closed across page loads", async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(window, "localStorage", {
