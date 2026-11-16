@@ -3,6 +3,7 @@ import Logo from "../components/Logo.astro";
 import ThemeToggle from "../components/ThemeToggle.astro";
 import "../styles/tokens.css";
 import AnalyticsConsent from "../components/AnalyticsConsent.astro";
+import MadeIn from "../components/MadeIn.astro";
 
 // Lead-capture landing page for the 1.0 beta. Both signup forms post to /api/beta-signup (apps/docs/worker), which
 // saves the contact in Resend. Ad links can tag the signup with utm_campaign / utm_source.
@@ -530,7 +531,7 @@ Star on GitHub</a>
 
 <footer class="beta-footer">
 <div class="beta-footer-row">
-<p class="beta-footer-copyright">© {year} Beachside Compute <span>Apache-2.0</span></p>
+<p class="beta-footer-copyright">© {year} Beachside Compute <span>Apache-2.0</span> <MadeIn /></p>
 <nav class="beta-footer-links" aria-label="Footer">
 <a href="/">beachside.run</a>
 <a href="https://github.com/beachside-compute/beachside">GitHub</a>

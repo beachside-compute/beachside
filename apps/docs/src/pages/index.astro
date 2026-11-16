@@ -3,6 +3,7 @@ import { Code } from "astro:components";
 import { oceanDriveCodeTheme } from "../ocean-drive-code-theme.mjs";
 import sdkPackage from "../../../../packages/sdk/package.json";
 import Logo from "../components/Logo.astro";
+import MadeIn from "../components/MadeIn.astro";
 import ThemeToggle from "../components/ThemeToggle.astro";
 import "../styles/tokens.css";
 
@@ -376,6 +377,7 @@ const year = new Date().getFullYear();
 
     <footer class="wrap footer">
       <span>© {year} Beachside Compute · Apache-2.0 · beachside.run · <a href="https://github.com/beachside-compute/beachside">GitHub</a> · <a href="https://x.com/pandemicsyn">X</a></span>
+      <MadeIn />
       <span><a href="/docs/privacy/">Privacy</a> · Built with Astro + Starlight</span>
     </footer>
 
