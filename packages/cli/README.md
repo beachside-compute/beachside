@@ -1,13 +1,15 @@
 # @beachside/cli
 
-`beachside` creates and manages sandboxes on any Beachside provider from the command line. It is built for agents first: it never prompts for input, every command has a stable `--json` form, and exit codes clearly indicate what to do next.
+`beachside` creates and manages sandboxes on any Beachside provider from the command line. It is built for agents first: nothing prompts outside a terminal, every command has a stable `--json` form, and exit codes clearly indicate what to do next. People set up providers with `beachside init`, a guided setup in the terminal that is an ordinary flag-driven command everywhere else.
 
 Install it with `npm install -g @beachside/cli` (or `bun add -g @beachside/cli`); `beachside --version` prints the installed version. Adapters are installed separately.
 
 ## Quick start
 
 ```sh
-export BEACHSIDE_PROVIDER=e2b E2B_API_KEY=...
+beachside init                                # guided: pick providers, paste keys, check, save profiles
+# or, without questions (CI, scripts, agents):
+beachside init e2b --api-key env:E2B_API_KEY
 beachside create --name web
 beachside exec web -- uname -a
 beachside cp ./app.py web:/work/app.py
@@ -39,6 +41,7 @@ Directory copies (`cp -r` and `push`) transfer file contents, permission bits an
 | `cp [-r] [--exclude <glob>] <src> <dst>` | Copy a file, or a directory with `-r`; one side is `<sandbox>:/path` |
 | `push <sandbox>[:/dir] [path]` | Send a local folder's git-tracked and unignored files (default `.` to `~/work`); `run --push <path>` does the same before its command |
 | `cat <sandbox>:/path` | Print a file |
+| `init [<provider>] [--api-key] [--set k=v] [--network] [--store] [--default] [--try]` | Set up providers: guided in a terminal, flag-driven everywhere else |
 | `doctor` | Check config, credentials and the connection; creates nothing |
 | `adapter add <provider\|package>[@version]...`, `adapter ls`, `adapter rm <provider\|package>...` | Install, list or remove adapters in `~/.config/beachside/adapters` |
 | `providers` | Official providers, install state and missing credentials |
@@ -146,7 +149,7 @@ Sandbox references are kept as one JSON file per sandbox in `~/.config/beachside
 
 ## Not yet
 
-Planned for later steps: `--lifetime`/`--idle`/`--port` create flags, detached processes and logs, preview URLs, suspend/resume/renew, `gc`, snapshots and volumes, `beachside adapter add`, an S3-compatible store, KeePassXC and system-keyring references, and MCP mode.
+Planned for later steps: `--lifetime`/`--idle`/`--port` create flags, detached processes and logs, preview URLs, suspend/resume/renew, `gc`, snapshots and volumes, `beachside adapter add`, an S3-compatible store, KeePassXC references, and MCP mode.
 
 ## Development
 

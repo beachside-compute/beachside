@@ -35,7 +35,8 @@
     "@beachside/exe-dev": "workspace:*",
     "@beachside/modal": "workspace:*",
     "@beachside/vercel": "workspace:*",
-    "@beachside-internal/provider-fake": "workspace:*"
+    "@beachside-internal/provider-fake": "workspace:*",
+    "@clack/prompts": "1.9.0"
   },
   "license": "Apache-2.0",
   "repository": {

@@ -520,6 +520,8 @@ export function createDaytonaAdapter(
           description: "The Daytona region (target) sandboxes run in, such as us.",
         },
       },
+      // Daytona has no default image, so a new profile starts on its small prepared snapshot.
+      defaults: { environment: { kind: "prepared", value: "daytona-small" } },
       docs: "https://beachside.run/docs/providers/daytona/",
     },
     config: configSchema,

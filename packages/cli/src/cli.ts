@@ -31,6 +31,7 @@ import { snapshotCommand } from "./snapshots";
 import { skillCommand } from "./skill";
 import { adapterCommand } from "./adapters";
 import { profileCommand } from "./profiles";
+import { initCommand, initFlagSpecs } from "./init";
 import { gcCommand } from "./gc";
 import { complete, completionCommand, formatCompletion } from "./completion";
 import { configJsonSchema, type Env } from "./config";
@@ -259,6 +260,25 @@ const pushFlags = {
 } satisfies Record<string, FlagSpec>;
 
 export const commands: readonly CommandSpec[] = [
+  {
+    name: "init",
+    summary:
+      "Set up providers: install the adapter, store the key, check it works and save a profile (guided in a terminal)",
+    usage:
+      "beachside init [<provider>] [--profile <name>] [--api-key <key|ref>] [--set k=v]... [--network <policy>] [--store keychain|config] [--default] [--try]",
+    flags: initFlagSpecs,
+    passthrough: false,
+    remoteExit: false,
+    examples: [
+      "beachside init",
+      "beachside init e2b --api-key env:E2B_API_KEY --default",
+      "beachside init boxd --api-key env:BOXD_API_KEY --set org=org-123 --network internet",
+      'printf %s "$KEY" | beachside init daytona --api-key - --set target=us --store keychain',
+      "beachside init boxd --profile boxd-work --api-key op://work/boxd/key --set org=org-456",
+      "beachside init --module @acme/beachside-adapter --export acmeAdapter --profile acme --api-key env:ACME_KEY",
+    ],
+    run: initCommand,
+  },
   {
     name: "telemetry",
     summary: "Show or change basic CLI usage telemetry (on by default; SDK sends none)",
@@ -771,8 +791,7 @@ function topHelp(): string {
     ...flagLines(globalFlags),
     "",
     "Quick start:",
-    "  beachside adapter add e2b",
-    "  export BEACHSIDE_PROVIDER=e2b E2B_API_KEY=...",
+    "  beachside init                                # guided: pick providers, paste keys, check",
     "  beachside create --name web",
     "  beachside exec web -- uname -a",
     "  beachside rm web",
@@ -830,6 +849,8 @@ export type Io = {
   streams: Streams;
   /** Whether stderr is a terminal; terminal tab status (OSC 7501) is only written to one. */
   stderrTerminal?: boolean;
+  /** Whether stdin is a terminal; with stderr one too, `init` may ask questions. */
+  stdinTerminal?: boolean;
   signal: AbortSignal;
   /** The CLI's own stdin, read as it arrives. */
   stdin: () => AsyncIterable<Uint8Array>;
@@ -1010,6 +1031,8 @@ export async function main(argv: readonly string[], io: Io): Promise<number> {
       out,
       signal: io.signal,
       stdin: io.stdin,
+      terminal: io.stdinTerminal === true && io.stderrTerminal === true,
+      createsConfig: command.name === "init",
       flags: {
         json: out.json,
         profile: flags.string("profile"),

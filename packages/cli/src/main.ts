@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { isatty } from "node:tty";
 import { main } from "./cli";
 
 const controller = new AbortController();
@@ -49,6 +50,8 @@ const code = await main(process.argv.slice(2), {
   signal: controller.signal,
   stdin,
   stderrTerminal: process.stderr.isTTY === true,
+  // isatty leaves process.stdin untouched; opening it early can lose piped input.
+  stdinTerminal: isatty(0),
   streams: {
     stdout: (text) => process.stdout.write(text),
     stderr: (text) => process.stderr.write(text),

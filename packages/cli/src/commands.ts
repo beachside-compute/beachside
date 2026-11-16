@@ -2830,14 +2830,14 @@ export async function catCommand(session: Session, flags: Flags): Promise<number
 }
 
 /** What `doctor` learned by asking the provider for one page of its sandbox listing. */
-type CredentialCheck =
+export type CredentialCheck =
   | { status: "ok" }
   | { status: "rejected"; code: string; reason: string }
   | { status: "unchecked"; reason: string }
   | { status: "error"; code: string; reason: string };
 
 /** A cheap read that proves the provider accepts the credentials, without creating anything. */
-async function checkCredentials(client: BeachsideClient<true>): Promise<CredentialCheck> {
+export async function checkCredentials(client: BeachsideClient<true>): Promise<CredentialCheck> {
   try {
     await client.sandboxes.list({ limit: 1 });
 

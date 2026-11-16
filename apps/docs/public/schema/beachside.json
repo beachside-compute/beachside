@@ -44,7 +44,7 @@
             }
           },
           "credentials": {
-            "description": "Credentials: a value, env:NAME, or op://, bws:// or pass:// references",
+            "description": "Credentials: a value, env:NAME, or op://, bws://, pass:// or keychain:// references",
             "type": "object",
             "propertyNames": {
               "type": "string"

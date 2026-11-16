@@ -3,14 +3,22 @@ title: Command line
 description: Create, use and clean up sandboxes on any Beachside provider from your shell or your agent.
 ---
 
-`beachside` creates and manages sandboxes from the command line, on any provider with a Beachside adapter. It is built for coding agents first: it never prompts for input, every command has a stable `--json` form, and exit codes clearly indicate what to do next. People get readable output by default.
+`beachside` creates and manages sandboxes from the command line, on any provider with a Beachside adapter. It is built for coding agents first: no command waits for input outside a terminal, every command has a stable `--json` form, and exit codes clearly indicate what to do next. People get readable output by default, and a guided setup.
 
 ## Install
 
-Install the CLI, then the adapter for each provider you use. Adapters live in their own folder so a project you happen to be in can't supply one:
+Install the CLI, then run `beachside init`:
 
 ```sh
 npm install -g @beachside/cli
+beachside init
+```
+
+`init` asks which providers you want, installs their adapters, asks for each provider's key and settings (with a link to where you get the key), keeps new keys in your OS keychain, checks that each provider accepts its key, offers to try a sandbox on each one, and saves one profile per provider in `beachside.json`. It ends by printing the command that repeats the setup without questions, so you can put it in a dotfiles script or hand it to an agent. Nothing is saved until the end, and Ctrl-C leaves your config as it was. Running it again lets you add providers, change one, pick the default or check them all. See [Set up providers with init](/docs/cli/configuration/#set-up-providers-with-init).
+
+To install an adapter yourself, use `beachside adapter add`. Adapters live in their own folder so a project you happen to be in can't supply one:
+
+```sh
 beachside adapter add e2b
 ```
 
@@ -20,10 +28,10 @@ The CLI runs on Node.js or Bun; `beachside adapter` uses npm to install. `beachs
 
 ## Quick start
 
-Pick a provider with environment variables, check the setup, then work:
+After `beachside init`, or with a provider picked by environment variables (as in CI), check the setup, then work:
 
 ```sh
-export BEACHSIDE_PROVIDER=e2b E2B_API_KEY=...
+beachside init e2b --api-key env:E2B_API_KEY      # or plain `beachside init` for the guided setup
 beachside doctor                                  # checks the config and that the provider accepts the key; creates nothing
 
 beachside create --name web

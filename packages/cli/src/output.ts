@@ -56,6 +56,8 @@ export type Known = {
   recovery?: RecoveryReference;
   /** The command's captured result when a later step (cleanup, exit status) failed. */
   exec?: ExecSummary;
+  /** The flags or variables a command that never asks questions still needs, such as init's. */
+  missing?: string[];
 };
 
 export type Outcome = "rejected" | "unknown" | "partial";
@@ -147,6 +149,11 @@ const managementExitCodes = new Map([
   ["FORBIDDEN", 5],
   ["SETUP_FAILED", 9],
 ]);
+
+/** The exit code a rejected failure with this code gets, such as 5 for UNAUTHENTICATED. */
+export function exitCodeFor(code: string): number {
+  return managementExitCodes.get(code) ?? 1;
+}
 
 /** Exit codes for commands other than exec and run. */
 export function managementExitCode(report: ErrorReport): number {

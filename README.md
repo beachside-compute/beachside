@@ -60,15 +60,14 @@ Using a coding agent? `npx skills add pandemicsyn/beachside --skill beachside -g
 
 ## CLI
 
-Same sandboxes, straight from your shell. `beachside` creates, runs in and removes sandboxes on any provider with an adapter. It never prompts for input, every command has a `--json` form, and exit codes clearly indicate what to do next, so your coding agent can drive it as easily as you can.
+Same sandboxes, straight from your shell. `beachside` creates, runs in and removes sandboxes on any provider with an adapter. `beachside init` walks you through setting up your providers, and everything else never prompts: every command has a `--json` form, and exit codes clearly indicate what to do next, so your coding agent can drive it as easily as you can.
 
 ```sh
 npm install -g @beachside/cli
-beachside adapter add e2b
+beachside init        # pick providers, paste keys, check they work
 ```
 
 ```sh
-export BEACHSIDE_PROVIDER=e2b E2B_API_KEY=...
 beachside create --name web
 beachside cp ./app.py web:/tmp/app.py
 beachside exec web -- python3 /tmp/app.py

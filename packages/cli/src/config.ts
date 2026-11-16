@@ -38,7 +38,9 @@ export const ProfileConfig = z
     credentials: z
       .record(z.string(), z.string())
       .optional()
-      .describe("Credentials: a value, env:NAME, or op://, bws:// or pass:// references"),
+      .describe(
+        "Credentials: a value, env:NAME, or op://, bws://, pass:// or keychain:// references",
+      ),
     /** Named setups every create with this profile runs first (skip with --no-default-setup). */
     setup: z
       .array(SetupName)
@@ -140,6 +142,8 @@ export function expandHome(path: string, env: Env): string {
 export async function loadConfig(
   explicitPath: string | undefined,
   env: Env,
+  /** `init` creates the file, so a chosen path that doesn't exist yet is an empty config too. */
+  allowMissing = false,
 ): Promise<LoadedConfig> {
   const chosen = explicitPath ?? env.BEACHSIDE_CONFIG;
   const path = resolve(expandHome(chosen ?? join(configHome(env), "beachside.json"), env));
@@ -148,7 +152,12 @@ export async function loadConfig(
   try {
     text = await readFile(path, "utf8");
   } catch (cause) {
-    if (!chosen && cause instanceof Error && "code" in cause && cause.code === "ENOENT")
+    if (
+      (!chosen || allowMissing) &&
+      cause instanceof Error &&
+      "code" in cause &&
+      cause.code === "ENOENT"
+    )
       return { path, dir: dirname(path), exists: false, value: {} };
 
     throw usage(`Cannot read config ${path}: ${cause instanceof Error ? cause.message : cause}`);

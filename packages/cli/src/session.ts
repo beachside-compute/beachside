@@ -21,6 +21,10 @@ export type Context = {
   signal: AbortSignal;
   /** The CLI's own stdin, read as it arrives. */
   stdin: () => AsyncIterable<Uint8Array>;
+  /** Whether stdin and stderr are both terminals, so a person may be there to answer questions. */
+  terminal?: boolean;
+  /** The command creates beachside.json, so a --config path that doesn't exist yet is fine. */
+  createsConfig?: boolean;
 };
 
 /** Lazily loaded configuration, store and provider connections for one invocation. */
@@ -35,7 +39,7 @@ export class Session {
   }
 
   async config(): Promise<LoadedConfig> {
-    this.loaded ??= await loadConfig(this.ctx.flags.config, this.ctx.env);
+    this.loaded ??= await loadConfig(this.ctx.flags.config, this.ctx.env, this.ctx.createsConfig);
 
     return this.loaded;
   }
