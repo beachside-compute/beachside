@@ -105,9 +105,18 @@ function backendFor(value: string): SecretBackend | undefined {
   return backends.find((backend) => backend.pattern.test(value));
 }
 
-/** The `keychain://` reference init writes for one profile value. */
-export function keychainReference(profile: string, key: string): string {
-  return `keychain://beachside/${profile}.${key}`;
+/**
+ * The `keychain://` reference init writes for one profile value. Keychain items are global to
+ * the user, so `id` (fresh for each write) keeps two config files, or a replaced profile and its
+ * replacement, from sharing or overwriting one item.
+ */
+export function keychainReference(profile: string, key: string, id: string): string {
+  return `keychain://beachside/${profile}.${key}.${id}`;
+}
+
+/** Whether a reference names an item `init` created, so `init` may remove it when replaced. */
+export function ownKeychainReference(reference: string): boolean {
+  return /^keychain:\/\/beachside\/[\w.@+-]+$/.test(reference) && KeychainReference.test(reference);
 }
 
 async function onPath(command: string, env: Env): Promise<boolean> {
@@ -178,8 +187,56 @@ export async function storeInKeychain(
     input = value;
   }
 
-  const result = await new Promise<RunResult>((done) => {
-    const child = spawn(backend.command, args, {
+  const result = await keychainTool(backend.command, args, input, env, signal);
+
+  if (result.code === "ENOENT")
+    throw new CliError(
+      "SECRET_TOOL_MISSING",
+      `Cannot store keys in the keychain: \`${backend.command}\` is not installed`,
+      backend.install,
+    );
+
+  if (result.code !== 0)
+    throw new CliError(
+      "SECRET_UNAVAILABLE",
+      `Cannot store ${reference} in the ${backend.name}: ${result.stderr.trim() || `${backend.command} exited with ${result.code}`}`,
+      backend.check,
+    );
+}
+
+/** Remove one item `storeInKeychain` made; false when the tool could not remove it. */
+export async function removeFromKeychain(
+  reference: string,
+  env: Env,
+  signal: AbortSignal,
+  platform: NodeJS.Platform = process.platform,
+): Promise<boolean> {
+  const match = KeychainReference.exec(reference);
+
+  if (!match) return false;
+  const [, service, account] = match;
+  const backend = keychainBackend(platform);
+
+  const args =
+    platform === "darwin"
+      ? ["delete-generic-password", "-s", service!, "-a", account!]
+      : ["clear", "service", service!, "account", account!];
+
+  const result = await keychainTool(backend.command, args, "", env, signal);
+
+  return result.code === 0;
+}
+
+/** Run a keychain tool with `input` on stdin; its stdout is ignored, since it may hold a secret. */
+function keychainTool(
+  command: string,
+  args: string[],
+  input: string,
+  env: Env,
+  signal: AbortSignal,
+): Promise<RunResult> {
+  return new Promise<RunResult>((done) => {
+    const child = spawn(command, args, {
       env: { ...env },
       signal,
       stdio: ["pipe", "pipe", "pipe"],
@@ -195,22 +252,9 @@ export async function storeInKeychain(
       done({ code: "code" in cause ? String(cause.code) : "FAILED", stdout: "", stderr }),
     );
     child.on("close", (code) => done({ code: code ?? "FAILED", stdout: "", stderr }));
+    child.stdin.on("error", () => undefined);
     child.stdin.end(input);
   });
-
-  if (result.code === "ENOENT")
-    throw new CliError(
-      "SECRET_TOOL_MISSING",
-      `Cannot store keys in the keychain: \`${backend.command}\` is not installed`,
-      backend.install,
-    );
-
-  if (result.code !== 0)
-    throw new CliError(
-      "SECRET_UNAVAILABLE",
-      `Cannot store ${reference} in the ${backend.name}: ${result.stderr.trim() || `${backend.command} exited with ${result.code}`}`,
-      backend.check,
-    );
 }
 
 /** The password manager a reference reads from, such as 1Password; null for any other value. */

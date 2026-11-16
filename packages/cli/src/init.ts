@@ -22,7 +22,16 @@ import {
   type AdapterLocation,
   type OfficialProvider,
 } from "./providers";
-import { keychainAvailable, keychainReference, secretManager, storeInKeychain } from "./secrets";
+import { randomBytes } from "node:crypto";
+import { chmod } from "node:fs/promises";
+import {
+  keychainAvailable,
+  keychainReference,
+  ownKeychainReference,
+  removeFromKeychain,
+  secretManager,
+  storeInKeychain,
+} from "./secrets";
 import type { Session } from "./session";
 import { shellQuote } from "./transfer";
 import { parsePairs } from "./units";
@@ -95,14 +104,26 @@ export type Draft = {
   config: Record<string, Json>;
   /** The profile this one replaces, if any. */
   previous: ProfileConfig | null;
+  /** Fresh for each run, so new keychain items never overwrite or share another config's. */
+  keychainId: string;
 };
+
+/** A short random id for this run's keychain items. */
+export function newKeychainId(): string {
+  return randomBytes(4).toString("hex");
+}
+
+/** Where one new key is stored in the keychain. */
+function keychainRef(draft: Draft, key: string): string {
+  return keychainReference(draft.name, key, draft.keychainId);
+}
 
 /** The profile as it will be written, with new keys replaced by where they are stored. */
 export function profileFor(draft: Draft, storage: Storage): ProfileConfig {
   const stored = Object.fromEntries(
     Object.entries(draft.secrets).map(([key, value]) => [
       key,
-      storage === "keychain" ? keychainReference(draft.name, key) : value,
+      storage === "keychain" ? keychainRef(draft, key) : value,
     ]),
   );
 
@@ -304,7 +325,10 @@ export async function trySandbox(
 
 /**
  * Store new keys, then write every profile and the default in one change to beachside.json.
- * Nothing is written before this, so a cancelled or failed run leaves the file as it was.
+ * Nothing is written before this, so a cancelled or failed run leaves the file as it was. New
+ * keychain items get fresh names, so the old profile keeps working until the file is replaced;
+ * if the file can't be written they are removed again, and once it is, the items the replaced
+ * profiles used are removed.
  */
 export async function writeProfiles(
   session: Session,
@@ -312,29 +336,55 @@ export async function writeProfiles(
   storage: Storage,
   defaultName: string | null,
 ): Promise<void> {
+  const { env, signal } = session.ctx;
   const loaded = await session.config();
+  const stored: string[] = [];
 
-  if (storage === "keychain")
-    for (const draft of drafts)
-      for (const [key, value] of Object.entries(draft.secrets))
-        await storeInKeychain(
-          keychainReference(draft.name, key),
-          value,
-          session.ctx.env,
-          session.ctx.signal,
-        );
+  const rollBack = async () => {
+    for (const reference of stored) await removeFromKeychain(reference, env, signal);
+  };
 
-  await updateConfig(loaded.path, (raw) => {
-    const profiles = z.record(z.string(), z.json()).parse(raw.profiles ?? {});
+  try {
+    if (storage === "keychain")
+      for (const draft of drafts)
+        for (const [key, value] of Object.entries(draft.secrets)) {
+          const reference = keychainRef(draft, key);
+          await storeInKeychain(reference, value, env, signal);
+          stored.push(reference);
+        }
 
-    for (const draft of drafts) profiles[draft.name] = profileFor(draft, storage);
+    // A file that will hold a key itself becomes readable only by you, even if it wasn't.
+    const plain = drafts.some(
+      (draft) =>
+        (storage === "config" && Object.keys(draft.secrets).length > 0) ||
+        Object.values(draft.credentials).some((value) => !isReference(value)),
+    );
 
-    const next: typeof raw = { $schema: raw.$schema ?? CONFIG_SCHEMA_URL, ...raw, profiles };
+    if (plain && loaded.exists) await chmod(loaded.path, 0o600);
 
-    if (defaultName) next.default = defaultName;
+    await updateConfig(loaded.path, (raw) => {
+      const profiles = z.record(z.string(), z.json()).parse(raw.profiles ?? {});
 
-    return next;
-  });
+      for (const draft of drafts) profiles[draft.name] = profileFor(draft, storage);
+
+      const next: typeof raw = { $schema: raw.$schema ?? CONFIG_SCHEMA_URL, ...raw, profiles };
+
+      if (defaultName) next.default = defaultName;
+
+      return next;
+    });
+  } catch (cause) {
+    await rollBack();
+    throw cause;
+  }
+
+  // Keychain items the replaced profiles used and no longer do.
+  for (const draft of drafts) {
+    const now = new Set(Object.values(profileFor(draft, storage).credentials ?? {}));
+
+    for (const old of Object.values(draft.previous?.credentials ?? {}))
+      if (ownKeychainReference(old) && !now.has(old)) await removeFromKeychain(old, env, signal);
+  }
 }
 
 const PlainWord = /^[\w@%+=:,./-]+$/;
@@ -376,9 +426,7 @@ export function equivalentCommand(draft: Draft, storage: Storage, isDefault: boo
     parts.push(...credentialFlag(key, isReference(value) ? value : "-"));
 
   for (const key of Object.keys(draft.secrets))
-    parts.push(
-      ...credentialFlag(key, storage === "keychain" ? keychainReference(draft.name, key) : "-"),
-    );
+    parts.push(...credentialFlag(key, storage === "keychain" ? keychainRef(draft, key) : "-"));
 
   const defaults = draft.setup?.defaults ?? {};
 
@@ -403,7 +451,7 @@ export function credentialSources(draft: Draft, storage: Storage) {
     ...Object.fromEntries(
       Object.keys(draft.secrets).map((key) => [
         key,
-        storage === "keychain" ? keychainReference(draft.name, key) : "beachside.json",
+        storage === "keychain" ? keychainRef(draft, key) : "beachside.json",
       ]),
     ),
   };
@@ -605,6 +653,7 @@ export function draftFromFlags(
     secrets: {},
     config: {},
     previous,
+    keychainId: newKeychainId(),
   };
 
   const missing: string[] = [];

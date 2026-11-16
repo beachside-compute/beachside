@@ -1,5 +1,15 @@
 import { afterAll, beforeAll, beforeEach, expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  realpath,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Json } from "@beachside/adapter";
@@ -297,6 +307,7 @@ set -e
 case "$1" in
   store) shift; while [ "$1" != "account" ]; do shift; done; cat > "${store}/$2" ;;
   lookup) shift; while [ "$1" != "account" ]; do shift; done; cat "${store}/$2" ;;
+  clear) shift; while [ "$1" != "account" ]; do shift; done; rm "${store}/$2" ;;
   *) exit 1 ;;
 esac
 `,
@@ -319,10 +330,15 @@ test.skipIf(process.platform === "darwin")(
     );
 
     expect(result.code).toBe(0);
-    expect(JSON.parse(result.stdout).data.credentials).toEqual({
-      token: "keychain://beachside/fk.token",
-    });
-    expect(await readFile(join(dir, "keyring", "fk.token"), "utf8")).toBe(token);
+
+    const reference = JSON.parse(result.stdout).data.credentials.token;
+
+    expect(reference).toMatch(/^keychain:\/\/beachside\/fk\.token\.[0-9a-f]{8}$/);
+
+    const account = reference.slice("keychain://beachside/".length);
+
+    expect(await readdir(join(dir, "keyring"))).toEqual([account]);
+    expect(await readFile(join(dir, "keyring", account), "utf8")).toBe(token);
     expect(JSON.stringify(await config())).not.toContain(token);
 
     // Every command reads it back from the keychain.
@@ -334,10 +350,50 @@ test.skipIf(process.platform === "darwin")(
 
     expect(JSON.parse(show.stdout).data.credentials.token).toMatchObject({
       from: "secret-manager",
-      reference: "keychain://beachside/fk.token",
+      reference,
     });
+
+    // Replacing the key stores it under a new name and removes the old item only once saved.
+    const replaced = await cli(
+      [...fake, "--api-key", "-", "--set", "region=north", "--force", "--json"],
+      env,
+      token,
+    );
+
+    const next = JSON.parse(replaced.stdout).data.credentials.token;
+
+    expect(next).not.toBe(reference);
+    expect(await readdir(join(dir, "keyring"))).toEqual([
+      next.slice("keychain://beachside/".length),
+    ]);
+
+    // A rejected key leaves the keychain and the profile as they were.
+    const rejected = await cli(
+      [...fake, "--api-key", "-", "--set", "region=north", "--force", "--json"],
+      env,
+      "wrong",
+    );
+
+    expect(rejected.code).toBe(5);
+    expect(await readdir(join(dir, "keyring"))).toHaveLength(1);
+    expect((await config()).profiles.fk.credentials.token).toBe(next);
   },
 );
+
+test("a key kept in an existing beachside.json makes the file readable only by you", async () => {
+  await mkdir(join(dir, "beachside"), { recursive: true });
+  await writeFile(configPath(), JSON.stringify({ profiles: {} }), { mode: 0o644 });
+  await chmod(configPath(), 0o644);
+
+  const result = await cli(
+    [...fake, "--api-key", "-", "--set", "region=north", "--store", "config"],
+    {},
+    token,
+  );
+
+  expect(result.code).toBe(0);
+  expect((await stat(configPath())).mode & 0o777).toBe(0o600);
+});
 
 /** Answers each question from a script keyed by part of its message, and records what it saw. */
 function scripted(answers: [RegExp, string | string[] | boolean | "cancel"][]) {
@@ -558,6 +614,7 @@ test("the repeat command never prints a key kept in beachside.json", () => {
     secrets: { extra: "pasted-secret" },
     config: { org: "org-1", environment: { kind: "prepared", value: "x y" } },
     previous: null,
+    keychainId: "abcd1234",
   };
 
   const command = equivalentCommand(draft, "config", true);

@@ -11,6 +11,7 @@ import {
   installMissing,
   isReference,
   location,
+  newKeychainId,
   officialTarget,
   targetFromFlags,
   trySandbox,
@@ -249,6 +250,7 @@ async function draftFor(
     secrets: {},
     config: { ...setup?.defaults, ...previous?.config },
     previous,
+    keychainId: newKeychainId(),
   };
 
   for (const [key, value] of Object.entries(given.credentials))
