@@ -1,6 +1,6 @@
 # @beachside/cli
 
-`beachside` creates and manages sandboxes on any Beachside provider from the command line. It is built for agents first: it never prompts, every command has a stable `--json` form, and exit codes say what to do next.
+`beachside` creates and manages sandboxes on any Beachside provider from the command line. It is built for agents first: it never prompts for input, every command has a stable `--json` form, and exit codes clearly indicate what to do next.
 
 Install it with `npm install -g @beachside/cli` (or `bun add -g @beachside/cli`); `beachside --version` prints the installed version. Adapters are installed separately.
 
@@ -20,11 +20,14 @@ beachside run -- python3 -c 'print(2 + 2)'   # create, run, always destroy
 
 Install the adapter for each provider with `beachside adapter add e2b` (or `daytona`, `vercel`, ...). It runs npm in `~/.config/beachside/adapters`, pins the official adapter to the CLI's own version, and checks that the package exports the adapter. Third-party adapters are added by scoped package name (`beachside adapter add @acme/beachside-adapter`) or with an explicit `npm:` prefix; a bare unknown name is refused so a typo can't install someone else's package. The CLI also finds adapters installed next to itself. Adapters receive your credentials, so the current project's `node_modules` is searched only when you opt in with `"adapters": { "searchProject": true }` or `BEACHSIDE_PROJECT_ADAPTERS=1`. `beachside providers` shows what is installed and which credentials are set.
 
+Directory copies (`cp -r` and `push`) transfer file contents, permission bits and symbolic links. Host-specific extended metadata, including macOS resource forks and extended attributes, is not preserved.
+
 ## Commands
 
 | Command | What it does |
 | --- | --- |
 | `create [--name] [--image <oci-ref> \| --prepared <id>] [--network] [--label k=v] [--if-not-exists]` | Create a sandbox, print its name |
+| `create --with rex\|herdr` | Also install a server reachable over your Tailscale tailnet (needs `TAILSCALE_AUTH_KEY`); prints how to connect: an address to add in Rex, or the `hc machine add` command that adds the sandbox to the Herdr app. See [Remote workspace with Rex](https://beachside.run/docs/cli/rex/) and [Servers in a sandbox](https://beachside.run/docs/cli/#servers-in-a-sandbox) |
 | `ls [--offline]` | List store records with live state (`running`, `gone`, `unreachable`, ...) |
 | `inspect <sandbox>` | State, expiry and reference |
 | `rm <sandbox>... \| --all [--force]` | Destroy and forget; only sandboxes this CLI created unless `--force`. `--all` skips the others and reports them |
@@ -40,7 +43,7 @@ Install the adapter for each provider with `beachside adapter add e2b` (or `dayt
 | `adapter add <provider\|package>[@version]...`, `adapter ls`, `adapter rm <provider\|package>...` | Install, list or remove adapters in `~/.config/beachside/adapters` |
 | `providers` | Official providers, install state and missing credentials |
 | `schema` | Machine-readable description of every command, flag and exit code |
-| `skill [install [--project]]` | Print the agent skill for this CLI, or install it for your coding agents |
+| `skill [show \| setup \| status \| remove]` | Print the agent skill for this CLI, or set it up for your coding agents |
 | `completion <zsh\|bash\|fish>` | Print a shell completion script |
 
 A `<sandbox>` is a store name, a native id held in the store, or `@file.json` holding a saved sandbox reference.
@@ -49,7 +52,7 @@ A `<sandbox>` is a store name, a native id held in the store, or `@file.json` ho
 
 With `--json` (or `BEACHSIDE_JSON=1`) stdout holds exactly one document: `{"ok":true,"data":...}` or `{"ok":false,"error":{"code","message","retryable","outcome","hint?","known?","details?"}}`. Diagnostics go to stderr. When `rm` stops partway, `error.details` lists what was `removed`, `skipped` and `failed`.
 
-Inside Rex, or anywhere with `BEACHSIDE_PROGRAM_STATUS=on`, commands that change or wait on sandboxes report working/done/error on the terminal tab with the Program Status Protocol (OSC 7501). Reports go to stderr only when it is a terminal; `BEACHSIDE_PROGRAM_STATUS=off` turns them off.
+Inside Rex or a Herdr app (herdr-core) terminal, or anywhere with `BEACHSIDE_PROGRAM_STATUS=on`, commands that change or wait on sandboxes report working/done/error on the terminal tab with the Program Status Protocol (OSC 7501). Reports go to stderr only when it is a terminal; `BEACHSIDE_PROGRAM_STATUS=off` turns them off. `cp` and `push` also show upload progress, and `run`, `exec` and `sh` send a desktop notification (OSC 777) when they finish after more than 30 seconds (`BEACHSIDE_NOTIFY_AFTER=<seconds>|off`).
 
 | Code | Meaning |
 | --- | --- |
@@ -81,7 +84,7 @@ Completion covers commands, flags, `--provider` ids, `--profile` names from `bea
 
 ## Agent skill
 
-The CLI carries an agent skill that matches its own version. `beachside skill` prints it; `beachside skill install` writes it to `~/.agents/skills/beachside-cli/` and, when `~/.claude` exists, to `~/.claude/skills/beachside-cli/`. Add `--project` to install into the current folder instead. Rerunning updates a copy it wrote; a copy installed another way is left alone.
+The CLI carries an agent skill that matches its own version. `beachside skill` prints the guide; `beachside skill setup` installs a short skill into `~/.agents/skills/beachside-cli/` and, when Claude Code is set up, `~/.claude/skills/beachside-cli/` that tells the agent to read the guide from the installed CLI, so upgrading needs no rerun. Add `--project` to use the current folder, `--agent` to choose agents and `--dry-run` to preview. `beachside skill status` reports each copy and `beachside skill remove` removes what setup installed. A copy installed another way is left alone unless you pass `--force`.
 
 ## Configuration
 
@@ -101,7 +104,7 @@ The CLI carries an agent skill that matches its own version. `beachside skill` p
 
 - Profile selection: `--profile`, `BEACHSIDE_PROFILE`, `--provider`, `BEACHSIDE_PROVIDER`, then `default`.
 - `provider` names an official adapter (`@beachside/<provider>`); `config` and `credentials` are that adapter's own settings. `module` and `export` load any adapter, either a definition or a bound adapter.
-- Credentials can be written in the profile directly, as `env:NAME` references, or as password-manager references (below). Keep the file private (`chmod 600`) if it holds keys. Env-only providers read `DAYTONA_API_KEY` and `DAYTONA_TARGET`; `E2B_API_KEY`; `BOXD_API_KEY`, `BOXD_ORG` and `BOXD_NETWORK=internet` (boxd always allows egress, so its adapter requires choosing it); `BOAT_API_KEY` and `BOAT_NETWORK=internet` (likewise for Boat); `RUNLOOP_API_KEY` and optionally `RUNLOOP_NETWORK=internet` (Runloop egress is blocked by default); `VERCEL_TOKEN`, `VERCEL_TEAM_ID` and `VERCEL_PROJECT_ID`; `MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET`, `MODAL_APP_NAME` and `MODAL_ENVIRONMENT`.
+- Credentials can be written in the profile directly, as `env:NAME` references, or as password-manager references (below). Keep the file private (`chmod 600`) if it holds keys. Env-only providers read `DAYTONA_API_KEY` and `DAYTONA_TARGET`; `E2B_API_KEY`; `BOXD_API_KEY`, `BOXD_ORG` and optionally `BOXD_REGION`; `BOAT_API_KEY`; `RUNLOOP_API_KEY`; `FREESTYLE_API_KEY`; `ARCHIL_API_KEY`, `ARCHIL_REGION` and `ARCHIL_NETWORK=archil-managed` on the Free plan; `EXE_API_KEY`; `VERCEL_TOKEN`, `VERCEL_TEAM_ID` and `VERCEL_PROJECT_ID`; `MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET`, `MODAL_APP_NAME` and `MODAL_ENVIRONMENT`.
 - `limits.maxSandboxes` (or `BEACHSIDE_MAX_SANDBOXES`) caps how many sandboxes the store may hold. Unset means uncapped.
 
 ## Password managers

@@ -2,6 +2,7 @@ import { BeachsideError, type SandboxListEntry } from "beachside";
 import {
   coverageNote,
   forget,
+  noteForgetHerdr,
   remoteSandboxes,
   renderTable,
   storesSandbox,
@@ -9,6 +10,7 @@ import {
 } from "./commands";
 import { CliError, describeError, usage, type BatchItem } from "./output";
 import type { Session } from "./session";
+import { cacheRows, deleteCaches, pruneLines } from "./cache";
 import { listAll } from "./store";
 import { parseDuration, parsePairs } from "./units";
 
@@ -126,7 +128,11 @@ export async function gcCommand(session: Session, flags: Flags): Promise<number>
         result = "gone";
       }
 
-      if (entry) await forget(store, entry);
+      if (entry) {
+        await forget(store, entry);
+        await noteForgetHerdr(session, entry.record.name, entry.record.addons ?? []);
+      }
+
       removed.push({ ...base, result, retainedResources });
 
       if (retainedResources.length)
@@ -154,6 +160,19 @@ export async function gcCommand(session: Session, flags: Flags): Promise<number>
 
   if (!removed.length && !skipped.length) out.note("no sandboxes matched");
 
+  // Stale setup caches of this profile go too; a later create would rebuild them anyway.
+  const stale = (await cacheRows(store, (warning) => out.note(warning))).filter(
+    ({ row }) => row.stale && row.profile === profile.name,
+  );
+
+  const caches = await deleteCaches(
+    session,
+    stale.map(({ entry }) => entry),
+    dryRun,
+  );
+
+  for (const line of pruneLines(caches)) out.note(`setup cache: ${line}`);
+
   out.success(
     {
       provider: profile.provider,
@@ -163,6 +182,7 @@ export async function gcCommand(session: Session, flags: Flags): Promise<number>
       dryRun,
       removed,
       skipped,
+      caches,
     },
     removed.length
       ? renderTable([

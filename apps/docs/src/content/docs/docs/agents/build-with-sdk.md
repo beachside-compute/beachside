@@ -7,7 +7,7 @@ Replace the bracketed fields, then copy the prompt into your coding agent. Give 
 
 ```text wrap title="Application prompt"
 Build [describe the feature] in this project using the Beachside TypeScript SDK.
-Use [Daytona, E2B, boxd or Vercel] as the sandbox provider.
+Use [boxd, Freestyle, Daytona, E2B or Vercel] as the sandbox provider.
 Read that provider's setup guide and supported operations before choosing a workflow.
 
 Read these docs first:
@@ -16,16 +16,16 @@ Read these docs first:
 - https://beachside.run/docs/reference/typescript/
 - https://beachside.run/docs/guides/recovery/
 - https://beachside.run/docs/guides/runnable-agent-examples/
-- https://github.com/pandemicsyn/beachside/blob/main/examples/README.md
+- https://github.com/beachside-compute/beachside/blob/main/examples/README.md
 
 Inspect the project and installed package versions before changing code.
-Install "beachside" and the selected adapter package from npm. Do not
-substitute the unrelated npm package named "beachside".
+Install "beachside" and the selected adapter package from npm at matching
+versions, never a 0.0.0 placeholder.
 
 Use Beachside and Image from "beachside", and the adapter definition from
-the selected package: e2bAdapter from "@beachside/e2b", daytonaAdapter from
-"@beachside/daytona", boxdAdapter from "@beachside/boxd", or vercelAdapter
-from "@beachside/vercel". Connect with
+the selected package: boxdAdapter from "@beachside/boxd", freestyleAdapter
+from "@beachside/freestyle", daytonaAdapter from "@beachside/daytona",
+e2bAdapter from "@beachside/e2b", or vercelAdapter from "@beachside/vercel". Connect with
 Beachside.connect({ adapter, credentials, config }) for every provider.
 Run the SDK on the server and read credentials from environment variables.
 
@@ -34,11 +34,14 @@ use /home/user for E2B file examples. For Daytona, use an active Linux
 snapshot in the verified region and configure "daytona-default" at connection
 setup unless strict blocked networking is explicitly required and supported. Do not treat provider-default access as isolation.
 
-Vercel defaults to disposable Node 24 in iad1 with blocked networking. It supports
+Vercel defaults to disposable Node 24 in iad1 with internet networking. It supports
 bounded byte output and overwrite-only files, without stdin, process streams,
 snapshots or volumes; cleanup stops compute and retains named metadata.
-boxd requires an explicit internet policy and also requires overwrite:true.
-Neither provider inherits Daytona/E2B streaming or storage guarantees.
+Sandboxes reach the internet by default (Daytona keeps its tier's
+"daytona-default"); set network "blocked" or an allowlist to restrict egress.
+boxd requires overwrite:true. Freestyle runs on its freestyle/ubuntu base;
+commands and writes need a running VM.
+Vercel, boxd and Freestyle do not inherit Daytona/E2B streaming or storage guarantees.
 
 Use argument arrays for commands. Use the explicit shell form only when
 shell syntax is needed. Preserve byte output, check truncation, and handle

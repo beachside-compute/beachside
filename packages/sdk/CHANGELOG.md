@@ -1,5 +1,88 @@
 # beachside
 
+## 0.15.0
+
+### Minor Changes
+
+- [#212](https://github.com/pandemicsyn/beachside/pull/212) [`6c5d263`](https://github.com/pandemicsyn/beachside/commit/6c5d2632ef0d8a6c02d35fcd826112822b4768f6) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Sandboxes now reach the internet unless you ask otherwise. boxd, E2B, Vercel, Modal, Runloop, Freestyle and Archil default to `network: "internet"` instead of `blocked`; set `network: "blocked"` or an allowlist to restrict egress. Daytona keeps its tier-managed `daytona-default`. Boat and exe.dev no longer require `network: "internet"` in setup, and the CLI no longer needs `BOAT_NETWORK` or `EXE_NETWORK`; `BOXD_NETWORK`, `RUNLOOP_NETWORK`, `FREESTYLE_NETWORK` and `ARCHIL_NETWORK` stay optional, for `blocked` or (Archil Free plan) `archil-managed`. An adapter that declares no `defaultNetworkPolicy` now defaults to `internet`, or to its only policy when `supports.network` lists one. Connections that relied on the old blocked default and reopen sandboxes created that way should set `network: "blocked"` explicitly.
+
+### Patch Changes
+
+- Updated dependencies [[`8652541`](https://github.com/pandemicsyn/beachside/commit/86525413252c43b170eb5e086b5f859713aa2ca9), [`6c5d263`](https://github.com/pandemicsyn/beachside/commit/6c5d2632ef0d8a6c02d35fcd826112822b4768f6)]:
+  - @beachside/adapter@0.15.0
+
+## 0.14.0
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @beachside/adapter@0.14.0
+
+## 0.13.0
+
+### Minor Changes
+
+- [#194](https://github.com/pandemicsyn/beachside/pull/194) [`f95dce3`](https://github.com/pandemicsyn/beachside/commit/f95dce3c58353ed8ea14b23c5205f1619e4e374b) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Egress allowlists: set `network: { allow: ["registry.npmjs.org", "*.github.com", "10.0.0.0/8"] }` in adapter setup to let sandboxes reach only those hosts and IPv4 ranges. Supported on E2B, Vercel, Modal, Runloop, Archil (paid plans), Daytona (Tier 3+; hosts or ranges, not both) and Freestyle (IPv4 ranges only); where the provider reports the list back, the adapter checks it recorded exactly that list. Modal also gains `network: "internet"`; it previously always blocked egress.
+
+- [#196](https://github.com/pandemicsyn/beachside/pull/196) [`9e3ab39`](https://github.com/pandemicsyn/beachside/commit/9e3ab396c38a718c9f26693073d6b6c93ad80972) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Previews on more providers. Daytona's `preview: { access: "public" }` now returns an expiring signed URL for one port (`preview.expiresInSeconds`, default 1 hour) instead of rejecting, and previews gain an optional `expiresAt`. Modal gets `box.preview(port)`: protected by default through a connect token sent as a bearer header, or public tunnels for `preview.ports` declared at create (public tunnels need `network: "internet"` or an allowlist, because Modal refuses open ports on a blocked network). Boat gets public previews through its host-port API.
+
+- [#198](https://github.com/pandemicsyn/beachside/pull/198) [`f89fde4`](https://github.com/pandemicsyn/beachside/commit/f89fde43eb1e548fad65c5da7b8e2c9328b62383) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add `box.fork()`, `box.submitFork()` and `box.checkFork()`. A fork copies a running sandbox with the provider's native fork; adapters without one reject with `UNSUPPORTED`, and Beachside never emulates a fork with a snapshot and restore. `capabilities().fork` reports what a fork keeps, how the source is interrupted, whether processes resume and whether the fork's lifecycle is independent. boxd, E2B and Archil fork natively with memory and running processes. Adapters declare a fork with the new `sandboxFork` session hook; uncertain forks recover through operation kind `sandbox_fork`.
+
+### Patch Changes
+
+- Updated dependencies [[`f95dce3`](https://github.com/pandemicsyn/beachside/commit/f95dce3c58353ed8ea14b23c5205f1619e4e374b), [`9e3ab39`](https://github.com/pandemicsyn/beachside/commit/9e3ab396c38a718c9f26693073d6b6c93ad80972), [`f89fde4`](https://github.com/pandemicsyn/beachside/commit/f89fde43eb1e548fad65c5da7b8e2c9328b62383)]:
+  - @beachside/adapter@0.13.0
+
+## 0.12.0
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @beachside/adapter@0.12.0
+
+## 0.11.0
+
+### Minor Changes
+
+- [#187](https://github.com/pandemicsyn/beachside/pull/187) [`ae8c05a`](https://github.com/pandemicsyn/beachside/commit/ae8c05aadf2841f734c9c66223043290d587b9ef) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Sandboxes can now be set up as they start. `sandboxes.create()`, `sandboxes.with()` and `snapshot.restore()` take `setup` (steps that run once per sandbox: shell lines, argv arrays, inline scripts or `Setup.file()` scripts) and `startup` (steps that run whenever the sandbox comes up without its processes, including after a fresh `resume()`). `Setup.define()` makes named setups that compose. Beachside runs the steps over `exec` on every provider, streams their output through `onSetupOutput`, records progress in the sandbox so a restored snapshot skips setup it already holds, and throws `SetupFailedError` naming the failed step. A sandbox whose setup fails is destroyed unless `onSetupFailure: "keep"`. `box.runSetup()` runs setup on an existing sandbox.
+
+- [#187](https://github.com/pandemicsyn/beachside/pull/187) [`ae8c05a`](https://github.com/pandemicsyn/beachside/commit/ae8c05aadf2841f734c9c66223043290d587b9ef) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Snapshots can carry labels. `snapshot({ labels })` sets them at capture where the adapter keeps them, and `snapshots.list({ labels })` keeps only matching snapshots.
+
+  - **Adapters:** an adapter opts in with `snapshotCapture.labels: true`, and listed `SnapshotInfo` reports `labels`. Elsewhere a labelled capture is rejected before anything is captured.
+  - **Capability:** `capabilities().snapshots.capture.value.labels` says whether labels are kept.
+  - **Runloop:** labels are stored as snapshot metadata, next to the adapter's own `beachside_` keys, which stay reserved.
+  - **Setup:** `box.runSetup()` takes `env` for every step, kept out of the digest, and `runStartup: false`, which records startup steps without running them so a snapshot can be taken in between.
+
+  `Setup.parallel([...steps])` runs setup steps at the same time as one step; its steps' events and output carry `step.group`.
+
+### Patch Changes
+
+- Updated dependencies [[`ae8c05a`](https://github.com/pandemicsyn/beachside/commit/ae8c05aadf2841f734c9c66223043290d587b9ef)]:
+  - @beachside/adapter@0.11.0
+
+## 0.10.0
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @beachside/adapter@0.10.0
+
+## 0.9.0
+
+### Minor Changes
+
+- [#159](https://github.com/pandemicsyn/beachside/pull/159) [`d137e90`](https://github.com/pandemicsyn/beachside/commit/d137e90e8f7bc271713c8b0776605bf4996196c2) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Make provider setup consistent. Every first-party package now exports its definition as `<provider>Adapter` and a factory named after the provider: `boxd()`, `boat()`, `runloop()`, `modal()` and `vercel()` join `daytona()` and `e2b()`. Docs, examples and skills show the split form, `Beachside.connect({ adapter, credentials, config })`, which works for every adapter.
+
+  Breaking for Vercel: the definition is now `vercelAdapter`, and `vercel` is the factory. Replace `adapter: vercel` with `adapter: vercelAdapter`, or call `Beachside.connect(vercel({ token, teamId, projectId }))`. Passing a factory where a definition belongs now fails with `INVALID_ARGUMENT` and names both forms.
+
+- [#164](https://github.com/pandemicsyn/beachside/pull/164) [`7b9fa24`](https://github.com/pandemicsyn/beachside/commit/7b9fa244f6364b8b6aace7bcd46d80edb71fe993) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Buffered `readFile`/`writeFile` (and the text variants) have no default size limit: files larger than the adapter's buffered limit move through its file streams underneath. `maxBytes` stays as an optional guard and the 16 MiB ceiling is gone. Adapters without file streams keep their own limit, and the error names it. `capabilities().maxFileBytes` now reports the adapter's buffered limit. `exec` `stdin` also accepts an `AsyncIterable<Uint8Array>` or `ReadableStream<Uint8Array>`, and byte or text input over 1 MiB. These are streamed to the command as it runs on adapters with incremental process stdin (Daytona, E2B, Vercel), with `deadlineSeconds` enforced locally.
+
+### Patch Changes
+
+- [#167](https://github.com/pandemicsyn/beachside/pull/167) [`3f414a8`](https://github.com/pandemicsyn/beachside/commit/3f414a8dbb7d9b73259e99a2c70cda59fac75af9) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - E2B streamed writes, and buffered writes over 1 MiB, work in sticky directories such as `/tmp` again; they used to fail there with "stream completion could not be confirmed". When a streamed E2B write fails, the error now names the step that failed and keeps the provider's original error as its `cause`.
+- Updated dependencies [[`d137e90`](https://github.com/pandemicsyn/beachside/commit/d137e90e8f7bc271713c8b0776605bf4996196c2)]:
+  - @beachside/adapter@0.9.0
+
 ## 0.8.0
 
 ### Minor Changes

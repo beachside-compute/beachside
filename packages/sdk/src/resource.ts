@@ -9,6 +9,7 @@ import type {
 import type { OperationKind, RetainedArtifact, Scope } from "@beachside/adapter";
 import { z } from "zod";
 import type { AdapterImage, AdapterSnapshot, AdapterVolume } from "./resources";
+import type { SetupCreateOptions } from "./setup";
 import {
   CreateEnv,
   CreateSandboxInput,
@@ -60,7 +61,7 @@ export const Image = {
 };
 
 /** Portable outbound network policy; adapters map it to native settings. */
-export type NetworkPolicy = "blocked" | "internet" | (string & {});
+export type NetworkPolicy = "blocked" | "internet" | "allow" | (string & {});
 
 export type CreateInput = {
   environment?: ImageInput;
@@ -83,7 +84,7 @@ export type CreateInput = {
    * An adapter that cannot apply it exactly (or by rounding up) rejects before any effect.
    */
   lifecycle?: { lifetimeSeconds?: number };
-};
+} & SetupCreateOptions;
 
 export type ExecInput = {
   command: ExecCommand;
@@ -496,7 +497,7 @@ export function resolveNetworkPolicy(
 export function validateCreate(
   input: CreateInput | undefined,
   defaultEnvironment?: ImageInput,
-  defaultNetworkPolicy = "blocked",
+  defaultNetworkPolicy = "internet",
   networkPolicyAliases?: Readonly<Record<string, string>>,
 ): Omit<CreateInput, "network"> & { environment: ImageInput; networkPolicy: string } {
   const parsed = z

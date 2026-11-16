@@ -1,9 +1,9 @@
 ---
 title: E2B
-description: Use the E2B adapter for template-based sandboxes with commands, files, streaming, pause/resume, snapshots and public previews.
+description: Use the E2B adapter for template-based sandboxes with commands, files, streaming, pause/resume, snapshots and public or protected previews.
 ---
 
-The `@beachside/e2b` package runs Beachside sandboxes on [E2B](https://e2b.dev) through the pinned `e2b@2.51.0` client. Install it with `npm install beachside @beachside/e2b`; it is a supported provider. Use Node 20+ or Bun.
+The `@beachside/e2b` package runs Beachside sandboxes on [E2B](https://e2b.dev) through the pinned `e2b@2.63.0` client. Install it with `npm install beachside @beachside/e2b`; it is a supported provider. Use Node 22.19+ or Bun; `e2b@2.63.0` requires Node 22.19 or newer.
 
 ```ts
 import { Beachside } from "beachside";
@@ -34,17 +34,17 @@ The package also exports `e2b()`, which takes credentials and config in one obje
 
 ## Setup
 
-| Setting                     | Default   | Notes                                                                                                                                                                                                                                               |
-| --------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apiKey`                    | required  | E2B API key.                                                                                                                                                                                                                                        |
-| `teamId`                    | none      | Verified team scope. Needed to rotate keys and still reopen saved sandboxes and snapshots.                                                                                                                                                          |
-| `templateId`                | `base`    | E2B's public `base` template, or an owned template ID or name. Names must be untagged or use `:default`; other tags and public aliases are unsupported.                                                                                             |
-| `network`                   | `blocked` | `blocked` or `internet`, mapped to E2B's internet-access setting. Deprecated alias: `networkPolicy` (set one, not both). See [network and previews](#network-and-previews).                                                                         |
-| `lifecycle.lifetimeSeconds` | 900       | Initial lifetime and default `renew()` window, up to 86,400 seconds; values under 60 become 60. E2B kills the sandbox when it expires. `create({ lifecycle })` can override it per sandbox. Deprecated alias: `timeoutSeconds` (set one, not both). |
-| `lifecycle.suspension`      | none      | `{ preserve: Preserve.FILESYSTEM }` pauses and resumes from disk only, so resume always cold-boots. Default `Preserve.FILESYSTEM_AND_MEMORY` keeps memory and processes.                                                                            |
-| `snapshots`                 | none      | `{ preserve: Preserve.FILESYSTEM }` captures disk only and restores with fresh processes. Default `Preserve.FILESYSTEM_AND_MEMORY` captures memory too.                                                                                             |
-| `preview.access`            | `public`  | `public` opens the sandbox to inbound traffic. `protected` keeps it closed, and `preview()` then rejects `UNSUPPORTED`.                                                                                                                             |
-| `resources`                 | none      | Minimum `{ vcpus, memoryMiB }`. OCI images are built at that size; a prepared template must already meet it, so `base` is rejected.                                                                                                                 |
+| Setting                     | Default    | Notes                                                                                                                                                                                                                                                                                                                    |
+| --------------------------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `apiKey`                    | required   | E2B API key.                                                                                                                                                                                                                                                                                                             |
+| `teamId`                    | none       | Verified team scope. Needed to rotate keys and still reopen saved sandboxes and snapshots.                                                                                                                                                                                                                               |
+| `templateId`                | `base`     | E2B's public `base` template, or an owned template ID or name. Names must be untagged or use `:default`; other tags and public aliases are unsupported.                                                                                                                                                                  |
+| `network`                   | `internet` | `blocked` or `internet`, mapped to E2B's internet-access setting, or `{ allow: [...] }` for only those hosts and IPv4 ranges ([allowlists](/docs/guides/images-and-networking/#allow-only-some-destinations)). Deprecated alias: `networkPolicy` (set one, not both). See [network and previews](#network-and-previews). |
+| `lifecycle.lifetimeSeconds` | 900        | Initial lifetime and default `renew()` window, up to 86,400 seconds; values under 60 become 60. E2B kills the sandbox when it expires. `create({ lifecycle })` can override it per sandbox. Deprecated alias: `timeoutSeconds` (set one, not both).                                                                      |
+| `lifecycle.suspension`      | none       | `{ preserve: Preserve.FILESYSTEM }` pauses and resumes from disk only, so resume always cold-boots. Default `Preserve.FILESYSTEM_AND_MEMORY` keeps memory and processes.                                                                                                                                                 |
+| `snapshots`                 | none       | `{ preserve: Preserve.FILESYSTEM }` captures disk only and restores with fresh processes. Default `Preserve.FILESYSTEM_AND_MEMORY` captures memory too.                                                                                                                                                                  |
+| `preview.access`            | `public`   | `public` opens the sandbox to inbound traffic. `protected` keeps it closed, and `preview()` returns E2B's traffic token as a header.                                                                                                                                                                                     |
+| `resources`                 | none       | Minimum `{ vcpus, memoryMiB }`. OCI images are built at that size; a prepared template must already meet it, so `base` is rejected.                                                                                                                                                                                      |
 
 `create({ env })` sets E2B's sandbox environment, which applies to every command and process, including after reopening; per-call `env` overrides a name. Values are not saved in recovery references and are redacted from E2B error text. `labels` are stored as E2B metadata; Beachside's reserved keys reject `INVALID_ARGUMENT`. A per-call `environment` (image) overrides `templateId` for that call, and an invalid or unavailable override never falls back to `base`. `region` and mounts reject `UNSUPPORTED`.
 
@@ -61,10 +61,11 @@ The package also exports `e2b()`, which takes credentials and config in one obje
 | Command input                | Finite stdin up to 1 MiB, staged as a file under `/tmp`.                                        | No          |
 | Files                        | Binary read, overwrite and no-clobber writes; byte streams for large files.                     | Yes         |
 | Directories                  | List, stat, mkdir, remove, copy, move, walk and text lines.                                     | Yes         |
-| HTTP previews                | Public URLs only.                                                                               | Yes         |
+| HTTP previews                | Public URLs, or protected URLs with an `e2b-traffic-access-token` header.                       | Public only |
 | Images                       | Owned templates and OCI builds; get, list and delete templates.                                 | No          |
-| Network controls             | `blocked` or `internet`; blocking is not reliable.                                              | Failed      |
+| Network controls             | `blocked`, `internet` or an allowlist; blocking is not reliable.                                | Failed      |
 | Snapshots                    | Filesystem, memory and process capture; restore into new compute; inspect and delete.           | Yes         |
+| Fork                         | `box.fork()` copies a running sandbox's memory, files and processes into new compute.           | No          |
 | Volumes and mounts           | Volume create, inspect, list and delete (E2B private beta). Mounts not supported.               | No          |
 | Listing sandboxes and images | Sandboxes created by this Beachside scope; all team templates.                                  | No          |
 
@@ -74,7 +75,11 @@ Live results cover the tested image, region and network setting; see [Provider s
 
 `network: "blocked"` sets E2B's internet access off. Do not rely on it for isolation: in the live test a blocked sandbox resolved no hostnames but could still open a direct IPv4 TCP connection (to `1.1.1.1:443`). Restored snapshots keep the same weakness. See [select a network policy](/docs/guides/images-and-networking/#select-a-network-policy).
 
-Previews are public by default. A public sandbox accepts inbound traffic from the moment it is created or restored, before you call `preview()`, and anyone with the URL `https://<port>-<sandbox-id>.e2b.app` can reach that port. `preview()` requires running compute with auto-resume off. With `preview.access: "protected"`, sandboxes are created closed to inbound traffic, but the adapter cannot fetch E2B's access token, so `preview()` rejects instead of falling back to public. Denial of inbound traffic in protected mode has not been live-tested. See [public access with E2B](/docs/guides/preview-access/#public-access-with-e2b).
+`network: { allow: [...] }` sends the entries as E2B's `allowOut` with everything else in `denyOut`, and the adapter checks both lists on the created sandbox and on every restore. Host entries match HTTP on port 80 and TLS on port 443 only; other ports and UDP (QUIC/HTTP3) need an IPv4 range. The allowlist has not been live-tested. See [allow only some destinations](/docs/guides/images-and-networking/#allow-only-some-destinations).
+
+Previews are public by default. A public sandbox accepts inbound traffic from the moment it is created or restored, before you call `preview()`, and anyone with the URL `https://<port>-<sandbox-id>.e2b.app` can reach that port. `preview()` requires running compute with auto-resume off.
+
+With `preview.access: "protected"`, sandboxes are created closed to inbound traffic and `preview()` returns `{ access: "protected", url, headers }`, where the header is `e2b-traffic-access-token`. Requests without it get `403`. E2B returns that token only from its connect call, so `preview()` checks that the sandbox is running, private and has auto-resume off, then connects with the sandbox's observed remaining lifetime as the timeout, so the lifetime stays as it was. If the sandbox paused between the check and the call, E2B resumes it with that remaining lifetime and `preview()` fails with `CONFLICT` instead of returning access; inspect it and ask again. The token is a credential. Protected mode has not been live-tested. See [preview access](/docs/guides/preview-access/#public-and-protected-access-with-e2b).
 
 ## Commands and files
 
@@ -99,13 +104,19 @@ Renewal, pause and resume need running compute that Beachside created with kill-
 
 Destroy each sandbox, then close the client; the native timeout is only a fallback. Snapshot templates and templates built from OCI images survive sandbox destruction and need `snapshots.delete()` or `images.delete()`. `images.delete()` only removes a private template with one build, no other alias, no snapshot and no listed sandbox using it; anything else rejects `CONFLICT` before E2B is called.
 
+## Fork
+
+`box.fork()` uses E2B's native fork. E2B pauses the source to checkpoint its memory, which drops its open connections, then resumes it with the same ID and expiry. The fork continues the source's processes with its files. `lifetimeSeconds` sets the fork's timeout and defaults to the configured lifetime. The fork inherits the source's labels, which therefore also match it in `sandboxes.list()` and `beachside gc --label`; E2B cannot set new labels on a fork, so `labels` are refused before anything changes.
+
+The fork carries its source's metadata, including the markers Beachside uses to recognise its own sandboxes. Its reference names the source's creation and differs by sandbox ID, and `sandboxes.list()` returns it next to its source. Beachside hands back a fork only when E2B returns a new sandbox ID whose record carries the source's creation markers (operation and submission) and the same public-traffic setting, taken from the source or, when E2B omits it, from the connection's preview setup; anything else is reported unknown, so a protected source never yields a public fork unnoticed. The fork's reported template is not compared, because it has not been checked against a live fork. If reading the fork fails with an authentication error, recover the operation from a connection with valid credentials. If a fork's response is lost, its outcome stays unknown: list sandboxes and compare IDs. See [Fork a running sandbox](/docs/guides/snapshots-and-volumes/#fork-a-running-sandbox).
+
 ## Limits
 
 - `network: "blocked"` did not stop direct IPv4 connections in the live test.
-- Previews are public only; protected mode cannot return a preview.
+- Protected previews have not been live-tested.
 - No region selection and no Beachside volume mounts. Live volume creation was refused (HTTP 403) for the tested account.
 - `sandboxes.list()` returns only sandboxes this binding created, so a page can hold fewer items than `limit`. Paused sandboxes list as `suspended`. Image listings cover all team templates with unknown ownership.
 - Saved references hold no credentials. Reopen with the same template and the same key, or the same `teamId`.
 - A refused create maps HTTP 400 to `INVALID_ARGUMENT`, 401 to `UNAUTHENTICATED`, 403 to `FORBIDDEN`, 404 to `NOT_FOUND` and 429 (including the concurrent sandbox limit) to `RATE_LIMIT`; nothing was created. Server errors, lost responses and refusals after an OCI build (the template remains) are `OUTCOME_UNKNOWN`; see [recovery](/docs/guides/recovery/).
 
-See [E2B sandbox lifecycle](https://docs.e2b.dev/sandbox), [persistence](https://docs.e2b.dev/sandbox/persistence), [snapshots](https://docs.e2b.dev/sandbox/snapshots), [volumes](https://docs.e2b.dev/volumes/manage) and the [compiled suspend/resume example](https://github.com/pandemicsyn/beachside/blob/main/apps/docs/examples/sandbox-suspend-resume.ts).
+See [E2B sandbox lifecycle](https://docs.e2b.dev/sandbox), [persistence](https://docs.e2b.dev/sandbox/persistence), [snapshots](https://docs.e2b.dev/sandbox/snapshots), [volumes](https://docs.e2b.dev/volumes/manage) and the [compiled suspend/resume example](https://github.com/beachside-compute/beachside/blob/main/apps/docs/examples/sandbox-suspend-resume.ts).

@@ -1,6 +1,6 @@
 ---
 title: Runloop
-description: Use the Runloop adapter for Devboxes with blocked egress, disk snapshots, suspend/resume and previews.
+description: Use the Runloop adapter for Devboxes with egress controls, disk snapshots, suspend/resume and previews.
 ---
 
 The `@beachside/runloop` package implements the public Beachside adapter interface for [Runloop](https://runloop.ai) Devboxes. Install it with `npm install beachside @beachside/runloop`; it is experimental, and Runloop sign-ups are currently by invitation only. Use Node 20+ or Bun. It calls the Runloop REST API v1 (`https://api.runloop.ai`) directly, with no native SDK dependency.
@@ -12,7 +12,7 @@ import { runloopAdapter } from "@beachside/runloop";
 const client = await Beachside.connect({
   adapter: runloopAdapter,
   credentials: { apiKey: process.env.RUNLOOP_API_KEY! },
-  config: { network: "blocked" },
+  config: {},
 });
 try {
   const box = await client.sandboxes.create();
@@ -32,32 +32,32 @@ The package also exports `runloop()`, which takes credentials and config in one 
 
 ## Setup
 
-| Setting                     | Default           | Notes                                                                                                                                                                                                                                      |
-| --------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `network`                   | `blocked`         | `blocked` attaches a deny-all account network policy named `beachside-blocked`, created on first use and re-checked before each create. `internet` attaches no policy. Allowlists are unsupported.                                         |
-| `image`                     | `runloop-default` | Runloop's default Devbox image. Any other value is a blueprint id (when one exists) or a blueprint name. OCI images and image builds are unsupported.                                                                                      |
-| `resources`                 | Runloop default   | Minimum `{ vcpus, memoryMiB }`. Picks the smallest of `X_SMALL` (0.5 vCPU, 1 GiB), `SMALL` (1, 2 GiB), `MEDIUM` (2, 4 GiB), `LARGE` (2, 8 GiB), `X_LARGE` (4, 16 GiB), `XX_LARGE` (8, 32 GiB), or a custom 16 vCPU size with 32 or 64 GiB. |
-| `lifecycle.lifetimeSeconds` | 900               | 60 seconds to 48 hours. Runloop shuts the Devbox down when the time is up. `create({ lifecycle })` can override it per sandbox unless `idleSeconds` is set.                                                                                |
-| `lifecycle.idleSeconds`     | none              | Suspend after this many idle seconds instead of using a fixed lifetime. Set either this or `lifetimeSeconds`, not both.                                                                                                                    |
-| `preview.access`            | `protected`       | `protected` previews need the returned `X-Runloop-Tunnel-Authorization` header. `public` URLs are open to anyone who has them.                                                                                                             |
-| `snapshots.preserve`        | `filesystem`      | Runloop snapshots keep the disk only; `Preserve.FILESYSTEM_AND_MEMORY` rejects `UNSUPPORTED` at connect.                                                                                                                                   |
+| Setting                     | Default           | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| --------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `network`                   | `internet`        | `blocked` attaches a deny-all account network policy named `beachside-blocked`, created on first use and re-checked before each create. `internet` attaches no policy. `{ allow: [...] }` attaches a policy named `beachside-allow-<digest>` holding only those hosts and IPv4 ranges, shared by connections with the same list and re-checked the same way ([allowlists](/docs/guides/images-and-networking/#allow-only-some-destinations)). Runloop allows 100 policies per account. |
+| `image`                     | `runloop-default` | Runloop's default Devbox image. Any other value is a blueprint id (when one exists) or a blueprint name. OCI images and image builds are unsupported.                                                                                                                                                                                                                                                                                                                                  |
+| `resources`                 | Runloop default   | Minimum `{ vcpus, memoryMiB }`. Picks the smallest of `X_SMALL` (0.5 vCPU, 1 GiB), `SMALL` (1, 2 GiB), `MEDIUM` (2, 4 GiB), `LARGE` (2, 8 GiB), `X_LARGE` (4, 16 GiB), `XX_LARGE` (8, 32 GiB), or a custom 16 vCPU size with 32 or 64 GiB.                                                                                                                                                                                                                                             |
+| `lifecycle.lifetimeSeconds` | 900               | 60 seconds to 48 hours. Runloop shuts the Devbox down when the time is up. `create({ lifecycle })` can override it per sandbox unless `idleSeconds` is set.                                                                                                                                                                                                                                                                                                                            |
+| `lifecycle.idleSeconds`     | none              | Suspend after this many idle seconds instead of using a fixed lifetime. Set either this or `lifetimeSeconds`, not both.                                                                                                                                                                                                                                                                                                                                                                |
+| `preview.access`            | `protected`       | `protected` previews need the returned `X-Runloop-Tunnel-Authorization` header. `public` URLs are open to anyone who has them.                                                                                                                                                                                                                                                                                                                                                         |
+| `snapshots.preserve`        | `filesystem`      | Runloop snapshots keep the disk only; `Preserve.FILESYSTEM_AND_MEMORY` rejects `UNSUPPORTED` at connect.                                                                                                                                                                                                                                                                                                                                                                               |
 
-Create-time `env` is sent as Runloop environment variables. `region`, `labels` and mounts are rejected.
+Create-time `env` is sent as Runloop environment variables. `labels` become Devbox metadata, show in `sandboxes.list()`, and also apply to `restore({ labels })`; keys starting with `beachside_` are reserved and reject. `region` and mounts are rejected.
 
 ## What works
 
 Everything below is tested against a simulated Runloop API on every change. **No live Runloop run has been made yet.**
 
-| Feature           | Support                                                                                                                                                     | Live tested |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| Compute lifecycle | Create, inspect, inventory, `sandboxes.list()`, reference reopening, and destroy by confirmed shutdown.                                                     | No          |
-| Commands          | argv and shell, with `cwd` and `env`; exact stdout/stderr bytes up to 1 MiB per stream; finite byte stdin; deadlines up to an hour.                         | No          |
-| Streaming output  | Live stdout/stderr as UTF-8 text from Runloop's log streams; stop with `terminate()`. No byte output.                                                       | No          |
-| Files             | Binary read and overwrite write up to 64 MiB. No-clobber writes are unsupported.                                                                            | No          |
-| Suspend/resume    | `suspend()` keeps the disk; `resume()` starts fresh processes. Memory and connections are not kept.                                                         | No          |
-| Snapshots         | `snapshot()` captures the disk while the Devbox keeps running; `restore()` creates a new Devbox from it; list, inspect and delete.                          | No          |
-| Previews          | `preview(port)` returns the Devbox tunnel URL for that port, created with the Devbox.                                                                       | No          |
-| Unsupported       | OCI images and image builds, volumes, mounts, egress allowlists, renewal, piped input, byte streaming, terminals, directory operations, regions and labels. | —           |
+| Feature           | Support                                                                                                                             | Live tested |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| Compute lifecycle | Create with labels, inspect, inventory, `sandboxes.list()`, reference reopening, and destroy by confirmed shutdown.                 | No          |
+| Commands          | argv and shell, with `cwd` and `env`; exact stdout/stderr bytes up to 1 MiB per stream; finite byte stdin; deadlines up to an hour. | No          |
+| Streaming output  | Live stdout/stderr as UTF-8 text from Runloop's log streams; stop with `terminate()`. No byte output.                               | No          |
+| Files             | Binary read and overwrite write up to 64 MiB. No-clobber writes are unsupported.                                                    | No          |
+| Suspend/resume    | `suspend()` keeps the disk; `resume()` starts fresh processes. Memory and connections are not kept.                                 | No          |
+| Snapshots         | `snapshot()` captures the disk while the Devbox keeps running; `restore()` creates a new Devbox from it; list, inspect and delete.  | No          |
+| Previews          | `preview(port)` returns the Devbox tunnel URL for that port, created with the Devbox.                                               | No          |
+| Unsupported       | OCI images and image builds, volumes, mounts, renewal, piped input, byte streaming, terminals, directory operations and regions.    | —           |
 
 ## How streamed commands work
 
@@ -75,4 +75,13 @@ A command that passes its deadline is killed through Runloop and reported as `OU
 
 Beachside sends each mutation once and the adapter adds no retries. Creates and snapshot captures carry `beachside_operation` and `beachside_submission` metadata, so a create or capture whose response was lost is found by that marker instead of being resent. A refusal Runloop answers with a 4xx is reported as that error; a lost response or 5xx is `OUTCOME_UNKNOWN`. A lost or failed command result is never replayed. Listed Devboxes and snapshots not created through this connection report `ownership: "unknown"`.
 
-See the [provider research issue](https://github.com/pandemicsyn/beachside/issues/47) and the [Runloop API reference](https://docs.runloop.ai/docs/api-reference).
+## Limits
+
+- Not yet tested against the live Runloop service, and sign-ups are by invitation.
+- No OCI images or image builds, volumes, mounts, renewal, piped input, byte streaming, terminals, directory operations or regions.
+- Command deadlines go up to an hour.
+- Files are limited to 64 MiB, and no-clobber writes are unsupported.
+- Suspend keeps the disk only; memory and connections are lost.
+- Shutdown is refused while a disk snapshot is in progress.
+
+See the [provider research issue](https://github.com/beachside-compute/beachside/issues/47) and the [Runloop API reference](https://docs.runloop.ai/docs/api-reference).

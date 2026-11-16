@@ -8,7 +8,9 @@ Configure a provider once, create a sandbox, write input, execute, read output a
 
 ## October 16 portable network names
 
-Every official adapter accepts `network: "blocked" | "internet"` in setup and per call, with `networkPolicy` and Vercel's `vercel-*` names kept as deprecated aliases (adapter-declared `networkPolicyAliases`, resolved by the SDK before support checks and persistence). Daytona keeps `daytona-default` as a Daytona-only setup value; its `internet` requires an organization without limited sandbox egress and shares the existing provider-managed partition, since both send the same native request. Per-call policies must still match the connection on Daytona, Vercel and boxd. Allowlists and per-call relaxation are later steps of the portable options design.
+Every official adapter accepts `network: "blocked" | "internet"` in setup and per call, with `networkPolicy` and Vercel's `vercel-*` names kept as deprecated aliases (adapter-declared `networkPolicyAliases`, resolved by the SDK before support checks and persistence). Daytona keeps `daytona-default` as a Daytona-only setup value; its `internet` requires an organization without limited sandbox egress and shares the existing provider-managed partition, since both send the same native request. Per-call policies must still match the connection on Daytona, Vercel and boxd. Egress allowlists shipped in #194 as a setup value, `network: { allow: [...] }`: a connection with one offers only `allow`, and per-call relaxation is still a later step.
+
+Network defaults (November 2026): sandboxes reach the internet unless the user asks otherwise. Every adapter defaults to `internet`, except Daytona, which keeps the tier-managed `daytona-default`; the SDK's fallback for an adapter that declares no default is `internet`, or the adapter's only policy when `supports.network` lists one. Boat and exe.dev no longer require `network: "internet"` in setup. This replaces the earlier blocked default and the legacy blocked fallback described below.
 
 ## October 11 network default acceptance (merged #90)
 

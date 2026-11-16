@@ -1,5 +1,93 @@
 # @beachside/e2b
 
+## 0.15.0
+
+### Minor Changes
+
+- [#212](https://github.com/pandemicsyn/beachside/pull/212) [`6c5d263`](https://github.com/pandemicsyn/beachside/commit/6c5d2632ef0d8a6c02d35fcd826112822b4768f6) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Sandboxes now reach the internet unless you ask otherwise. boxd, E2B, Vercel, Modal, Runloop, Freestyle and Archil default to `network: "internet"` instead of `blocked`; set `network: "blocked"` or an allowlist to restrict egress. Daytona keeps its tier-managed `daytona-default`. Boat and exe.dev no longer require `network: "internet"` in setup, and the CLI no longer needs `BOAT_NETWORK` or `EXE_NETWORK`; `BOXD_NETWORK`, `RUNLOOP_NETWORK`, `FREESTYLE_NETWORK` and `ARCHIL_NETWORK` stay optional, for `blocked` or (Archil Free plan) `archil-managed`. An adapter that declares no `defaultNetworkPolicy` now defaults to `internet`, or to its only policy when `supports.network` lists one. Connections that relied on the old blocked default and reopen sandboxes created that way should set `network: "blocked"` explicitly.
+
+### Patch Changes
+
+- [#211](https://github.com/pandemicsyn/beachside/pull/211) [`8652541`](https://github.com/pandemicsyn/beachside/commit/86525413252c43b170eb5e086b5f859713aa2ca9) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Adapters can declare `setup`: the environment variable for each credential and config setting, a description, and a link to where a person gets it when there is one. `alternatives` lists credentials that stand in for each other (exe.dev takes an API key or an SSH key). Every official adapter now declares its own, and the CLI reads them from the installed adapter instead of keeping its own table, so third-party adapters that declare `setup` get environment-only settings too. Missing-setting errors and `beachside providers` link to where each value comes from, and `providers` lists the profiles that use each provider. Its JSON rows add `known` (false when the adapter failed to load or declares no setup, in which case `missingEnv` is empty and the text says the settings are unknown) and `needs`, with each missing value's description and link.
+
+  New `beachside profile ls | show | use | rm` commands list profiles, explain where each setting comes from without revealing credentials, change the default and remove profiles. `profile show` reports `ready` (true, false, or null when the adapter declares no setup) and what the profile still `needs`. `use` and `rm` rewrite `beachside.json` atomically under a lock, keeping its file mode. `profile rm` refuses while stored sandboxes, snapshots or images use the profile, unless `--force`.
+
+  `beachside.json` has a published JSON Schema (https://beachside.run/schema/beachside.json, also printed by `beachside schema config`), and the file accepts a `$schema` key so editors can complete and check it. The schema requires each profile to name a `provider` or a `module`.
+
+  `beachside doctor` now checks that the provider accepts the credentials with one read of its sandbox listing. A rejected key exits 5 (`UNAUTHENTICATED` or `FORBIDDEN`) with the profile name and where to get a new key, here and on any command that connects, instead of an internal error with an unknown outcome.
+
+  `beachside providers` no longer marks boxd and Freestyle experimental, and lists providers in the docs' order.
+
+- Updated dependencies [[`8652541`](https://github.com/pandemicsyn/beachside/commit/86525413252c43b170eb5e086b5f859713aa2ca9), [`6c5d263`](https://github.com/pandemicsyn/beachside/commit/6c5d2632ef0d8a6c02d35fcd826112822b4768f6)]:
+  - @beachside/adapter@0.15.0
+
+## 0.14.0
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @beachside/adapter@0.14.0
+
+## 0.13.0
+
+### Minor Changes
+
+- [#193](https://github.com/pandemicsyn/beachside/pull/193) [`473b891`](https://github.com/pandemicsyn/beachside/commit/473b89100af12f8fd6f691edddfa69745ff3189c) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - E2B: upgrade to `e2b@2.63.0` and support protected previews. With `preview: { access: "protected" }`, `box.preview(port)` now returns the sandbox's traffic token as an `e2b-traffic-access-token` header instead of rejecting.
+
+  The connect call that returns the token uses the sandbox's observed remaining lifetime as its timeout, so a running sandbox's lifetime is unchanged; if the sandbox paused after the running check, E2B resumes it with that remaining lifetime and `preview()` rejects with `CONFLICT`.
+
+  **Compatibility:** `e2b@2.63.0` requires Node 22.19 or newer, so `@beachside/e2b` now declares `engines.node >=22.19` (previously Node 20 worked).
+
+- [#194](https://github.com/pandemicsyn/beachside/pull/194) [`f95dce3`](https://github.com/pandemicsyn/beachside/commit/f95dce3c58353ed8ea14b23c5205f1619e4e374b) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Egress allowlists: set `network: { allow: ["registry.npmjs.org", "*.github.com", "10.0.0.0/8"] }` in adapter setup to let sandboxes reach only those hosts and IPv4 ranges. Supported on E2B, Vercel, Modal, Runloop, Archil (paid plans), Daytona (Tier 3+; hosts or ranges, not both) and Freestyle (IPv4 ranges only); where the provider reports the list back, the adapter checks it recorded exactly that list. Modal also gains `network: "internet"`; it previously always blocked egress.
+
+- [#198](https://github.com/pandemicsyn/beachside/pull/198) [`f89fde4`](https://github.com/pandemicsyn/beachside/commit/f89fde43eb1e548fad65c5da7b8e2c9328b62383) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add `box.fork()`, `box.submitFork()` and `box.checkFork()`. A fork copies a running sandbox with the provider's native fork; adapters without one reject with `UNSUPPORTED`, and Beachside never emulates a fork with a snapshot and restore. `capabilities().fork` reports what a fork keeps, how the source is interrupted, whether processes resume and whether the fork's lifecycle is independent. boxd, E2B and Archil fork natively with memory and running processes. Adapters declare a fork with the new `sandboxFork` session hook; uncertain forks recover through operation kind `sandbox_fork`.
+
+### Patch Changes
+
+- Updated dependencies [[`f95dce3`](https://github.com/pandemicsyn/beachside/commit/f95dce3c58353ed8ea14b23c5205f1619e4e374b), [`9e3ab39`](https://github.com/pandemicsyn/beachside/commit/9e3ab396c38a718c9f26693073d6b6c93ad80972), [`f89fde4`](https://github.com/pandemicsyn/beachside/commit/f89fde43eb1e548fad65c5da7b8e2c9328b62383)]:
+  - @beachside/adapter@0.13.0
+
+## 0.12.0
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @beachside/adapter@0.12.0
+
+## 0.11.0
+
+### Patch Changes
+
+- Updated dependencies [[`ae8c05a`](https://github.com/pandemicsyn/beachside/commit/ae8c05aadf2841f734c9c66223043290d587b9ef)]:
+  - @beachside/adapter@0.11.0
+
+## 0.10.0
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @beachside/adapter@0.10.0
+
+## 0.9.0
+
+### Minor Changes
+
+- [#159](https://github.com/pandemicsyn/beachside/pull/159) [`d137e90`](https://github.com/pandemicsyn/beachside/commit/d137e90e8f7bc271713c8b0776605bf4996196c2) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Make provider setup consistent. Every first-party package now exports its definition as `<provider>Adapter` and a factory named after the provider: `boxd()`, `boat()`, `runloop()`, `modal()` and `vercel()` join `daytona()` and `e2b()`. Docs, examples and skills show the split form, `Beachside.connect({ adapter, credentials, config })`, which works for every adapter.
+
+  Breaking for Vercel: the definition is now `vercelAdapter`, and `vercel` is the factory. Replace `adapter: vercel` with `adapter: vercelAdapter`, or call `Beachside.connect(vercel({ token, teamId, projectId }))`. Passing a factory where a definition belongs now fails with `INVALID_ARGUMENT` and names both forms.
+
+### Patch Changes
+
+- [#169](https://github.com/pandemicsyn/beachside/pull/169) [`1c36875`](https://github.com/pandemicsyn/beachside/commit/1c36875a06d48c7aa7799fa61151a03c122e4c36) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Writing to a path whose folder does not exist yet now creates the missing folders on Daytona, boxd and Vercel, as E2B and Modal already did for writes. This covers `writeFile`, `writeFileStream` and `copyFile`, and E2B `copyFile` now creates them too.
+
+  Daytona no longer leaves `.beachside-exec-*` and `.beachside-write-*` folders in `/tmp` after commands and writes succeed. E2B also removes its command capture files and write stages once an interrupted operation is recovered.
+
+- [#170](https://github.com/pandemicsyn/beachside/pull/170) [`2b29fdd`](https://github.com/pandemicsyn/beachside/commit/2b29fdd2d22fc77dc434e036f9d2a306f2b915d6) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - E2B overwrites of an existing file directly in a sticky directory such as `/tmp` now succeed. They used to fail with an HTTP 500 from the sandbox because the kernel refuses to let E2B reopen a file there that belongs to the sandbox user; the adapter now uploads a fresh copy beside the file and copies it over as the sandbox user.
+
+- [#167](https://github.com/pandemicsyn/beachside/pull/167) [`3f414a8`](https://github.com/pandemicsyn/beachside/commit/3f414a8dbb7d9b73259e99a2c70cda59fac75af9) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - E2B streamed writes, and buffered writes over 1 MiB, work in sticky directories such as `/tmp` again; they used to fail there with "stream completion could not be confirmed". When a streamed E2B write fails, the error now names the step that failed and keeps the provider's original error as its `cause`.
+- Updated dependencies [[`d137e90`](https://github.com/pandemicsyn/beachside/commit/d137e90e8f7bc271713c8b0776605bf4996196c2)]:
+  - @beachside/adapter@0.9.0
+
 ## 0.8.0
 
 ### Minor Changes

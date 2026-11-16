@@ -6,6 +6,9 @@
   "packages/providers/boxd",
   "packages/providers/boat",
   "packages/providers/runloop",
+  "packages/providers/freestyle",
+  "packages/providers/archil",
+  "packages/providers/exe-dev",
   "packages/providers/modal",
   "packages/providers/vercel",
   "packages/cli"

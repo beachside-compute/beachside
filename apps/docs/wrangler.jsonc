@@ -3,6 +3,9 @@
   // replaces the worker's whole domain list on deploy, so every attached domain must be listed.
   "name": "sandbar-docs",
   "compatibility_date": "2026-09-25",
+  // Static assets first; the worker only answers /api/beta-signup. RESEND_API_KEY comes from Secrets Store;
+  // until that secret exists in the store, signups answer 503.
+  "main": "./worker/index.ts",
   "routes": [
     { "pattern": "beachside.run", "custom_domain": true },
     { "pattern": "www.beachside.run", "custom_domain": true },
@@ -13,6 +16,22 @@
   ],
   "assets": {
     "directory": "./dist",
+    "binding": "ASSETS",
     "not_found_handling": "404-page",
   },
+  // At most 5 signup attempts per client IP per minute, per Cloudflare location.
+  "ratelimits": [
+    {
+      "name": "SIGNUP_LIMITER",
+      "namespace_id": "2180",
+      "simple": { "limit": 5, "period": 60 },
+    },
+  ],
+  "secrets_store_secrets": [
+    {
+      "binding": "RESEND_API_KEY",
+      "store_id": "99199f9998154a83a35e2ab06d40a8d3",
+      "secret_name": "RESEND_API_KEY",
+    },
+  ],
 }

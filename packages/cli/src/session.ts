@@ -25,6 +25,7 @@ export type Context = {
 
 /** Lazily loaded configuration, store and provider connections for one invocation. */
 export class Session {
+  readonly usedProviders = new Set<string>();
   private loaded?: LoadedConfig;
   private opened: BeachsideClient<true>[] = [];
   private readonly secrets: SecretReader;
@@ -51,7 +52,7 @@ export class Session {
 
   /** The profile selected by flags, environment or the config default. */
   async profile(): Promise<ResolvedProfile> {
-    return resolveProfile(this.ctx.flags, await this.config(), this.ctx.env);
+    return resolveProfile(this.ctx.flags, await this.config(), this.ctx.env, this.ctx.cwd);
   }
 
   /** The profile a stored sandbox was created with: a configured profile, else an env-only provider. */
@@ -59,9 +60,10 @@ export class Session {
     const loaded = await this.config();
 
     if (loaded.value.profiles?.[name])
-      return resolveProfile({ profile: name }, loaded, this.ctx.env);
+      return resolveProfile({ profile: name }, loaded, this.ctx.env, this.ctx.cwd);
 
-    if (descriptor(name)) return resolveProfile({ provider: name }, loaded, this.ctx.env);
+    if (descriptor(name))
+      return resolveProfile({ provider: name }, loaded, this.ctx.env, this.ctx.cwd);
 
     throw new CliError(
       "USAGE",
@@ -70,7 +72,14 @@ export class Session {
     );
   }
 
+  /** A value with any password-manager reference read; plain values pass through. */
+  async secret(value: string, where: string): Promise<string> {
+    return String(await this.secrets.resolve(value, where));
+  }
+
   async connect(profile: ResolvedProfile): Promise<BeachsideClient<true>> {
+    const official = descriptor(profile.provider);
+    this.usedProviders.add(official?.module === profile.module ? official.id : "custom");
     const client = await connect(profile, this.ctx.cwd, this.ctx.env, this.secrets);
     this.opened.push(client);
 

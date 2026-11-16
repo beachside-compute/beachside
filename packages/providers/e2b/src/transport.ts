@@ -5,12 +5,14 @@ import {
   AuthenticationError,
   InvalidArgumentError,
   RateLimitError,
+  ALL_TRAFFIC,
   Template,
   TemplateError,
   Volume,
 } from "e2b";
 import {
   AdapterError,
+  type AdapterErrorCode,
   AdapterFilesystemError,
   type DirectoryResult,
   type FileStat,
@@ -25,6 +27,7 @@ import { guestFilesystem, directoryValue, statValue } from "./filesystem-native"
 import {
   classifyWriteFailure,
   E2BWriteFailure,
+  isOpenDenied,
   streamFailureReason,
   type StreamStep,
 } from "./write-failure";
@@ -38,6 +41,23 @@ export class E2BDirectoryRejected extends AdapterError {
   constructor() {
     super("INVALID_ARGUMENT", "E2B path is not a directory");
   }
+}
+
+/** The Beachside code for an E2B status that refused a fork before any effect. */
+function forkRefusal(status: number): AdapterErrorCode {
+  if (status === 400) return "INVALID_ARGUMENT";
+
+  if (status === 401) return "UNAUTHENTICATED";
+
+  if (status === 403) return "FORBIDDEN";
+
+  if (status === 404) return "NOT_FOUND";
+
+  if (status === 409) return "CONFLICT";
+
+  if (status === 429) return "RATE_LIMIT";
+
+  return "UNAVAILABLE";
 }
 
 class NativeReadError extends AdapterError {
@@ -170,6 +190,9 @@ export type E2BRecord = {
   endAt?: string | null;
   domain?: string;
   allowPublicTraffic?: boolean;
+  /** Native egress rules; an allowlist sandbox denies 0.0.0.0/0 and allows its entries. */
+  allowOut?: string[];
+  denyOut?: string[];
   lifecycle?: { onTimeout?: string; autoResume?: boolean };
   envdVersion?: string;
   /** Native detail proves guest IO can attach without resuming or changing lifetime. */
@@ -217,6 +240,18 @@ export type E2BStateTransport = {
   deleteTemplate?(id: string, signal?: AbortSignal): Promise<boolean>;
   verifyAddress(id: string, names?: string[]): Promise<void>;
   tags(id: string): Promise<{ tag: string; buildId: string }[]>;
+  /**
+   * One native fork of a running sandbox. `refused` means E2B started no fork; a thrown error
+   * leaves the outcome uncertain.
+   */
+  fork?: (
+    id: string,
+    timeoutSeconds: number,
+    signal: AbortSignal,
+  ) => Promise<
+    | { status: "forked"; id: string }
+    | { status: "refused"; code: AdapterErrorCode; message: string }
+  >;
   /** `memory: false` requests a filesystem-only snapshot; omitted captures memory too. */
   capture(
     id: string,
@@ -262,6 +297,8 @@ export type E2BTransport = {
     timeoutMs: number;
     allowInternetAccess: boolean;
     allowPublicTraffic?: boolean;
+    /** Egress allowlist: native `allowOut` over a `denyOut` of all traffic. */
+    allowOut?: readonly string[];
     volumeMounts?: Record<string, string>;
     /** Native sandbox-wide `envs`; values may be secrets and never enter messages. */
     env?: Record<string, string>;
@@ -278,6 +315,17 @@ export type E2BTransport = {
   /** `memory: false` resumes from disk only, so the sandbox always boots fresh. */
   resume?: (id: string, seconds: number, signal: AbortSignal, memory?: boolean) => Promise<void>;
   renew?: (id: string, seconds: number, signal: AbortSignal) => Promise<void>;
+  /**
+   * Reads the private-traffic token of a running sandbox. E2B returns it only from connect.
+   * On a running sandbox connect only extends the lifetime, so `timeoutSeconds` should be the
+   * remaining lifetime; `resumed` is true when E2B resumed a sandbox that paused after the
+   * caller's running check, which then runs for `timeoutSeconds` from now.
+   */
+  trafficAccessToken?: (
+    id: string,
+    signal: AbortSignal,
+    timeoutSeconds: number,
+  ) => Promise<{ token: string | undefined; resumed: boolean; sandboxId: string }>;
   kill(id: string, signal?: AbortSignal): Promise<boolean>;
   run(
     id: string,
@@ -408,7 +456,7 @@ function readChunk(reader: ReadableStreamDefaultReader<Uint8Array>, signal?: Abo
   });
 }
 
-/** Pinned e2b@2.51.0. Every control-plane call explicitly disables its 429 retry loop. */
+/** Pinned e2b@2.63.0. Every control-plane call explicitly disables its 429 retry loop. */
 export function createSdkTransport(apiKey: string, fetcher: typeof fetch = fetch): E2BTransport {
   const opts = {
     apiKey,
@@ -431,7 +479,13 @@ export function createSdkTransport(apiKey: string, fetcher: typeof fetch = fetch
     envdVersion: z.string().optional(),
     envdAccessToken: z.string().min(1).max(8192).optional(),
     domain: z.string().nullish(),
-    network: z.object({ allowPublicTraffic: z.boolean().optional() }).optional(),
+    network: z
+      .object({
+        allowPublicTraffic: z.boolean().optional(),
+        allowOut: z.array(z.string()).nullish(),
+        denyOut: z.array(z.string()).nullish(),
+      })
+      .optional(),
     lifecycle: z
       .object({ onTimeout: z.string().optional(), autoResume: z.boolean().optional() })
       .optional(),
@@ -516,7 +570,7 @@ export function createSdkTransport(apiKey: string, fetcher: typeof fetch = fetch
       if (response.status === 404) return null;
       const info = await readNative(response, Detail);
 
-      return {
+      const record: E2BRecord = {
         id: info.sandboxID,
         templateId: info.templateID,
         metadata: info.metadata,
@@ -536,6 +590,12 @@ export function createSdkTransport(apiKey: string, fetcher: typeof fetch = fetch
         cpuCount: info.cpuCount,
         memoryMB: info.memoryMB,
       };
+
+      if (info.network?.allowOut) record.allowOut = info.network.allowOut;
+
+      if (info.network?.denyOut) record.denyOut = info.network.denyOut;
+
+      return record;
     } catch (error) {
       if (error instanceof SandboxNotFoundError) return null;
       throw error;
@@ -764,6 +824,51 @@ export function createSdkTransport(apiKey: string, fetcher: typeof fetch = fetch
 
         return { snapshotId: created.snapshotID, names: created.names };
       },
+      async fork(id, timeoutSeconds, signal) {
+        const response = await fetcher(`${E2B_ENDPOINT}/sandboxes/${encodeURIComponent(id)}/fork`, {
+          method: "POST",
+          headers: {
+            "X-API-Key": apiKey,
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({ count: 1, timeout: timeoutSeconds }),
+          redirect: "error",
+          signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]),
+        });
+
+        // E2B documents a non-201 status as a failure before any fork was attempted.
+        if (response.status !== 201) {
+          await response.body?.cancel().catch(() => undefined);
+
+          return {
+            status: "refused",
+            code: forkRefusal(response.status),
+            message: `E2B refused the fork (${response.status})`,
+          };
+        }
+
+        const [result] = await readNative(
+          response,
+          z
+            .array(
+              z.object({
+                sandbox: z.object({ sandboxID: z.string().min(1).max(512) }).optional(),
+                error: z.object({ code: z.number(), message: z.string().max(4096) }).optional(),
+              }),
+            )
+            .length(1),
+          signal,
+        );
+
+        if (result?.sandbox) return { status: "forked", id: result.sandbox.sandboxID };
+
+        return {
+          status: "refused",
+          code: "UNAVAILABLE",
+          message: `E2B could not start the fork (${result?.error?.code ?? "no result"})`,
+        };
+      },
       snapshots: readSnapshots,
       deleteSnapshot: (id, signal) => Sandbox.deleteSnapshot(id, { ...opts, signal }),
       async templates(input) {
@@ -949,8 +1054,14 @@ export function createSdkTransport(apiKey: string, fetcher: typeof fetch = fetch
           metadata: input.metadata,
           timeoutMs: input.timeoutMs,
           lifecycle: { onTimeout: "kill", autoResume: false },
-          allowInternetAccess: input.allowInternetAccess,
-          network: { allowPublicTraffic: input.allowPublicTraffic ?? false },
+          allowInternetAccess: input.allowOut ? false : input.allowInternetAccess,
+          network: input.allowOut
+            ? {
+                allowPublicTraffic: input.allowPublicTraffic ?? false,
+                allowOut: [...input.allowOut],
+                denyOut: [ALL_TRAFFIC],
+              }
+            : { allowPublicTraffic: input.allowPublicTraffic ?? false },
           volumeMounts: input.volumeMounts,
           envs: input.env,
           signal: input.signal,
@@ -1011,6 +1122,50 @@ export function createSdkTransport(apiKey: string, fetcher: typeof fetch = fetch
         throw new E2BRenewRejected(response.status);
 
       if (!response.ok) throw new AdapterError("UNAVAILABLE", "E2B renewal response is uncertain");
+    },
+    async trafficAccessToken(id, signal, timeoutSeconds) {
+      const response = await fetcher(
+        `${E2B_ENDPOINT}/v2/sandboxes/${encodeURIComponent(id)}/connect`,
+        {
+          method: "POST",
+          headers: { "X-API-Key": apiKey, "Content-Type": "application/json" },
+          body: JSON.stringify({ timeout: timeoutSeconds }),
+          redirect: "error",
+          signal: AbortSignal.any([signal, AbortSignal.timeout(30_000)]),
+        },
+      );
+
+      if (response.status === 404) {
+        void response.body?.cancel().catch(() => undefined);
+
+        throw new AdapterError("NOT_FOUND", "E2B sandbox is outside the verified scope");
+      }
+
+      // E2B answers 409 when the sandbox can't be connected now, such as a guest agent that
+      // stopped answering after a snapshot. The body is not read, so no token can leak.
+      if (response.status === 409) {
+        void response.body?.cancel().catch(() => undefined);
+
+        throw new AdapterError(
+          "UNAVAILABLE",
+          "E2B could not connect to the sandbox (409); its guest agent may be unresponsive. Inspect it and request the preview again",
+        );
+      }
+
+      const value = await readNative(
+        response,
+        z.object({
+          sandboxID: z.string(),
+          trafficAccessToken: z.string().min(1).max(8192).nullish(),
+        }),
+        signal,
+      );
+
+      return {
+        sandboxId: value.sandboxID,
+        token: value.trafficAccessToken ?? undefined,
+        resumed: response.status === 201,
+      };
     },
     async kill(id, signal) {
       return Sandbox.kill(id, { ...opts, signal });
@@ -1083,7 +1238,10 @@ export function createSdkTransport(apiKey: string, fetcher: typeof fetch = fetch
           requestTimeoutMs: 30_000,
         });
       } catch (error) {
-        throw new E2BWriteFailure(classifyWriteFailure(error, stage, httpStatus));
+        throw new E2BWriteFailure(
+          classifyWriteFailure(error, stage, httpStatus),
+          stage === "upload" && isOpenDenied(error, httpStatus),
+        );
       }
     },
     async directory(id, path, signal) {

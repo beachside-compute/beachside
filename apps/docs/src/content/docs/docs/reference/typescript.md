@@ -42,7 +42,7 @@ const beachside = await Beachside.connect({
 });
 ```
 
-Every first-party package also exports a factory named after the provider (`daytona`, `e2b`, `boxd`, `boat`, `runloop`, `modal`, `vercel`) that takes credentials and config in one object, as in `Beachside.connect(e2b({ apiKey }))`. It does no provider IO and builds the same setup; it helps when code picks a provider at run time, since every factory returns the same `BoundAdapter` type. Definitions are named `<provider>Adapter`.
+Every first-party package also exports a factory named after the provider (`boxd`, `freestyle`, `daytona`, `e2b`, `boat`, `runloop`, `archil`, `exeDev`, `modal`, `vercel`) that takes credentials and config in one object, as in `Beachside.connect(e2b({ apiKey }))`. It does no provider IO and builds the same setup; it helps when code picks a provider at run time, since every factory returns the same `BoundAdapter` type. Definitions are named `<provider>Adapter`.
 
 `acme` is the installed adapter definition; config and credentials follow its schemas. Ordinary capture results provide `snapshot.reference` for application persistence. The existing explicit connection `onReference` callback is a compatibility API for operation checkpoints: it is awaited before dispatch and when native tokens or pending observations change. See [Results and saved resources](/docs/guides/recovery/#existing-asynchronous-operations) and the [tested custom adapter example](/docs/guides/write-an-adapter/).
 
@@ -107,6 +107,9 @@ Creation input accepts `environment`, `network` (deprecated alias `networkPolicy
 | `box.resume({ signal?, pollMs? })`                      | Reactivate the same resource; execution continuity can remain unknown.  |
 | `box.checkSnapshot(request?)`                           | Read-only evaluation of configured capture guarantees.                  |
 | `box.snapshot(request?, { signal?, pollMs? })`          | Return `{ snapshot, capture, source }`.                                 |
+| `box.checkFork(request?)`                               | Read-only check of native fork options against this source.             |
+| `box.fork({ labels?, lifetimeSeconds? }?, { signal? })` | Copy the running sandbox with the provider's native fork.               |
+| `box.submitFork(request?, { signal? })`                 | Start a fork and return a recoverable operation handle.                 |
 | `beachside.snapshots.get(reference)`                    | Reopen a verified snapshot with a native inspection.                    |
 | `beachside.snapshots.list({ limit, cursor? })`          | Read scoped snapshot inventory and coverage.                            |
 | `snapshot.inspect({ signal?, pollMs? })`                | Observe preservation, identity and restore facts.                       |

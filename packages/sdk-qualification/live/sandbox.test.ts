@@ -77,11 +77,18 @@ export async function renewal(t: TestResources, box: AdapterSandbox) {
       : after;
 
   expect(deadline).toBeLessThanOrEqual(upperBase + resolved * 1000 + 5000);
-  const max = t.client.provider === "daytona" ? 86400 : t.client.provider === "vercel" ? 300 : 3600;
-  await expect(box.renew({ forSeconds: max + 1 }, { signal: t.signal })).rejects.toMatchObject({
-    code: "INVALID_ARGUMENT",
-    effect: "none",
-  });
+  // Known provider ceilings, else the adapter's declared one; boxd documents none, so it has none to test.
+  const renewal = (await box.capabilities()).lifecycle?.renew;
+
+  const max =
+    { daytona: 86400, vercel: 300, e2b: 3600 }[t.client.provider] ??
+    (renewal?.status === "supported" ? renewal.value.maxSeconds : undefined);
+
+  if (max !== undefined)
+    await expect(box.renew({ forSeconds: max + 1 }, { signal: t.signal })).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+      effect: "none",
+    });
 }
 
 export async function execution(t: TestResources, box: AdapterSandbox) {
@@ -296,7 +303,7 @@ describe("Beachside sandbox", () => {
           ...(featureSupported("finiteStdin") ? ["execution-stdin" as const] : []),
           "files",
           "lifecycle-reopen",
-          "lifecycle-renew",
+          ...(featureSupported("renewal") ? ["lifecycle-renew" as const] : []),
           "lifecycle-suspend-resume",
           ...(featureSupported("directories") ? ["file-directories" as const] : []),
         ],
@@ -341,7 +348,7 @@ describe("Beachside sandbox", () => {
     async () => directories(fixture!.resources, box, fixture!.fileRoot),
     241000,
   );
-  (liveEnabled ? test : test.skip)(
+  (liveEnabled && featureSupported("renewal") ? test : test.skip)(
     "lifecycle-renew",
     async () => renewal(fixture!.resources, box),
     241000,
@@ -361,7 +368,7 @@ describe("Beachside sandbox", () => {
       const bytes = new TextEncoder().encode(nonce);
       await box.writeFile(path, bytes, { overwrite: true, signal: t.signal });
       // Reuse the snapshot suite's in-memory nonce/counter and bounded socket probe.
-      await t.exec(box, `nohup python3 -u -c ${quote(memoryProgram)} >/dev/null 2>&1 </dev/null &`);
+      await t.background(box, `python3 -u -c ${quote(memoryProgram)}`);
       let memoryBefore: ReturnType<typeof memorySample> | undefined;
 
       for (let attempt = 0; attempt < 20; attempt++) {
@@ -411,7 +418,11 @@ describe("Beachside sandbox", () => {
         const after = memorySample(await t.exec(box, memoryRead));
         expect(after.nonce).toBe(memoryBefore.nonce);
         expect(after.count).toBeGreaterThan(memoryBefore.count);
-        expect(resumed.observation.expires.status).toBe("known");
+
+        // exe.dev VMs have no lifetime; every other preserving provider reports one.
+        if (t.client.provider === "exe-dev")
+          expect(resumed.observation.expires).toEqual(before.expires);
+        else expect(resumed.observation.expires.status).toBe("known");
       }
       // Shared afterAll cleanup destroys the owned logical sandbox from any state.
     },

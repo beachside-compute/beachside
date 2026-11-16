@@ -17,9 +17,15 @@ import { LedgerStore } from "../../provider-qualification/ledger";
 import { boundedRead } from "../../provider-qualification/bounds";
 import { cleanupOwned, cleanupCompute, partialResource } from "./cleanup";
 
-const creators = new Set(["create", "snapshot_capture", "snapshot_restore", "volume_create"]);
+const creators = new Set([
+  "create",
+  "snapshot_capture",
+  "snapshot_restore",
+  "sandbox_fork",
+  "volume_create",
+]);
 
-const computeKinds = new Set(["create", "snapshot_restore"]);
+const computeKinds = new Set(["create", "snapshot_restore", "sandbox_fork"]);
 
 /** Test-owned resources only. Bun owns test execution, assertion failures and reporting. */
 export class TestResources {
@@ -238,7 +244,12 @@ export class TestResources {
 
         if (value instanceof AdapterSandbox) return { ...entry, reference, sandboxId: value.id };
 
-        if ((outcome?.kind === "snapshot_restore" || outcome?.kind === "create") && outcome.sandbox)
+        if (
+          (outcome?.kind === "snapshot_restore" ||
+            outcome?.kind === "sandbox_fork" ||
+            outcome?.kind === "create") &&
+          outcome.sandbox
+        )
           return { ...entry, reference, sandboxId: outcome.sandbox.nativeId };
 
         if (resource) return { ...entry, reference, resource };
@@ -321,6 +332,26 @@ export class TestResources {
       throw new Error("Guest probe did not complete cleanly");
 
     return output.stdoutText(512);
+  }
+
+  /**
+   * Starts a long-running guest program. boxd runs each command in its own PID namespace, so
+   * anything a command backgrounds ends with it; there the program is a detached process instead,
+   * which keeps running after detach.
+   */
+  async background(box: AdapterSandbox, command: string) {
+    if (this.client.provider !== "boxd") {
+      await this.exec(box, `nohup ${command} >/dev/null 2>&1 </dev/null &`);
+
+      return;
+    }
+
+    const job = await box.processes.start(
+      { command: { kind: "shell", script: `exec ${command}` }, maxOutputBytes: 4096 },
+      { signal: this.signal },
+    );
+
+    await job.detach();
   }
 
   async destroy(role: string) {

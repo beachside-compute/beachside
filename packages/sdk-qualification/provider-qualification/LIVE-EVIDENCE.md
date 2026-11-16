@@ -425,8 +425,8 @@ Adapter support and live validation are separate facts. **Supported** means impl
 | ----------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | Sandbox lifecycle                   | [Supported · passed at 8449def7](#daytona-lifecycle)            | [Supported · passed at 8449def7](#e2b-lifecycle)                                  |
 | Native sandbox suspend/resume       | [Conditional · passed at 6796b30b](#daytona-suspension)         | [Conditional · passed at 26f516d1](#e2b-suspension)                               |
-| Protected HTTP preview              | [Conditional · passed at 3188e333](#daytona-previewProtected)   | [Unsupported · not-run](#e2b-previewProtected)                                    |
-| Public HTTP preview                 | [Unsupported · not-run](#daytona-previewPublic)                 | [Conditional · passed at 3188e333](#e2b-previewPublic)                            |
+| Protected HTTP preview              | [Conditional · passed at 3188e333](#daytona-previewProtected)   | [Conditional · not-run](#e2b-previewProtected)                                    |
+| Public HTTP preview                 | [Conditional · not-run](#daytona-previewPublic)                 | [Conditional · passed at 3188e333](#e2b-previewPublic)                            |
 | Local-handle process termination    | [Conditional · passed at aaba981e](#daytona-termination)        | [Conditional · passed at aaba981e](#e2b-termination)                              |
 | Configured lifetime renewal         | [Conditional · passed at 3188e333](#daytona-renewal)            | [Conditional · passed at 3188e333](#e2b-renewal)                                  |
 | Scoped sandbox reopening            | [Conditional · passed at 3188e333](#daytona-reopening)          | [Conditional · passed at 3188e333](#e2b-reopening)                                |
@@ -460,13 +460,13 @@ Known unmounted Daytona containers retain files and end processes with auto-dele
 
 #### Protected HTTP preview
 
-Daytona protected header access only; standard token grants sandbox-wide command/file authority. Public setup unsupported. Native lookup can activate a route; no server start/resume or readiness claim. Bun preview-protected passed at 3188e33 in us with authenticated HTTP and denied missing/invalid headers; owned cleanup confirmed.
+Daytona protected header access; the standard token grants sandbox-wide command/file authority. Native lookup can activate a route; no server start/resume or readiness claim. Bun preview-protected passed at 3188e33 in us with authenticated HTTP and denied missing/invalid headers; owned cleanup confirmed.
 
 <a id="daytona-previewPublic"></a>
 
 #### Public HTTP preview
 
-Daytona's native public setting would publish every port on the sandbox, so the adapter supports protected previews only.
+Public setup returns Daytona signed preview URLs: scoped to one port, expiring after preview.expiresInSeconds (1 s to 24 h, default 1 hour, reported as expiresAt), with the sandbox itself kept private. Fixture coverage only; no live signed-URL pass yet.
 
 <a id="daytona-termination"></a>
 
@@ -570,13 +570,13 @@ E2B memory pause preserves private filesystem/RAM under the same ID; known nativ
 
 #### Protected HTTP preview
 
-Fresh traffic-token retrieval is absent from the pinned read-only detail API. Native connect may resume compute; protected preview rejects without calling it. Protected setup creates and restores private compute.
+Protected setup creates and restores private compute (native allowPublicTraffic false). preview() checks running state, private visibility and auto-resume off, then reads the traffic token from native connect with a 1-second timeout, which never shortens the lifetime, and returns it as the e2b-traffic-access-token header. A sandbox paused between the check and the read is resumed by E2B. Fixture coverage only; protected ingress denial is not yet tested live.
 
 <a id="e2b-previewPublic"></a>
 
 #### Public HTTP preview
 
-E2B public access, the default, with observed native visibility and auto-resume off. Protected setup disables public traffic on create and restore; fresh protected token lookup unsupported. Bun preview-public passed at 3188e33 with observed public visibility, HTTP content and confirmed owned cleanup. Protected-mode ingress denial remains unqualified.
+E2B public access, the default, with observed native visibility and auto-resume off. Protected setup disables public traffic on create and restore. Bun preview-public passed at 3188e33 with observed public visibility, HTTP content and confirmed owned cleanup. Protected-mode ingress denial remains unqualified.
 
 <a id="e2b-termination"></a>
 

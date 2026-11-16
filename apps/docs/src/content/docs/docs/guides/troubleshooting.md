@@ -5,7 +5,7 @@ description: Resolve package, connection, execution, file, and cleanup issues.
 
 ## Package or import not found
 
-Install `beachside` and your adapter package at `0.1.0` or later; `0.0.0` versions are empty placeholders. See [Getting started](/docs/direct-quickstart/). The unrelated `beachside` npm package is not this SDK.
+Install `beachside` and your adapter package from npm at matching versions; `0.0.0` versions are empty placeholders. See [Getting started](/docs/direct-quickstart/).
 
 Import the SDK from `beachside` and your adapter from its separate package:
 
@@ -20,12 +20,12 @@ The experimental Modal adapter is `@beachside/modal`; `beachside/modal` is not a
 
 Check that credentials are available to the server process, then check the adapter's required setup:
 
-| Provider | Check                                                                                              |
-| -------- | -------------------------------------------------------------------------------------------------- |
-| E2B      | Pass an API key, commonly stored as `E2B_API_KEY`. `E2B_API_ID` is not an API key.                 |
-| Daytona  | Pass `apiKey` and an available target region, such as `target: "us"`.                              |
-| boxd     | Pass a member API key, your authenticated default organization ID/slug, and `network: "internet"`. |
-| Vercel   | Pass a bearer token with access to the configured `teamId`, `projectId` and sandbox API.           |
+| Provider | Check                                                                                                            |
+| -------- | ---------------------------------------------------------------------------------------------------------------- |
+| boxd     | Pass a member API key and your authenticated default organization ID/slug; add `network: "internet"` for egress. |
+| Daytona  | Pass `apiKey` and an available target region, such as `target: "us"`.                                            |
+| E2B      | Pass an API key, commonly stored as `E2B_API_KEY`. `E2B_API_ID` is not an API key.                               |
+| Vercel   | Pass a bearer token with access to the configured `teamId`, `projectId` and sandbox API.                         |
 
 `Beachside.connect` verifies credentials and scope using provider reads. Connecting successfully does not guarantee access to every image, policy or operation. Follow the [provider setup guides](/docs/providers/support/) for account and configuration limits.
 

@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
-    "check": "astro check && bun scripts/check-observability-snippets.mjs && tsc -p examples/tsconfig.json && bun scripts/check-links.mjs && bun run typescript:check && bun run cli:check",
+    "check": "astro check && bun scripts/check-observability-snippets.mjs && bun scripts/check-skills.mjs && tsc -p examples/tsconfig.json && bun scripts/check-links.mjs && bun run typescript:check && bun run cli:check",
     "build": "bun run provider:check && astro build && bun scripts/check-dist.mjs",
     "provider:check": "bun ../../packages/sdk-qualification/provider-qualification/render.ts --check",
     "examples:test": "bun test examples",
@@ -12,11 +12,13 @@
     "typescript:generate": "bun scripts/generate-typescript-reference.mjs",
     "typescript:check": "bun scripts/generate-typescript-reference.mjs --check",
     "cli:generate": "bun scripts/generate-cli-reference.mjs",
-    "cli:check": "bun scripts/generate-cli-reference.mjs --check"
+    "cli:check": "bun scripts/generate-cli-reference.mjs --check",
+    "analytics:test": "playwright test"
   },
   "dependencies": {
     "@astrojs/starlight": "0.42.4",
-    "astro": "7.3.5"
+    "astro": "7.4.7",
+    "posthog-js": "^1.448.0"
   },
   "devDependencies": {
     "@astrojs/check": "0.9.6",
@@ -25,13 +27,18 @@
     "typescript": "5.9.3",
     "wrangler": "4.141.0",
     "@beachside/adapter": "workspace:*",
-    "zod": "4.6.5",
+    "zod": "4.6.6",
     "@beachside/modal": "workspace:*",
     "satteri": "0.10.5",
     "@beachside/daytona": "workspace:*",
     "@beachside/e2b": "workspace:*",
     "@beachside/boxd": "workspace:*",
     "@beachside/boat": "workspace:*",
-    "@beachside/runloop": "workspace:*"
+    "@beachside/runloop": "workspace:*",
+    "@beachside/freestyle": "workspace:*",
+    "@beachside/archil": "workspace:*",
+    "@beachside/exe-dev": "workspace:*",
+    "@beachside/vercel": "workspace:*",
+    "@playwright/test": "1.65.0"
   }
 }

@@ -1,3 +1,10 @@
+import { e2bEgress, e2bEgressMatches, e2bNetworkPolicies } from "./network";
+import {
+  ALLOW_NETWORK_POLICY,
+  AllowNetworkSetting,
+  allowlistConfig,
+  throwAllowlistError,
+} from "@beachside/adapter";
 import { z } from "zod";
 import { e2bState } from "./state-native";
 import { e2bImages } from "./images-native";
@@ -54,10 +61,17 @@ import {
   type E2BTransport,
 } from "./transport";
 
-import { classifyWriteFailure, WriteFailure, writeFailureReason } from "./write-failure";
+import {
+  classifyWriteFailure,
+  E2BWriteFailure,
+  WriteFailure,
+  writeFailureReason,
+} from "./write-failure";
 
 const CreateToken = z.strictObject({
   allowPublicTraffic: z.boolean(),
+  /** Canonical egress allowlist sent at create, checked again on recovery. */
+  allowlist: z.string().min(1).max(32_768).optional(),
   sandboxId: z.string().min(1).max(512).optional(),
 });
 
@@ -80,7 +94,11 @@ const Configuration = z
       .max(128)
       .regex(/^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)?(?::default)?$/)
       .default("base"),
-    network: z.enum(["blocked", "internet"]).optional(),
+    /**
+     * `blocked`, `internet`, or `{ allow: [...] }`: outbound HTTP(S) only to those hosts (Host
+     * header or TLS SNI, `*.` wildcards) plus any listed IPv4 ranges.
+     */
+    network: z.union([z.enum(["blocked", "internet"]), AllowNetworkSetting]).optional(),
     networkPolicy: z.enum(["blocked", "internet"]).optional(),
     /**
      * Minimum size. E2B fixes a size when it builds a template, so OCI images are built with it
@@ -120,7 +138,12 @@ const Configuration = z
   })
   .transform(({ network, timeoutSeconds, ...value }) => ({
     ...value,
-    networkPolicy: network ?? value.networkPolicy ?? "blocked",
+    ...allowlistConfig("E2B", network),
+    networkPolicy: AllowNetworkSetting.safeParse(network).success
+      ? ALLOW_NETWORK_POLICY
+      : (z.enum(["blocked", "internet"]).optional().parse(network) ??
+        value.networkPolicy ??
+        "internet"),
     lifetimeSeconds: nativeLifetime(
       value.lifecycle?.lifetimeSeconds ?? timeoutSeconds ?? defaultLifetime(MAX_LIFETIME_SECONDS),
     ),
@@ -331,9 +354,20 @@ export function createE2BAdapter(transportFactory?: (options: { apiKey: string }
   return defineAdapter({
     name: "e2b",
     displayName: "E2B",
+    setup: {
+      credentials: {
+        apiKey: {
+          env: "E2B_API_KEY",
+          description: "An E2B API key from the dashboard.",
+          url: "https://console.e2b.dev/?tab=keys",
+        },
+      },
+      docs: "https://beachside.run/docs/providers/e2b/",
+    },
     config: Configuration,
     credentials: Credentials,
     async connect({ config, credentials, host }) {
+      throwAllowlistError(config);
       const transport = transportFactory?.(credentials) ?? createSdkTransport(credentials.apiKey);
 
       if (config.lifecycle?.suspension && (!transport.suspend || !transport.resume))
@@ -625,6 +659,7 @@ export function createE2BAdapter(transportFactory?: (options: { apiKey: string }
         snapshotPreserve: config.snapshots?.preserve ?? Preserve.FILESYSTEM_AND_MEMORY,
         apiKey: credentials.apiKey,
         allowPublicTraffic: config.preview.access === "public",
+        allowlist: config.allowlist,
         find,
       });
 
@@ -825,11 +860,6 @@ export function createE2BAdapter(transportFactory?: (options: { apiKey: string }
               "Preview port must be an integer from 1 through 65535",
             );
 
-          if (config.preview.access !== "public")
-            throw new AdapterError(
-              "UNSUPPORTED",
-              "E2B preview.access protected keeps sandboxes closed to inbound traffic and cannot return preview access; use preview.access public, the default",
-            );
           ctx.signal.throwIfAborted();
           const record = await find(input.sandbox.id, input.sandbox.reference);
 
@@ -846,21 +876,68 @@ export function createE2BAdapter(transportFactory?: (options: { apiKey: string }
             );
           ctx.signal.throwIfAborted();
 
+          const access = config.preview.access;
+
           if (
-            record.allowPublicTraffic !== true ||
+            record.allowPublicTraffic !== (access === "public") ||
             record.domain !== "e2b.app" ||
             record.lifecycle?.autoResume !== false
           )
             throw new AdapterError(
               "UNAVAILABLE",
-              "E2B public preview requires confirmed public traffic, e2b.app domain, and auto-resume off",
+              `E2B ${access} preview requires ${access === "public" ? "public" : "private"} traffic, the e2b.app domain and auto-resume off, confirmed on the sandbox`,
+            );
+          const url = `https://${input.port}-${record.id}.e2b.app`;
+
+          if (access === "public") return { access: "public" as const, url };
+
+          if (!transport.trafficAccessToken)
+            throw new AdapterError("UNSUPPORTED", "E2B private traffic tokens are unavailable");
+
+          // Connect takes a timeout from now: on running compute it only ever extends, so the
+          // observed remaining lifetime changes nothing; if the sandbox paused since the check
+          // and E2B resumes it, it keeps that remaining lifetime instead of a shorter one.
+          const remaining = record.endAt
+            ? Math.ceil((Date.parse(record.endAt) - Date.now()) / 1000)
+            : Number.NaN;
+
+          if (!Number.isFinite(remaining) || remaining < 1)
+            throw new AdapterError(
+              "UNAVAILABLE",
+              "E2B preview requires running compute with a known remaining lifetime",
             );
 
-          return { access: "public" as const, url: `https://${input.port}-${record.id}.e2b.app` };
+          const native = await transport.trafficAccessToken(
+            record.id,
+            ctx.signal,
+            Math.min(remaining, MAX_LIFETIME_SECONDS),
+          );
+
+          if (native.sandboxId !== record.id)
+            throw new AdapterError("CONFLICT", "E2B preview response identity differs");
+
+          // Preview never resumes compute; a resume here means the sandbox paused after the check.
+          if (native.resumed)
+            throw new AdapterError(
+              "CONFLICT",
+              `E2B sandbox paused during preview and E2B resumed it with its remaining lifetime (about ${remaining}s); inspect it, then request the preview again`,
+            );
+
+          if (!native.token)
+            throw new AdapterError(
+              "UNAVAILABLE",
+              "E2B returned no traffic access token for this private sandbox",
+            );
+
+          return {
+            access: "protected" as const,
+            url,
+            headers: { "e2b-traffic-access-token": native.token },
+          };
         },
         supports: {
           images: ["prepared", "oci"],
-          network: ["internet", "blocked"],
+          network: config.allowlist ? [ALLOW_NETWORK_POLICY] : ["internet", "blocked"],
           exec: { commands: ["argv", "shell"], maxOutputBytes: MAX_BYTES },
           fileWrite: { overwrite: true, noClobber: true },
           createEnv: true,
@@ -960,8 +1037,13 @@ export function createE2BAdapter(transportFactory?: (options: { apiKey: string }
             if (input.region)
               throw new AdapterError("UNSUPPORTED", "E2B region selection is unavailable");
 
-            if (input.networkPolicy !== "internet" && input.networkPolicy !== "blocked")
-              throw new AdapterError("UNSUPPORTED", "E2B network policy is unsupported");
+            if (!e2bNetworkPolicies(config.allowlist).includes(input.networkPolicy))
+              throw new AdapterError(
+                "UNSUPPORTED",
+                input.networkPolicy === ALLOW_NETWORK_POLICY
+                  ? "E2B allowlists are set in adapter setup: network: { allow: [...] }"
+                  : "E2B network policy is unsupported",
+              );
 
             if (input.labels && Object.keys(input.labels).some((key) => ownerKeys.includes(key)))
               throw new AdapterError("INVALID_ARGUMENT", "Reserved E2B metadata key");
@@ -994,6 +1076,9 @@ export function createE2BAdapter(transportFactory?: (options: { apiKey: string }
             const token: z.infer<typeof CreateToken> = {
               allowPublicTraffic: config.preview.access === "public",
             };
+
+            if (input.networkPolicy === ALLOW_NETWORK_POLICY && config.allowlist)
+              token.allowlist = config.allowlist;
 
             await ctx.checkpoint(token);
 
@@ -1063,6 +1148,7 @@ export function createE2BAdapter(transportFactory?: (options: { apiKey: string }
                 timeoutMs: nativeLifetime(input.lifetimeSeconds ?? config.lifetimeSeconds) * 1000,
                 allowInternetAccess: input.networkPolicy === "internet",
                 allowPublicTraffic: token.allowPublicTraffic,
+                ...e2bEgress(token.allowlist),
                 metadata,
                 signal: ctx.signal,
               };
@@ -1088,6 +1174,9 @@ export function createE2BAdapter(transportFactory?: (options: { apiKey: string }
                 return ctx.unknown(
                   "E2B create inbound visibility could not be verified; no replay",
                 );
+
+              if (!e2bEgressMatches(record, token.allowlist))
+                return ctx.unknown("E2B create egress allowlist could not be verified; no replay");
 
               return {
                 id,
@@ -1174,6 +1263,9 @@ export function createE2BAdapter(transportFactory?: (options: { apiKey: string }
               return ctx.unknown(
                 "Recovered E2B create inbound visibility is unverified; no replay",
               );
+
+            if (!e2bEgressMatches(record, token.data.allowlist))
+              return ctx.unknown("Recovered E2B create egress allowlist is unverified; no replay");
 
             if (attempt.mounts?.length)
               return ctx.unknown("Recovered native volume IDs cannot be confirmed; no replay");
@@ -2091,7 +2183,16 @@ export function createE2BAdapter(transportFactory?: (options: { apiKey: string }
             await requireRunning(attempt.sandbox.id, attempt.sandbox.reference);
             const paths = executionPaths(attempt.submissionId);
 
-            return readExecution(attempt.sandbox.id, paths, token.data.maxOutputBytes);
+            const result = await readExecution(
+              attempt.sandbox.id,
+              paths,
+              token.data.maxOutputBytes,
+            );
+
+            // A recovered outcome no longer needs its capture files.
+            if (result) await cleanup(attempt.sandbox.id, paths);
+
+            return result;
           },
         },
         files: {
@@ -2158,7 +2259,43 @@ export function createE2BAdapter(transportFactory?: (options: { apiKey: string }
 
               try {
                 if (input.overwrite) {
-                  await transport.write(input.sandbox.id, input.path, input.bytes);
+                  try {
+                    await transport.write(input.sandbox.id, input.path, input.bytes);
+                  } catch (error) {
+                    // envd refused to open an existing file, typically one directly in /tmp, and
+                    // wrote nothing. Upload a fresh file beside it, which envd can create, then
+                    // copy it over the destination as the sandbox user, who owns the destination
+                    // (envd chowned it before the refused open), so the kernel allows the reopen.
+                    if (!(error instanceof E2BWriteFailure && error.openDenied)) throw error;
+                    const copy = `${parent}/.beachside-write-${ctx.submissionId}`;
+
+                    if (copy === input.path)
+                      return ctx.reject(
+                        "INVALID_ARGUMENT",
+                        "E2B destination conflicts with write staging",
+                      );
+                    await transport.write(input.sandbox.id, copy, input.bytes);
+
+                    if (ctx.signal.aborted) {
+                      await transport.remove(input.sandbox.id, copy).catch(() => {});
+
+                      return ctx.pending(token, { pollAfterMs: 1000 });
+                    }
+
+                    stage = "link";
+
+                    const answer = await transport.run(
+                      input.sandbox.id,
+                      `if cat -- ${shellQuote(copy)} > ${shellQuote(input.path)} 2>/dev/null; then rm -f -- ${shellQuote(copy)}; printf 'COPIED'; else rm -f -- ${shellQuote(copy)}; printf 'FAILED'; fi`,
+                      { timeoutMs: 30_000 },
+                    );
+
+                    if (answer !== "COPIED") {
+                      token.failure = { stage, errorName: "Error" };
+
+                      return ctx.pending(token, { pollAfterMs: 1000 });
+                    }
+                  }
                 } else {
                   await transport.write(input.sandbox.id, staged!, input.bytes);
 
@@ -2242,6 +2379,9 @@ export function createE2BAdapter(transportFactory?: (options: { apiKey: string }
                     failure,
                   ),
                 );
+
+              // The confirmed link keeps the bytes; the stage name is only scaffolding.
+              if (staged) await transport.remove(attempt.sandbox.id, staged).catch(() => {});
 
               return { bytesWritten };
             },

@@ -1,5 +1,140 @@
 # @beachside/cli
 
+## 0.15.0
+
+### Minor Changes
+
+- [#211](https://github.com/pandemicsyn/beachside/pull/211) [`8652541`](https://github.com/pandemicsyn/beachside/commit/86525413252c43b170eb5e086b5f859713aa2ca9) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Adapters can declare `setup`: the environment variable for each credential and config setting, a description, and a link to where a person gets it when there is one. `alternatives` lists credentials that stand in for each other (exe.dev takes an API key or an SSH key). Every official adapter now declares its own, and the CLI reads them from the installed adapter instead of keeping its own table, so third-party adapters that declare `setup` get environment-only settings too. Missing-setting errors and `beachside providers` link to where each value comes from, and `providers` lists the profiles that use each provider. Its JSON rows add `known` (false when the adapter failed to load or declares no setup, in which case `missingEnv` is empty and the text says the settings are unknown) and `needs`, with each missing value's description and link.
+
+  New `beachside profile ls | show | use | rm` commands list profiles, explain where each setting comes from without revealing credentials, change the default and remove profiles. `profile show` reports `ready` (true, false, or null when the adapter declares no setup) and what the profile still `needs`. `use` and `rm` rewrite `beachside.json` atomically under a lock, keeping its file mode. `profile rm` refuses while stored sandboxes, snapshots or images use the profile, unless `--force`.
+
+  `beachside.json` has a published JSON Schema (https://beachside.run/schema/beachside.json, also printed by `beachside schema config`), and the file accepts a `$schema` key so editors can complete and check it. The schema requires each profile to name a `provider` or a `module`.
+
+  `beachside doctor` now checks that the provider accepts the credentials with one read of its sandbox listing. A rejected key exits 5 (`UNAUTHENTICATED` or `FORBIDDEN`) with the profile name and where to get a new key, here and on any command that connects, instead of an internal error with an unknown outcome.
+
+  `beachside providers` no longer marks boxd and Freestyle experimental, and lists providers in the docs' order.
+
+- [#214](https://github.com/pandemicsyn/beachside/pull/214) [`6e1eb14`](https://github.com/pandemicsyn/beachside/commit/6e1eb1460750c0b9a9889764eaca0bb27e0d17f3) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Collect basic CLI command usage in a dedicated PostHog project by default, with persistent telemetry controls, environment opt-outs, no collection in CI unless explicitly enabled, and tightly limited payloads. SDK and provider packages do not send product telemetry.
+
+- [#212](https://github.com/pandemicsyn/beachside/pull/212) [`6c5d263`](https://github.com/pandemicsyn/beachside/commit/6c5d2632ef0d8a6c02d35fcd826112822b4768f6) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Sandboxes now reach the internet unless you ask otherwise. boxd, E2B, Vercel, Modal, Runloop, Freestyle and Archil default to `network: "internet"` instead of `blocked`; set `network: "blocked"` or an allowlist to restrict egress. Daytona keeps its tier-managed `daytona-default`. Boat and exe.dev no longer require `network: "internet"` in setup, and the CLI no longer needs `BOAT_NETWORK` or `EXE_NETWORK`; `BOXD_NETWORK`, `RUNLOOP_NETWORK`, `FREESTYLE_NETWORK` and `ARCHIL_NETWORK` stay optional, for `blocked` or (Archil Free plan) `archil-managed`. An adapter that declares no `defaultNetworkPolicy` now defaults to `internet`, or to its only policy when `supports.network` lists one. Connections that relied on the old blocked default and reopen sandboxes created that way should set `network: "blocked"` explicitly.
+
+### Patch Changes
+
+- [#215](https://github.com/pandemicsyn/beachside/pull/215) [`bf12adc`](https://github.com/pandemicsyn/beachside/commit/bf12adc9ed44d977034b6bd5c7af7f98130c6918) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Prevent macOS tar from adding AppleDouble metadata entries that can break recursive downloads. Directory copies preserve file contents, permission bits and links without host-specific extended metadata.
+- Updated dependencies [[`8652541`](https://github.com/pandemicsyn/beachside/commit/86525413252c43b170eb5e086b5f859713aa2ca9), [`6c5d263`](https://github.com/pandemicsyn/beachside/commit/6c5d2632ef0d8a6c02d35fcd826112822b4768f6)]:
+  - @beachside/adapter@0.15.0
+  - beachside@0.15.0
+
+## 0.14.0
+
+### Minor Changes
+
+- [#204](https://github.com/pandemicsyn/beachside/pull/204) [`6f3a1fc`](https://github.com/pandemicsyn/beachside/commit/6f3a1fc4a66eed9d078b5bb6075c837b754e4113) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add the experimental `@beachside/exe-dev` adapter for exe.dev VMs, built on exe.dev's official `@exedev/sdk`. It connects with an API token, an Ed25519 SSH key that signs short-lived tokens locally, or both; creates tagged VMs from OCI images (default `exeuntu`) with whole-vCPU sizes, the account's default placement, standalone VMs or a named pool, labels kept in the VM comment and create-time environment variables; runs argv and shell commands with exact output bytes, finite stdin and a truncation bound; streams processes with byte output, piped stdin, signals, status and reopening; reads and writes files of any size with streams, no-clobber writes, copy, move and metadata; pauses and resumes VMs with their memory; forks a VM with `cp`; and returns protected previews with a signed token header or public previews. A create whose response is lost is found again by its name instead of being resent. The CLI gains an `exe-dev` provider that reads `EXE_API_KEY` and `EXE_NETWORK=internet`.
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @beachside/adapter@0.14.0
+  - beachside@0.14.0
+
+## 0.13.0
+
+### Minor Changes
+
+- [#197](https://github.com/pandemicsyn/beachside/pull/197) [`3ab2e60`](https://github.com/pandemicsyn/beachside/commit/3ab2e6044ff20ed4c672c6ab208ba5dba940d6d6) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - boxd moves to `@boxd-sh/sdk` 0.3.0 and gains blocked egress, labels and regions. `network` now defaults to `blocked`, which sets the machine's native egress allowlist to `none` before Beachside hands it out; set `network: "internet"` (or `BOXD_NETWORK=internet` in the CLI) for open egress. `create({ labels })` and `restore({ labels })` set boxd machine labels, and `sandboxes.list()` returns them. A new `region` setting (`BOXD_REGION` in the CLI) sends machine, disk and snapshot calls to that boxd region.
+
+### Patch Changes
+
+- Updated dependencies [[`f95dce3`](https://github.com/pandemicsyn/beachside/commit/f95dce3c58353ed8ea14b23c5205f1619e4e374b), [`9e3ab39`](https://github.com/pandemicsyn/beachside/commit/9e3ab396c38a718c9f26693073d6b6c93ad80972), [`f89fde4`](https://github.com/pandemicsyn/beachside/commit/f89fde43eb1e548fad65c5da7b8e2c9328b62383)]:
+  - @beachside/adapter@0.13.0
+  - beachside@0.13.0
+
+## 0.12.0
+
+### Minor Changes
+
+- [#190](https://github.com/pandemicsyn/beachside/pull/190) [`3560e72`](https://github.com/pandemicsyn/beachside/commit/3560e722369b48b64d3a689b784c200e0229f85e) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add the experimental `@beachside/archil` adapter for Archil Sandboxes, built on Archil's official `disk` SDK. It creates persistent Firecracker microVMs from OCI images or built image ids in a chosen region, with blocked egress by default (or Archil's managed allowlist on the Free plan), exact sizes and create-time environment variables; runs argv and shell commands with exact output bytes, finite stdin and a truncation bound; streams processes with byte output, piped stdin, signals, status and reopening; opens terminals on Archil's native PTY; reads and writes files of any size with streams, no-clobber writes, copy, move and metadata; pauses and resumes sandboxes with their memory, or stops and cold-boots them; renews the session deadline; captures memory-and-disk or disk-only snapshots as forks of a retained holder sandbox; builds images; manages Archil disks as volumes and mounts them at create; and returns protected previews with a token header or public previews. A create whose response is lost is found again by its name instead of being resent. The CLI gains an `archil` provider that reads `ARCHIL_API_KEY`, `ARCHIL_REGION` and an optional `ARCHIL_NETWORK` (`internet` or `archil-managed`).
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @beachside/adapter@0.12.0
+  - beachside@0.12.0
+
+## 0.11.0
+
+### Minor Changes
+
+- [#187](https://github.com/pandemicsyn/beachside/pull/187) [`ae8c05a`](https://github.com/pandemicsyn/beachside/commit/ae8c05aadf2841f734c9c66223043290d587b9ef) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Setup scripts: `create` and `run` take `--setup <name|path>`, `--setup-cmd '<shell>'`, `--startup <path>` and `--startup-cmd '<shell>'`, which run in the new sandbox once it starts.
+
+  - **Named setups:** `setups` in `beachside.json` defines reusable setups with `extends`, `network` and `env`, and a profile's `setup` list applies by default (`--no-default-setup` skips it). `beachside setup ls` lists them.
+  - **Startup:** startup steps run at create and again after every `create --snapshot` restore.
+  - **Failures:** a failed step exits 9 with `SETUP_FAILED`. `create` keeps the sandbox, or removes it with `--rm-on-failure`; the record shows each step's outcome.
+  - **Rerun:** `beachside setup <sandbox>` reruns only the missing steps, and `--force` reruns everything.
+  - **Add-ons:** `--with` installs its servers through the same setup engine.
+
+  Setup caches: a setup with `"cache": true` (or `create --cache`) is snapshotted after setup and before startup. The next create with the same setup restores it and runs only `cache: false` steps and startup.
+
+  - **The key** covers the provider, scope, profile, image, every step and the files in `cache.files`.
+  - **Freshness:** caches go stale after `maxAge` (7 days by default) and are rebuilt on the next create.
+  - **Secrets:** a setup whose env holds secrets is refused unless it sets `secrets: "allow"`.
+  - **Commands:** `beachside setup cache ls|rm|prune` manages caches, and `gc` prunes stale ones. `--no-cache` and `--refresh-cache` control one create.
+
+  Setups can also come from a repository: with `"projectSetups": true` or `BEACHSIDE_PROJECT_SETUPS=1`, the CLI reads `.beachside/setup.json` (`setups` plus `default`) from the checkout. A step can be `{ "parallel": [...] }` to run several steps at once as one setup step.
+
+- [#184](https://github.com/pandemicsyn/beachside/pull/184) [`05f225d`](https://github.com/pandemicsyn/beachside/commit/05f225dc1c2cc69fdfb8f8c815d15189d6ce9beb) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - `beachside create --with rex|herdr` installs a server in the new sandbox and puts it on your Tailscale tailnet, with the auth key from `TAILSCALE_AUTH_KEY` sent only over stdin.
+
+  - **Rex:** runs on Rex's own Tailscale, and `create` waits for its HTTPS address.
+  - **herdr:** gets a Tailscale SSH device to attach to with `herdr --remote`.
+  - **Connection details:** `create` and `inspect` print how to connect, the sandbox record keeps the add-ons, and `rm` logs each device out of the tailnet.
+  - **Network:** `--with` implies `--network internet`.
+
+  A create the provider rejects with no image set now keeps the provider's own message, rather than always saying an image is needed. Previously an E2B lifetime over its cap read as "needs an image".
+
+### Patch Changes
+
+- [#182](https://github.com/pandemicsyn/beachside/pull/182) [`1577530`](https://github.com/pandemicsyn/beachside/commit/1577530fcb0d027b7f8cc3d851b144a96abbe535) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - The bundled `beachside-cli` skill now shows agents Rex's exact split-pane commands: `rex run --split=right -s "$REX_SESSION" --keep-open --json`, then `rex wait` and `rex capture` by the saved pane id. It also explains how to start a Rex server inside a sandbox, following the Rex guide.
+- Updated dependencies [[`ae8c05a`](https://github.com/pandemicsyn/beachside/commit/ae8c05aadf2841f734c9c66223043290d587b9ef), [`ae8c05a`](https://github.com/pandemicsyn/beachside/commit/ae8c05aadf2841f734c9c66223043290d587b9ef)]:
+  - beachside@0.11.0
+  - @beachside/adapter@0.11.0
+
+## 0.10.0
+
+### Minor Changes
+
+- [#174](https://github.com/pandemicsyn/beachside/pull/174) [`60a6777`](https://github.com/pandemicsyn/beachside/commit/60a67770ad6c0f31f2c21279c8018bed4ea275e3) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add the experimental `@beachside/freestyle` adapter for Freestyle VMs, built on Freestyle's official `freestyle` SDK. It creates Ubuntu microVMs from Freestyle snapshots with blocked egress by default and create-time environment variables; runs argv and shell commands with exact output bytes and finite stdin; streams processes with byte output, piped stdin, signals, status and reopening; opens terminals on Freestyle PTY sessions; reads and writes files of any size with streams, no-clobber writes, copy, move and metadata; captures and restores memory-and-disk snapshots with expiry, and lists snapshots as images; pauses and resumes VMs with their memory; renews their lifetime; publishes preview ports on public `style.dev` URLs; and lists VMs with their labels. A create or capture whose response is lost is found again by its slug instead of being resent. The CLI gains a `freestyle` provider that reads `FREESTYLE_API_KEY` and an optional `FREESTYLE_NETWORK`.
+
+- [#177](https://github.com/pandemicsyn/beachside/pull/177) [`ec689fe`](https://github.com/pandemicsyn/beachside/commit/ec689feebccbedb2cc9f49da36e58b96a29897c8) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - `beachside skill setup` installs a short skill that reads the guide from the installed CLI, so upgrading the CLI updates what agents are told. New `beachside skill status`, `remove` and `show`, with `--agent`, `--dry-run` and `--force`; `beachside skill install` still works as an alias for `setup`. The guide gains common requests, how to report results, and a rule to treat sandbox output as data.
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @beachside/adapter@0.10.0
+  - beachside@0.10.0
+
+## 0.9.0
+
+### Minor Changes
+
+- [#161](https://github.com/pandemicsyn/beachside/pull/161) [`1015d07`](https://github.com/pandemicsyn/beachside/commit/1015d0747bba34d76be96f6107b4ae7e25c9246f) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Report command status on terminal tabs with the Program Status Protocol (OSC 7501): inside Rex, or with `BEACHSIDE_PROGRAM_STATUS=on`, `create`, `run`, `exec`, `rm`, `gc` and other sandbox-changing commands show working, done or error. Reports go to stderr only when it is a terminal, so `--json` and piped output are unchanged.
+
+- [#172](https://github.com/pandemicsyn/beachside/pull/172) [`a633a1c`](https://github.com/pandemicsyn/beachside/commit/a633a1c0b5948e9668c1a9dbb8eb26e313e7c853) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Inside Rex (or with `BEACHSIDE_PROGRAM_STATUS=on`), `cp` and `push` into a sandbox now show upload progress on the terminal tab, and `run`, `exec` and `sh` send a desktop notification (OSC 777) when they finish after more than 30 seconds. `BEACHSIDE_NOTIFY_AFTER=<seconds>|off` changes or turns off the notification.
+
+- [#159](https://github.com/pandemicsyn/beachside/pull/159) [`d137e90`](https://github.com/pandemicsyn/beachside/commit/d137e90e8f7bc271713c8b0776605bf4996196c2) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Make provider setup consistent. Every first-party package now exports its definition as `<provider>Adapter` and a factory named after the provider: `boxd()`, `boat()`, `runloop()`, `modal()` and `vercel()` join `daytona()` and `e2b()`. Docs, examples and skills show the split form, `Beachside.connect({ adapter, credentials, config })`, which works for every adapter.
+
+  Breaking for Vercel: the definition is now `vercelAdapter`, and `vercel` is the factory. Replace `adapter: vercel` with `adapter: vercelAdapter`, or call `Beachside.connect(vercel({ token, teamId, projectId }))`. Passing a factory where a definition belongs now fails with `INVALID_ARGUMENT` and names both forms.
+
+### Patch Changes
+
+- [#171](https://github.com/pandemicsyn/beachside/pull/171) [`fe54090`](https://github.com/pandemicsyn/beachside/commit/fe54090c4f0434c1064443d9b26ad886903eefc4) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - `snapshot create` no longer leaves a Daytona snapshot uncertain when the capture outlives the adapter's wait: the CLI sends the pending source restart and records the snapshot. `snapshot rm` and `snapshot inspect` finish such a capture the same way, so an uncertain capture can be deleted. A profile's OCI `config.environment` now follows the same build rule as `--image`: create reuses the recorded `image build` instead of starting another build.
+
+- [#164](https://github.com/pandemicsyn/beachside/pull/164) [`366a0c9`](https://github.com/pandemicsyn/beachside/commit/366a0c9ea7b02c1ea2358992edf69624fb3ad80c) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - `cp` and `cat` handle files of any size: they stream where the provider streams files, and otherwise move the file in 1 MiB parts that the sandbox joins or splits. A failed download no longer truncates the local file. `exec`, `sh` and `run` stream `--stdin` and `--stdin-file` as the input arrives where the provider takes incremental stdin (Daytona, E2B, Vercel), so input has no size limit and can stay open (with `--json` or `--no-stream`, input over 1 MiB uses the SDK's streamed stdin). On other providers, input over 1 MiB fails with a hint to copy it in and redirect it.
+
+- [#173](https://github.com/pandemicsyn/beachside/pull/173) [`29d0a39`](https://github.com/pandemicsyn/beachside/commit/29d0a39eb99f3c7abb9d4a23bf3fcebf42c4ebd5) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Clarify in the README that the CLI never prompts for input and that exit codes indicate what to do next.
+- Updated dependencies [[`d137e90`](https://github.com/pandemicsyn/beachside/commit/d137e90e8f7bc271713c8b0776605bf4996196c2), [`3f414a8`](https://github.com/pandemicsyn/beachside/commit/3f414a8dbb7d9b73259e99a2c70cda59fac75af9), [`7b9fa24`](https://github.com/pandemicsyn/beachside/commit/7b9fa244f6364b8b6aace7bcd46d80edb71fe993)]:
+  - beachside@0.9.0
+  - @beachside/adapter@0.9.0
+
 ## 0.8.0
 
 ### Minor Changes

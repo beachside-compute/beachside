@@ -1,9 +1,9 @@
 ---
 title: Beachside SDK
-description: Create sandboxes, run code, and move files with one TypeScript SDK for Daytona, E2B, boxd and Vercel.
+description: Create sandboxes, run code, and move files with one TypeScript SDK for boxd, Freestyle, Daytona, E2B and more.
 ---
 
-Beachside is a server-side TypeScript SDK for creating sandboxes, running commands, and moving files across providers. **Daytona, E2B, boxd and Vercel are separately installed adapters.** Other providers can integrate through the public adapter API.
+Beachside is a server-side TypeScript SDK for creating sandboxes, running commands, and moving files across providers. **boxd, Freestyle, Daytona, E2B and Vercel are separately installed adapters.** Other providers can integrate through the public adapter API.
 
 Start with [Getting started](/docs/direct-quickstart/) to install the SDK, run your first command and clean up the sandbox.
 
@@ -37,14 +37,17 @@ The [`beachside` CLI](/docs/cli/) creates, uses and cleans up sandboxes from you
 
 The [Tested provider support](/docs/providers/support/) matrix shows which operations have been exercised against real providers, along with the tested configuration and limits. Choose setup and limits for your adapter:
 
-| Adapter                                   | What you get                                                                                          |
-| ----------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| [Daytona](/docs/providers/daytona/)       | Commands, files, processes, snapshots, volumes and suspend/resume.                                    |
-| [E2B](/docs/providers/e2b/)               | Commands, files, processes, snapshots and suspend/resume.                                             |
-| [boxd](/docs/providers/boxd/)             | Experimental. MicroVM sandboxes with commands, files and reconnecting to running sandboxes.           |
-| [Boat](/docs/providers/boat/)             | Experimental. Full Ubuntu VMs with commands, files, archive/resume, snapshots and renewal.            |
-| [Runloop](/docs/providers/runloop/)       | Experimental; Runloop sign-ups are invite-only. Devboxes with blocked egress, snapshots and previews. |
-| [Vercel Sandbox](/docs/providers/vercel/) | Short-lived Node 24 sandboxes with commands and files.                                                |
-| [Modal](/docs/direct-quickstart/)         | Experimental. Commands, files and processes in Modal sandboxes.                                       |
+| Adapter                                   | What you get                                                                                                                |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| [boxd](/docs/providers/boxd/)             | MicroVMs from OCI images with commands, files, egress allowlists, memory snapshots, fork, pause/resume, disks and previews. |
+| [Freestyle](/docs/providers/freestyle/)   | Ubuntu microVMs with blocked egress, memory snapshots, pause/resume and public previews.                                    |
+| [Daytona](/docs/providers/daytona/)       | Commands, files, processes, snapshots, volumes and suspend/resume.                                                          |
+| [E2B](/docs/providers/e2b/)               | Commands, files, processes, snapshots and suspend/resume.                                                                   |
+| [Boat](/docs/providers/boat/)             | Experimental. Full Ubuntu VMs with commands, files, archive/resume, snapshots and renewal.                                  |
+| [Runloop](/docs/providers/runloop/)       | Experimental; Runloop sign-ups are invite-only. Devboxes with blocked egress, snapshots and previews.                       |
+| [Archil](/docs/providers/archil/)         | Experimental. Persistent microVMs on durable disks, with pause/resume, fork snapshots and volumes.                          |
+| [exe.dev](/docs/providers/exe-dev/)       | Experimental. Persistent Linux VMs with pause/resume, VM copies as forks and HTTPS previews.                                |
+| [Vercel Sandbox](/docs/providers/vercel/) | Short-lived Node 24 sandboxes with commands and files.                                                                      |
+| [Modal](/docs/direct-quickstart/)         | Experimental. Commands, files and processes in Modal sandboxes.                                                             |
 
 For API details, use the [TypeScript reference](/docs/reference/typescript/). To add a provider, start with [Write an adapter](/docs/guides/write-an-adapter/).

@@ -8,6 +8,7 @@ import {
   NonzeroExitError,
   ResourceReference,
   BeachsideError,
+  SetupFailedError,
   assertResourceScope,
   type CreateInput,
   type ExecInput,
@@ -18,9 +19,11 @@ import {
   type SandboxHandle,
   type SandboxList,
   type SandboxListEntry,
+  type SetupStep,
+  type SetupStepOptions,
 } from "beachside";
 import { z } from "zod";
-import { searchProjectAdapters, valueAvailable, type Env, type LoadedConfig } from "./config";
+import { valueAvailable, type Env, type LoadedConfig } from "./config";
 import {
   CliError,
   describeError,
@@ -30,8 +33,59 @@ import {
   type ExecSummary,
   type Output,
 } from "./output";
+import {
+  catalog,
+  hasSetupRequest,
+  resolveSetupRequest,
+  setupFailed,
+  setupLines,
+  setupProgress,
+  setupRequest,
+  type CliSetup,
+  type SetupRecord,
+  type SetupRequest,
+} from "./setups";
+import {
+  cacheRows,
+  cacheTable,
+  captureCache,
+  deleteCaches,
+  forgetCache,
+  pruneLines,
+  hitLine,
+  lookupCache,
+  planCache,
+  shortDuration,
+  type CacheFlags,
+  type CacheLookup,
+  type CachePlan,
+} from "./cache";
+import { resolveEnvReferences } from "./config";
+import {
+  addonLines,
+  hasHerdr,
+  hcMachines,
+  parseAddons,
+  refreshHostKeys,
+  removedAddonNotes,
+  sandboxShell,
+  setupShell,
+  setupAddons,
+  tailnetKey,
+  teardownAddons,
+  type AddonName,
+  type AddonRecord,
+} from "./addons";
 import { imageEnvironment } from "./images";
-import { missingEnv, providers, resolveAdapterModule, type ResolvedProfile } from "./providers";
+import {
+  adapterSetup,
+  credentialsRejected,
+  missingSettings,
+  officialLocation,
+  providers,
+  resolveAdapterModule,
+  type ResolvedProfile,
+} from "./providers";
 import type { Session } from "./session";
 import { restoreSnapshot, snapshotSource } from "./snapshots";
 import {
@@ -47,6 +101,7 @@ import {
 import {
   defaultPushDir,
   download,
+  archiveEstimate,
   Excludes,
   fileChunks,
   localTree,
@@ -56,6 +111,7 @@ import {
   uploadFile,
   type LocalTree,
 } from "./transfer";
+import { meter } from "./program-status";
 import { parseDuration, parsePairs, parseSize } from "./units";
 
 /** Parsed command-line values for one command. */
@@ -104,6 +160,20 @@ type CreateRequest = {
   snapshot?: string;
   /** `--retry`: keep retrying a create the provider refused before any effect, for this long. */
   retrySeconds?: number;
+  /** `--with`: servers to install once the sandbox exists. */
+  addons: AddonName[];
+  /** `--setup`, `--setup-cmd`, `--startup`, `--startup-cmd`; profile defaults are added later. */
+  setup: SetupRequest;
+  /** `--no-default-setup`: skip the profile's default setups. */
+  noDefaultSetup: boolean;
+  /** `--quiet-setup`: print step headers and failures only. */
+  quietSetup: boolean;
+  /** `--setup-timeout`: overall limit for setup and startup. */
+  setupTimeoutSeconds?: number;
+  /** `--rm-on-failure`: remove the sandbox when its setup fails instead of keeping it. */
+  rmOnFailure: boolean;
+  /** `--cache`, `--no-cache`, `--refresh-cache`. */
+  cache: CacheFlags;
 };
 
 /** Create flags a restore cannot honor: the snapshot fixes the image. */
@@ -117,6 +187,22 @@ function createRequest(flags: Flags, env: Record<string, string> = {}): CreateRe
   const ttl = flags.string("ttl");
   const retry = flags.string("retry");
   const snapshot = flags.string("snapshot");
+  const setupTimeout = flags.string("setup-timeout");
+  const addons = parseAddons(flags.strings("with"));
+  const network = flags.string("network") ?? (addons.length ? "internet" : undefined);
+  const labels = parsePairs(flags.strings("label"), "label");
+
+  if (addons.length && snapshot)
+    throw usage(
+      "--snapshot cannot be combined with --with",
+      "a restored sandbox can carry the original's tailnet login; create it without --snapshot",
+    );
+
+  if (addons.length && network !== "internet")
+    throw usage(
+      `--with ${addons.join(",")} needs --network internet`,
+      "the sandbox downloads the server and reaches Tailscale's control servers",
+    );
 
   if (snapshot) {
     const conflicting = notWithSnapshot.find((name) => flags.has(name));
@@ -134,13 +220,80 @@ function createRequest(flags: Flags, env: Record<string, string> = {}): CreateRe
     ifNotExists: flags.bool("if-not-exists"),
     image: flags.string("image"),
     prepared: flags.string("prepared"),
-    network: flags.string("network"),
-    labels: parsePairs(flags.strings("label"), "label"),
+    network,
+    labels,
     env,
     lifetimeSeconds: ttl === undefined ? undefined : parseDuration(ttl, "ttl"),
     snapshot,
     retrySeconds: retry === undefined ? undefined : parseDuration(retry, "retry"),
+    addons,
+    setup: setupRequest({
+      setups: flags.strings("setup"),
+      commands: flags.strings("setup-cmd"),
+      startups: flags.strings("startup"),
+      startupCommands: flags.strings("startup-cmd"),
+      defaults: [],
+    }),
+    noDefaultSetup: flags.bool("no-default-setup"),
+    quietSetup: flags.bool("quiet-setup"),
+    setupTimeoutSeconds:
+      setupTimeout === undefined ? undefined : parseDuration(setupTimeout, "setup-timeout"),
+    rmOnFailure: flags.bool("rm-on-failure"),
+    cache: {
+      force: flags.bool("cache"),
+      skip: flags.bool("no-cache"),
+      refresh: flags.bool("refresh-cache"),
+    },
   };
+}
+
+/**
+ * Resolve the setup a create asked for, before anything exists: the profile's default setups,
+ * then `--setup` and `--setup-cmd`. A named setup's network becomes the default and must agree
+ * with an explicit `--network`; its env joins the sandbox env under `--env`.
+ */
+async function prepareSetup(
+  session: Session,
+  request: CreateRequest,
+  explicitNetwork: string | undefined,
+): Promise<CliSetup | null> {
+  const loaded = await session.config();
+  const { cwd, env } = session.ctx;
+  const known = await catalog(loaded, cwd, env);
+
+  if (!request.noDefaultSetup && !request.snapshot) {
+    const profile = await session.profile();
+    const defaults = loaded.value.profiles?.[profile.name]?.setup ?? [];
+
+    // Profile defaults first, then the project's; each setup runs once.
+    request.setup.defaults = [...new Set([...defaults, ...known.projectDefaults])];
+  }
+
+  if (!hasSetupRequest(request.setup)) return null;
+
+  const resolved = await resolveSetupRequest(request.setup, known, cwd, env);
+
+  if (resolved.network) {
+    if (explicitNetwork !== undefined && explicitNetwork !== resolved.network.value)
+      throw usage(
+        `Setup ${resolved.network.from} needs --network ${resolved.network.value}, not ${explicitNetwork}`,
+        `drop --network or pass --network ${resolved.network.value}`,
+      );
+
+    request.network = resolved.network.value;
+  }
+
+  const setupEnv: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(resolved.env))
+    setupEnv[key] = await session.secret(
+      String(resolveEnvReferences(value, env, `setup env ${key}`)),
+      `setup env ${key}`,
+    );
+
+  request.env = { ...setupEnv, ...request.env };
+
+  return resolved;
 }
 
 const EnvName = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -298,6 +451,21 @@ async function liveCount(store: StateStore): Promise<number> {
   return (await listAll(store, "sandbox")).length;
 }
 
+/**
+ * The OCI image a profile's `config.environment` names. It follows the same build rule as
+ * `--image`; passed through raw, an adapter that must build it would start an unrecorded build on
+ * every create.
+ */
+const ProfileImage = z.looseObject({
+  environment: z.looseObject({ kind: z.literal("oci"), value: z.string().min(1) }),
+});
+
+function profileImage(profile: ResolvedProfile): string | undefined {
+  const parsed = ProfileImage.safeParse(profile.config);
+
+  return parsed.success ? parsed.data.environment.value : undefined;
+}
+
 /** Shared by create and run: claim the name, create, then record the reference. */
 /** A restore runs on the profile that captured the snapshot; a different explicit one is a mistake. */
 async function restoreProfile(session: Session, source: SnapshotRecord): Promise<ResolvedProfile> {
@@ -361,6 +529,7 @@ async function createOnce(session: Session, request: CreateRequest): Promise<Cre
   const store = await session.store();
   const source = request.snapshot ? await snapshotSource(session, request.snapshot) : null;
   const profile = source ? await restoreProfile(session, source) : await session.profile();
+  const image = request.image ?? (source || request.prepared ? undefined : profileImage(profile));
 
   if (request.name && request.ifNotExists) {
     const current = await store.get("sandbox", checkName(request.name));
@@ -398,7 +567,7 @@ async function createOnce(session: Session, request: CreateRequest): Promise<Cre
       provider: profile.provider,
       createdAt: new Date().toISOString(),
       labels: request.labels,
-      image: source ? `snapshot:${source.name}` : (request.image ?? request.prepared),
+      image: source ? `snapshot:${source.name}` : (image ?? request.prepared),
       reference: null,
     },
     request.name,
@@ -411,14 +580,8 @@ async function createOnce(session: Session, request: CreateRequest): Promise<Cre
   try {
     client = await session.connect(profile);
 
-    if (request.image)
-      input.environment = await imageEnvironment(
-        session,
-        client,
-        profile,
-        request.image,
-        request.build,
-      );
+    if (image)
+      input.environment = await imageEnvironment(session, client, profile, image, request.build);
 
     if (input.environment) {
       const plan = await client.sandboxes.checkCreate(input);
@@ -427,7 +590,7 @@ async function createOnce(session: Session, request: CreateRequest): Promise<Cre
         throw new CliError(
           "UNSUPPORTED",
           `${profile.provider} cannot create this sandbox: ${plan.reason}`,
-          request.image ? "use --prepared with a provider image instead" : undefined,
+          image ? "use --prepared with a provider image instead" : undefined,
         );
     }
   } catch (cause) {
@@ -447,12 +610,14 @@ async function createOnce(session: Session, request: CreateRequest): Promise<Cre
     if (report.outcome === "rejected") {
       await store.remove("sandbox", claimed.record.name, claimed.version);
 
-      // Adapters without a default image reject an argument-free create in SDK terms.
+      // Adapters without a default image reject an argument-free create in SDK terms, but so
+      // does any other bad input (an E2B lifetime over its cap), so the message stays the
+      // provider's and only the hint suggests an image.
       if (report.code === "INVALID_ARGUMENT" && !input.environment && !source)
         throw new CliError(
           "INVALID_ARGUMENT",
-          `${profile.provider} needs an image for this sandbox: ${report.message}`,
-          "pass --prepared <id> (a provider template or snapshot) or --image <oci-ref>",
+          `${profile.provider} rejected this sandbox: ${report.message}`,
+          "if the provider needs an image, pass --prepared <id> (a provider template or snapshot) or --image <oci-ref>",
         );
       throw cause;
     }
@@ -521,6 +686,8 @@ function sandboxSummary(record: SandboxRecord) {
     labels: record.labels,
     image: record.image ?? null,
     adopted: record.adopted ?? false,
+    addons: record.addons ?? [],
+    setup: record.setup ?? null,
   };
 }
 
@@ -583,13 +750,153 @@ export async function findTarget(session: Session, target: string): Promise<Targ
   );
 }
 
-export async function createCommand(session: Session, flags: Flags): Promise<number> {
-  const created = await createSandbox(
-    session,
-    createRequest(flags, await envFlags(session, flags)),
+/** A create's setup cache: the plan, what the lookup found, and the image it replaced on a hit. */
+type Caching = {
+  plan: CachePlan;
+  lookup: CacheLookup;
+  client: BeachsideClient<true>;
+  profile: ResolvedProfile;
+  /** The create's own image, restored when a hit turns out to be gone. */
+  original: { image?: string; prepared?: string };
+  startedAt: number;
+  /** What the sandbox record shows, once known. */
+  outcome?: NonNullable<SetupRecord["cache"]>;
+};
+
+/**
+ * Decide whether this create uses a setup cache, before anything exists. On a hit the create
+ * restores the cache snapshot instead of starting from its image.
+ */
+async function prepareCaching(
+  session: Session,
+  request: CreateRequest,
+  setup: CliSetup | null,
+): Promise<Caching | null> {
+  const wanted =
+    request.cache.force ||
+    request.cache.refresh ||
+    request.cache.skip ||
+    setup?.cache !== undefined;
+
+  if (!wanted) return null;
+
+  const profile = await session.profile();
+  const client = await session.connect(profile);
+  const image = request.image ?? request.prepared ?? profileImage(profile) ?? null;
+
+  const inputs: Parameters<typeof planCache>[5] = {
+    image,
+    env: request.env,
+    labels: request.labels,
+  };
+
+  if (request.lifetimeSeconds !== undefined) inputs.lifetimeSeconds = request.lifetimeSeconds;
+
+  if (request.snapshot !== undefined) inputs.snapshot = request.snapshot;
+
+  const plan = await planCache(session, client, profile, setup, request.cache, inputs);
+
+  if (!plan) return null;
+
+  const original: Caching["original"] = {};
+
+  if (request.image) original.image = request.image;
+
+  if (request.prepared) original.prepared = request.prepared;
+
+  const caching: Caching = {
+    plan,
+    client,
+    profile,
+    original,
+    startedAt: Date.now(),
+    lookup: await lookupCache(session, client, profile, plan, request.name ?? "sandbox"),
+  };
+
+  useLookup(session, request, caching);
+
+  return caching;
+}
+
+/** Point the create at a hit's snapshot, or say why it builds or skips. */
+function useLookup(session: Session, request: CreateRequest, caching: Caching): void {
+  const { lookup, plan } = caching;
+
+  if (lookup.kind === "hit") {
+    request.snapshot = lookup.entry.record.name;
+    delete request.image;
+    delete request.prepared;
+    request.build = false;
+    caching.outcome = { status: "hit", key: plan.key, snapshot: lookup.entry.record.name };
+
+    return;
+  }
+
+  if (lookup.kind === "uncached") {
+    session.ctx.out.note(`setup ${plan.setup}: running without the cache (${lookup.reason})`);
+    caching.outcome = { status: "skipped", key: plan.key };
+
+    return;
+  }
+
+  session.ctx.out.note(
+    `setup ${plan.setup}: ${lookup.previous ? "rebuilding" : "building"} the cache`,
   );
+}
+
+/**
+ * Create, restoring the cache on a hit. A cache whose snapshot the provider no longer has is a
+ * miss: the record is forgotten and the cache rebuilt, never the restore retried blindly.
+ */
+async function createCached(
+  session: Session,
+  request: CreateRequest,
+  caching: Caching | null,
+): Promise<Created> {
+  try {
+    return await createSandbox(session, request);
+  } catch (cause) {
+    if (caching?.lookup.kind !== "hit" || describeError(cause).code !== "NOT_FOUND") throw cause;
+
+    session.ctx.out.note(
+      `setup ${caching.plan.setup}: the cache snapshot is gone from ${caching.profile.provider}; rebuilding it`,
+    );
+    await forgetCache(session, caching.plan.name);
+    delete request.snapshot;
+    Object.assign(request, caching.original);
+    delete caching.outcome;
+    caching.lookup = await lookupCache(
+      session,
+      caching.client,
+      caching.profile,
+      caching.plan,
+      request.name ?? "sandbox",
+    );
+    useLookup(session, request, caching);
+
+    return createSandbox(session, request);
+  }
+}
+
+export async function createCommand(session: Session, flags: Flags): Promise<number> {
+  const request = createRequest(flags, await envFlags(session, flags));
+  const setup = await prepareSetup(session, request, flags.string("network"));
+  const key = request.addons.length ? tailnetKey(session.ctx.env) : undefined;
+  const caching = await prepareCaching(session, request, setup);
+  const created = await createCached(session, request, caching);
 
   if (created.unrecorded) throw unrecordedError(created);
+
+  if (created.existing) {
+    requireSetup(created.record, setup);
+    requireAddons(created.record, request.addons);
+  } else {
+    const failure = await setUp(session, created, setup, request, undefined, caching);
+
+    if (failure) throw failure;
+
+    if (key) await installAddons(session, created, request.addons, key, request.quietSetup);
+  }
 
   session.ctx.out.success(
     {
@@ -597,10 +904,576 @@ export async function createCommand(session: Session, flags: Flags): Promise<num
       existing: created.existing,
       reference: created.record.reference,
     },
-    created.record.name,
+    [
+      created.record.name,
+      ...setupLines(created.record.setup),
+      ...addonLines(created.record.addons ?? []),
+    ].join("\n"),
   );
 
   return 0;
+}
+
+/** `--if-not-exists` found the sandbox: its recorded setup must match and be ready. */
+function requireSetup(record: SandboxRecord, setup: CliSetup | null): void {
+  if (!setup?.digest) return;
+
+  if (record.setup?.digest === setup.digest && record.setup.state === "ready") return;
+
+  throw new CliError(
+    "CONFLICT",
+    record.setup?.digest === setup.digest
+      ? `${record.name} exists but its setup is ${record.setup.state}`
+      : `${record.name} exists with a different setup (${record.setup?.sources.join(", ") || "none"})`,
+    `run the missing steps with \`beachside setup ${record.name}\`, or remove it with \`beachside rm ${record.name}\``,
+  );
+}
+
+/** Save the sandbox record as it stands; setup and add-ons call this after every step. */
+async function saveRecord(session: Session, record: SandboxRecord): Promise<void> {
+  const store = await session.store();
+  const current = await store.get("sandbox", record.name);
+
+  if (current) await store.update("sandbox", record.name, record, current.version);
+}
+
+type SetupRun = {
+  setup: CliSetup | null;
+  quiet: boolean;
+  timeoutSeconds?: number;
+  /** A restored sandbox: its recorded startup runs when no startup is asked for. */
+  restored: boolean;
+  /** Re-run steps already recorded (`beachside setup --force`). */
+  force?: boolean;
+  /** Default working directory, such as the folder `run --push` sent. */
+  cwd?: string;
+  /** Env for every step, for setups added to a sandbox that was created without it. */
+  env?: Record<string, string>;
+  /**
+   * Runs between setup and startup, such as capturing a setup cache; it may hand back the box
+   * startup should run in instead.
+   */
+  beforeStartup?: (box: SandboxHandle<true>) => Promise<SandboxHandle<true> | void>;
+};
+
+/**
+ * Run setup on a recorded sandbox, saving each step's outcome in its record as it goes, so an
+ * interrupted setup still shows. Returns the setup failure for the caller to report; the
+ * sandbox stays.
+ */
+async function runSetupSteps(
+  session: Session,
+  box: SandboxHandle<true>,
+  record: SandboxRecord,
+  run: SetupRun,
+): Promise<SetupFailedError | null> {
+  const { out, signal } = session.ctx;
+  const progress = setupProgress(out, run.quiet);
+  const steps = withCwd(run.setup?.setup ?? [], run.cwd);
+  const startup = withCwd(run.setup?.startup ?? [], run.cwd);
+
+  const entry: SetupRecord = {
+    digest: run.setup?.digest ?? null,
+    sources: run.setup?.sources ?? [],
+    state: "running",
+    steps: [],
+  };
+
+  if (run.setup) entry.request = run.setup.request;
+
+  record.setup = entry;
+
+  if (steps.length || startup.length) await saveRecord(session, record);
+
+  try {
+    const options: Parameters<typeof box.runSetup>[0] = {
+      setup: steps,
+      startup,
+      recordedStartup: run.restored ? "run" : "skip",
+      force: run.force ?? false,
+      onSetupOutput: progress.onSetupOutput,
+      onSetupStep: async (event) => {
+        await progress.onSetupStep?.(event);
+
+        // Steps of a parallel group are recorded as their group.
+        if (event.type === "note" || event.step.group) return;
+
+        const step = { phase: event.phase, name: event.step.name };
+
+        if (event.type === "start") entry.steps.push({ ...step, status: "running" });
+        else {
+          const last = entry.steps.at(-1);
+
+          const done =
+            event.type === "done"
+              ? { ...step, status: "ran" as const, exitCode: 0, seconds: event.seconds }
+              : { ...step, status: "skipped" as const };
+
+          if (last?.status === "running" && last.name === step.name)
+            entry.steps[entry.steps.length - 1] = done;
+          else entry.steps.push(done);
+        }
+
+        await saveRecord(session, record);
+      },
+    };
+
+    if (run.timeoutSeconds) options.setupTimeoutSeconds = run.timeoutSeconds;
+
+    if (run.env && Object.keys(run.env).length) options.env = run.env;
+
+    if (!run.beforeStartup) await box.runSetup(options, { signal });
+    else {
+      await box.runSetup({ ...options, runStartup: false }, { signal });
+      box = (await run.beforeStartup(box)) ?? box;
+
+      if (startup.length) await box.runSetup({ ...options, setup: [], force: false }, { signal });
+    }
+  } catch (cause) {
+    entry.state = "failed";
+
+    const last = entry.steps.at(-1);
+
+    if (last?.status === "running")
+      entry.steps[entry.steps.length - 1] = {
+        ...last,
+        status: "failed",
+        exitCode: cause instanceof SetupFailedError ? cause.exitCode : null,
+      };
+    await saveRecord(session, record).catch(() => undefined);
+
+    if (cause instanceof SetupFailedError) return cause;
+
+    throw cause;
+  }
+
+  // Nothing asked for and nothing recorded to run: leave no setup entry behind.
+  if (!entry.steps.length && !run.setup) {
+    delete record.setup;
+    await saveRecord(session, record);
+
+    return null;
+  }
+
+  entry.state = "ready";
+  await saveRecord(session, record);
+
+  return null;
+}
+
+/** Give steps without their own working directory a default one. */
+function withCwd(steps: readonly SetupStep[], cwd: string | undefined): SetupStep[] {
+  if (!cwd) return [...steps];
+
+  return steps.map((step) => {
+    // oxlint-disable-next-line anti-slop/no-runtime-typeof -- Steps are a shell line, an argv array or the object form.
+    if (typeof step === "string" || Array.isArray(step)) return { run: step, cwd };
+
+    // SAFETY: Neither a string nor an array, so this is the object form.
+    const object = step as SetupStepOptions;
+
+    return object.cwd === undefined ? { ...object, cwd } : object;
+  });
+}
+
+/**
+ * The create's setup step: run what was asked for (and, on a restore, the recorded startup).
+ * On failure the sandbox is kept with its record marked failed, or removed with
+ * `--rm-on-failure`; either way the error says what to do next.
+ */
+async function setUp(
+  session: Session,
+  created: Created,
+  setup: CliSetup | null,
+  request: CreateRequest,
+  cwd?: string,
+  caching?: Caching | null,
+): Promise<CliError | null> {
+  const restored = request.snapshot !== undefined;
+
+  if (!setup && !restored) return null;
+
+  const run: SetupRun = { setup, quiet: request.quietSetup, restored };
+
+  if (request.setupTimeoutSeconds) run.timeoutSeconds = request.setupTimeoutSeconds;
+
+  if (cwd) run.cwd = cwd;
+
+  if (caching?.lookup.kind === "hit")
+    session.ctx.out.note(
+      hitLine(caching.plan, caching.lookup.entry.record, (Date.now() - caching.startedAt) / 1000),
+    );
+
+  if (caching?.lookup.kind === "build")
+    run.beforeStartup = cacheCapture(session, created, request, caching);
+
+  const failure = await runSetupSteps(session, created.box, created.record, run);
+
+  if (caching?.outcome && created.record.setup) {
+    created.record.setup.cache = caching.outcome;
+    await saveRecord(session, created.record);
+  }
+
+  if (!failure) return null;
+
+  const name = created.record.name;
+
+  if (!request.rmOnFailure) return setupFailed(`${name}: ${failure.message}`, name, true);
+
+  try {
+    await created.box.destroy();
+    await (await session.store()).remove("sandbox", name);
+  } catch (cause) {
+    return new CliError(
+      "CLEANUP_FAILED",
+      `${name}: ${failure.message}; removing it also failed: ${describeError(cause).message}`,
+      `remove it with \`beachside rm ${name}\``,
+      { sandbox: name },
+      "partial",
+    );
+  }
+
+  return setupFailed(`${name}: ${failure.message}`, name, false);
+}
+
+/** `beachside setup cache ls|rm <setup>|prune`: the setup caches in the store. */
+async function setupCacheCommand(session: Session, flags: Flags): Promise<number> {
+  const [, action, ...args] = flags.positionals;
+  const store = await session.store();
+  const { out } = session.ctx;
+  const rows = await cacheRows(store, (message) => out.note(message));
+  const dryRun = flags.bool("dry-run");
+
+  if (action === "ls") {
+    if (args.length) throw usage("setup cache ls takes no arguments");
+
+    if (dryRun) throw usage("--dry-run only applies to `setup cache rm` and `setup cache prune`");
+    out.success({ caches: rows.map(({ row }) => row) }, cacheTable(rows.map(({ row }) => row)));
+
+    return 0;
+  }
+
+  let chosen: typeof rows;
+
+  if (action === "rm") {
+    if (args.length !== 1)
+      throw usage("Expected one setup or cache name", "e.g. beachside setup cache rm node");
+    const wanted = args[0]!;
+
+    chosen = rows.filter(
+      ({ row }) =>
+        row.name === wanted || row.key.startsWith(wanted) || row.setup.split(", ").includes(wanted),
+    );
+
+    if (!chosen.length)
+      throw new CliError(
+        "NOT_FOUND",
+        `No setup cache for ${wanted}`,
+        "list them with `beachside setup cache ls`",
+      );
+  } else if (action === "prune") {
+    if (args.length) throw usage("setup cache prune takes no arguments");
+    chosen = rows.filter(({ row }) => row.stale);
+  } else
+    throw usage(
+      action ? `Unknown setup cache command ${action}` : "Expected a setup cache command",
+      "use one of: ls, rm <setup>, prune",
+    );
+
+  const items = await deleteCaches(
+    session,
+    chosen.map(({ entry }) => entry),
+    dryRun,
+  );
+
+  const failed = items.filter((item) => item.result === "failed");
+
+  if (failed.length)
+    throw new CliError(
+      "PARTIAL",
+      `Removed ${items.length - failed.length} of ${items.length} caches; ${failed.length} failed`,
+      "see error.details; run it again once the cause is fixed",
+      undefined,
+      "partial",
+      {
+        removed: items.filter((item) => ["deleted", "gone"].includes(item.result)),
+        skipped: items.filter((item) => item.result === "skipped"),
+        failed: failed.map((item) => ({ ...item, code: "FAILED" })),
+      },
+    );
+
+  out.success(
+    { caches: items },
+    items.length ? pruneLines(items).join("\n") : "no setup caches to remove",
+  );
+
+  return 0;
+}
+
+/** `beachside setup ls`: the named setups the config defines. */
+async function setupLs(session: Session): Promise<number> {
+  const loaded = await session.config();
+  const profile = await session.profile();
+  const known = await catalog(loaded, session.ctx.cwd, session.ctx.env);
+
+  const defaults = new Set([
+    ...(loaded.value.profiles?.[profile.name]?.setup ?? []),
+    ...known.projectDefaults,
+  ]);
+
+  if (known.ignoredProjectFile)
+    session.ctx.out.note(
+      `${known.ignoredProjectFile} is not read; set "projectSetups": true in beachside.json or BEACHSIDE_PROJECT_SETUPS=1`,
+    );
+
+  const setups = [...known.entries].map(([name, { config, origin }]) => ({
+    name,
+    origin,
+    default: defaults.has(name),
+    extends: config.extends ?? [],
+    setupSteps: config.setup?.length ?? 0,
+    startupSteps: config.startup?.length ?? 0,
+    network: config.network ?? null,
+    env: Object.keys(config.env ?? {}),
+    cache: config.cache ?? false,
+  }));
+
+  const lines = setups.map((entry) =>
+    [
+      entry.name.padEnd(20),
+      `${entry.setupSteps} setup, ${entry.startupSteps} startup`,
+      entry.extends.length ? `extends ${entry.extends.join(", ")}` : "",
+      entry.network ? `network ${entry.network}` : "",
+      entry.cache === false ? "" : "cached",
+      entry.default ? "default" : "",
+      entry.origin === loaded.path ? "" : `from ${entry.origin}`,
+    ]
+      .filter(Boolean)
+      .join("  "),
+  );
+
+  session.ctx.out.success(
+    { setups },
+    setups.length ? lines.join("\n") : "No named setups; add them under setups in beachside.json",
+  );
+
+  return 0;
+}
+
+/**
+ * `beachside setup <sandbox>`: run setup in an existing sandbox. With no flags it replays what
+ * the sandbox recorded; flags add to that, so steps it already has are skipped unless `--force`.
+ * A failure keeps the sandbox.
+ */
+export async function setupCommand(session: Session, flags: Flags): Promise<number> {
+  if (flags.positionals[0] === "cache") return setupCacheCommand(session, flags);
+
+  if (flags.bool("dry-run")) throw usage("--dry-run only applies to `beachside setup cache prune`");
+  const target = onePositional(flags, "sandbox");
+
+  if (target === "ls") return setupLs(session);
+
+  const { record } = await findTarget(session, target);
+  const recorded = record.setup?.request;
+
+  const asked = setupRequest({
+    setups: flags.strings("setup"),
+    commands: flags.strings("setup-cmd"),
+    startups: flags.strings("startup"),
+    startupCommands: flags.strings("startup-cmd"),
+    defaults: [],
+  });
+
+  if (!hasSetupRequest(asked) && !recorded)
+    throw usage(
+      record.setup
+        ? `${record.name} has no setup request to replay`
+        : `${record.name} has no recorded setup`,
+      `pass the setup to run, e.g. \`beachside setup ${record.name} --setup <name|path>\``,
+    );
+
+  const request = {
+    setups: [...(recorded?.setups ?? []), ...asked.setups],
+    commands: [...(recorded?.commands ?? []), ...asked.commands],
+    startups: [...(recorded?.startups ?? []), ...asked.startups],
+    startupCommands: [...(recorded?.startupCommands ?? []), ...asked.startupCommands],
+    defaults: flags.bool("no-default-setup") ? [] : (recorded?.defaults ?? []),
+  };
+
+  const loaded = await session.config();
+  const { cwd, env } = session.ctx;
+  const resolved = await resolveSetupRequest(request, await catalog(loaded, cwd, env), cwd, env);
+  const setupEnv: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(resolved.env))
+    setupEnv[key] = await session.secret(
+      String(resolveEnvReferences(value, env, `setup env ${key}`)),
+      `setup env ${key}`,
+    );
+
+  const box = await session.reopen(record);
+  const timeout = flags.string("setup-timeout");
+
+  const run: SetupRun = {
+    setup: resolved,
+    quiet: flags.bool("quiet-setup"),
+    restored: false,
+    force: flags.bool("force"),
+    env: setupEnv,
+  };
+
+  if (timeout !== undefined) run.timeoutSeconds = parseDuration(timeout, "setup-timeout");
+
+  const failure = await runSetupSteps(session, box, record, run);
+
+  if (failure) throw setupFailed(`${record.name}: ${failure.message}`, record.name, true);
+
+  session.ctx.out.success(
+    { sandbox: record.name, setup: record.setup ?? null },
+    [record.name, ...setupLines(record.setup)].join("\n"),
+  );
+
+  return 0;
+}
+
+/**
+ * The capture step of a cache build, between setup and startup. A failed capture never fails
+ * the create: the sandbox is set up, only the cache is missing. When the capture stopped the
+ * source, startup continues in a restore of the new snapshot, which also proves it restores.
+ */
+function cacheCapture(
+  session: Session,
+  created: Created,
+  request: CreateRequest,
+  caching: Caching,
+): (box: SandboxHandle<true>) => Promise<SandboxHandle<true> | void> {
+  const setupStarted = Date.now();
+  const { out } = session.ctx;
+  const { plan } = caching;
+
+  return async (box) => {
+    if (caching.lookup.kind !== "build") return;
+    const buildSeconds = (Date.now() - setupStarted) / 1000;
+    let captured: Awaited<ReturnType<typeof captureCache>>;
+
+    try {
+      captured = await captureCache(
+        session,
+        created.client,
+        box,
+        plan,
+        caching.lookup,
+        created.record.name,
+        buildSeconds,
+      );
+    } catch (cause) {
+      caching.outcome = { status: "skipped", key: plan.key };
+      const reason = describeError(cause).message;
+
+      // A capture can stop its source and fail before restarting it; startup would then fail too.
+      const state = await box
+        .inspect()
+        .then((info) => info.state)
+        .catch(() => "unknown");
+
+      if (state !== "running")
+        throw new CliError(
+          "OUTCOME_UNKNOWN",
+          `setup ${plan.setup}: the cache capture failed and left ${created.record.name} ${state} (${reason})`,
+          `\`beachside snapshot inspect ${plan.name}\` checks the capture again and restarts the sandbox; or \`beachside rm ${created.record.name}\``,
+        );
+      out.note(
+        `setup ${plan.setup}: the sandbox is set up but the cache was not saved (${reason})`,
+      );
+
+      return;
+    }
+
+    caching.outcome = { status: "built", key: plan.key, snapshot: captured.record.name };
+    out.note(
+      `setup ${plan.setup}: cache saved as ${captured.record.name} in ${shortDuration(captured.seconds)} (setup took ${shortDuration(buildSeconds)})`,
+    );
+
+    if (captured.result.source.state === "running") return;
+
+    out.note(`setup ${plan.setup}: the capture stopped the sandbox; continuing from the new cache`);
+
+    const fresh = await restoreSnapshot(
+      session,
+      created.client,
+      captured.record,
+      createInput(request),
+    );
+
+    await box.destroy().catch((cause: unknown) => {
+      out.note(`could not remove the stopped source sandbox (${describeError(cause).message})`);
+    });
+    created.box = fresh;
+    created.record.reference = fresh.reference;
+    created.record.image = `snapshot:${captured.record.name}`;
+    await saveRecord(session, created.record);
+
+    return fresh;
+  };
+}
+
+/** `--if-not-exists` found the sandbox: it must already have every requested add-on ready. */
+function requireAddons(record: SandboxRecord, names: AddonName[]): void {
+  const missing = names.filter(
+    (name) => !record.addons?.some((addon) => addon.name === name && addon.state === "ready"),
+  );
+
+  if (missing.length)
+    throw new CliError(
+      "CONFLICT",
+      `${record.name} exists but has no ready ${missing.join(", ")}`,
+      `remove it with \`beachside rm ${record.name}\` and create it again, or pick another --name`,
+    );
+}
+
+/** After a sandbox with a ready herdr add-on goes: how to forget it in this computer's herdr-core. */
+export async function noteForgetHerdr(
+  session: Session,
+  sandbox: string,
+  addons: AddonRecord[],
+): Promise<void> {
+  if (!hasHerdr(addons)) return;
+
+  for (const note of removedAddonNotes(sandbox, addons, await hcMachines(session.ctx.env)))
+    session.ctx.out.note(note);
+}
+
+/** Run `--with` setup, saving each add-on's state as it goes. */
+async function installAddons(
+  session: Session,
+  created: Created,
+  names: AddonName[],
+  key: string,
+  quiet: boolean,
+): Promise<void> {
+  const { out, signal } = session.ctx;
+
+  const store = await session.store();
+
+  const save = async (addons: AddonRecord[]) => {
+    created.record.addons = addons;
+    const current = await store.get("sandbox", created.record.name);
+
+    if (current)
+      await store.update("sandbox", created.record.name, created.record, current.version);
+  };
+
+  const result = await setupAddons(
+    setupShell(created.box, setupProgress(out, quiet)),
+    created.record.name,
+    names,
+    key,
+    signal,
+    out,
+    save,
+  );
+
+  if (result.failure) throw result.failure;
 }
 
 async function stateOf(
@@ -873,6 +1746,26 @@ function onePositional(flags: Flags, what: string): string {
   return flags.positionals[0]!;
 }
 
+/** Read a running herdr sandbox's host keys again; save and report any that changed. */
+async function refreshRecordedHostKeys(
+  session: Session,
+  record: SandboxRecord,
+  box: SandboxHandle<true>,
+): Promise<void> {
+  const result = await refreshHostKeys(sandboxShell(box), record.addons ?? [], session.ctx.signal);
+
+  for (const note of result.notes) session.ctx.out.note(note);
+
+  if (!result.changed) return;
+
+  record.addons = result.addons;
+
+  const store = await session.store();
+  const current = await store.get("sandbox", record.name);
+
+  if (current) await store.update("sandbox", record.name, record, current.version);
+}
+
 export async function inspectCommand(session: Session, flags: Flags): Promise<number> {
   const { record } = await recoverCreate(
     session,
@@ -883,6 +1776,10 @@ export async function inspectCommand(session: Session, flags: Flags): Promise<nu
   const box = await session.reopen(record);
   const info = await box.inspect({ signal: session.ctx.signal });
 
+  // Host keys can change after create, so a running sandbox's are read again, never assumed.
+  if (info.state === "running" && hasHerdr(record.addons ?? []))
+    await refreshRecordedHostKeys(session, record, box);
+
   const lines = [
     `name      ${record.name}`,
     `id        ${box.id}`,
@@ -890,6 +1787,8 @@ export async function inspectCommand(session: Session, flags: Flags): Promise<nu
     `state     ${info.state}${info.nativeState ? ` (${info.nativeState})` : ""}`,
     `expires   ${info.expires.status === "known" ? `${info.expires.at} (${info.expires.action})` : info.expires.status}`,
     `observed  ${info.observedAt}`,
+    ...setupLines(record.setup),
+    ...addonLines(record.addons ?? []),
   ];
 
   session.ctx.out.success(
@@ -1046,6 +1945,14 @@ async function removeOne(
   const { record } = target;
   const refused = refusal(record);
 
+  const removed = async (
+    item: Extract<RemoveResult, { kind: "removed" }>["item"],
+  ): Promise<RemoveResult> => {
+    await noteForgetHerdr(session, record.name, record.addons ?? []);
+
+    return { kind: "removed", item };
+  };
+
   if (refused && !force) {
     // --all only touches what this CLI owns; a named sandbox that cannot be removed is an error.
     if (all)
@@ -1059,10 +1966,7 @@ async function removeOne(
   if (!record.reference) {
     await forget(store, target);
 
-    return {
-      kind: "removed",
-      item: { name: record.name, result: "forgotten", retainedResources: [] },
-    };
+    return removed({ name: record.name, result: "forgotten", retainedResources: [] });
   }
 
   let box: SandboxHandle<true>;
@@ -1073,20 +1977,19 @@ async function removeOne(
     if (!(cause instanceof BeachsideError) || cause.code !== "NOT_FOUND") throw cause;
     await forget(store, target);
 
-    return { kind: "removed", item: { name: record.name, result: "gone", retainedResources: [] } };
+    return removed({ name: record.name, result: "gone", retainedResources: [] });
   }
 
+  if (record.addons?.length)
+    await teardownAddons(sandboxShell(box), record.addons, session.ctx.signal);
   const destroyed = await box.destroy({ signal: session.ctx.signal });
   await forget(store, target);
 
-  return {
-    kind: "removed",
-    item: {
-      name: record.name,
-      result: "destroyed",
-      retainedResources: destroyed.retainedResources,
-    },
-  };
+  return removed({
+    name: record.name,
+    result: "destroyed",
+    retainedResources: destroyed.retainedResources,
+  });
 }
 
 export async function rmCommand(session: Session, flags: Flags): Promise<number> {
@@ -1578,6 +2481,7 @@ export async function runCommand(session: Session, flags: Flags): Promise<number
   const command = argvCommand(flags);
   // run's --env and --env-file apply to its one command, which works on every provider.
   const request = createRequest(flags);
+  const setup = await prepareSetup(session, request, flags.string("network"));
   const input = await execInput(session, flags, command);
   const keep = flags.bool("keep");
   const pushPath = flags.string("push");
@@ -1586,7 +2490,11 @@ export async function runCommand(session: Session, flags: Flags): Promise<number
     throw usage("--exclude and --include-ignored need --push");
   // Local files are read before anything is created, so a bad path costs nothing.
   const tree = pushPath ? await pushTree(session, flags, pushPath) : undefined;
-  const created = await createSandbox(session, { ...request, ifNotExists: false });
+
+  request.ifNotExists = false;
+
+  const caching = await prepareCaching(session, request, setup);
+  const created = await createCached(session, request, caching);
   const store = await session.store();
   const { out, signal } = session.ctx;
   let result: Executed | undefined;
@@ -1606,10 +2514,36 @@ export async function runCommand(session: Session, flags: Flags): Promise<number
         out.status.report("working", `beachside run: pushing files to ${created.record.name}`);
 
       const pushed = tree
-        ? await upload(created.box, created.record.name, tree, defaultPushDir, null, signal)
+        ? await upload(
+            created.box,
+            created.record.name,
+            tree,
+            defaultPushDir,
+            null,
+            signal,
+            meter(
+              out.status,
+              `beachside run: pushing files to ${created.record.name}`,
+              archiveEstimate(tree),
+            ),
+          )
         : undefined;
 
       if (pushed) out.note(`pushed ${pushed.files} file(s) to ${pushed.path}`);
+
+      // Setup runs after the push, in the pushed folder, so `npm ci` finds the lockfile.
+      const setupFailure = await setUp(
+        session,
+        created,
+        setup,
+        // run always removes its sandbox below unless --keep, so setup never removes it here.
+        { ...request, rmOnFailure: false },
+        pushed?.path,
+        caching,
+      );
+
+      if (setupFailure)
+        throw keep ? setupFailure : setupFailed(setupFailure.message, created.record.name, false);
       out.status.report("working", `beachside run: running in ${created.record.name}`);
       // The command runs in the pushed folder unless --cwd says otherwise.
       result = await execute(
@@ -1723,7 +2657,16 @@ export async function cpCommand(session: Session, flags: Flags): Promise<number>
       const { record } = await findTarget(session, to.target);
       const box = await session.reopen(record);
       const dest = shellQuote(remotePath(to.path));
-      const result = await upload(box, record.name, tree, dest, basename(local), signal);
+
+      const result = await upload(
+        box,
+        record.name,
+        tree,
+        dest,
+        basename(local),
+        signal,
+        meter(out.status, `beachside cp: copying to ${record.name}`, archiveEstimate(tree)),
+      );
 
       out.success({ sandbox: record.name, ...result }, "");
 
@@ -1733,7 +2676,18 @@ export async function cpCommand(session: Session, flags: Flags): Promise<number>
     const { size } = await stat(local);
     const { record } = await findTarget(session, to.target);
     const box = await session.reopen(record);
-    const bytes = await uploadFile(box, record.name, local, size, to.path, !noClobber, signal);
+
+    const bytes = await uploadFile(
+      box,
+      record.name,
+      local,
+      size,
+      to.path,
+      !noClobber,
+      signal,
+      meter(out.status, `beachside cp: copying to ${record.name}`, size),
+    );
+
     out.success({ sandbox: record.name, path: to.path, bytes }, "");
 
     return 0;
@@ -1818,6 +2772,11 @@ export async function pushCommand(session: Session, flags: Flags): Promise<numbe
     location ? shellQuote(remotePath(location.path)) : defaultPushDir,
     null,
     session.ctx.signal,
+    meter(
+      session.ctx.out.status,
+      `beachside push: pushing to ${record.name}`,
+      archiveEstimate(tree),
+    ),
   );
 
   session.ctx.out.success({ sandbox: record.name, ...result }, result.path);
@@ -1870,10 +2829,48 @@ export async function catCommand(session: Session, flags: Flags): Promise<number
   return 0;
 }
 
+/** What `doctor` learned by asking the provider for one page of its sandbox listing. */
+type CredentialCheck =
+  | { status: "ok" }
+  | { status: "rejected"; code: string; reason: string }
+  | { status: "unchecked"; reason: string }
+  | { status: "error"; code: string; reason: string };
+
+/** A cheap read that proves the provider accepts the credentials, without creating anything. */
+async function checkCredentials(client: BeachsideClient<true>): Promise<CredentialCheck> {
+  try {
+    await client.sandboxes.list({ limit: 1 });
+
+    return { status: "ok" };
+  } catch (cause) {
+    const report = describeError(cause);
+
+    if (report.code === "UNAUTHENTICATED" || report.code === "FORBIDDEN")
+      return { status: "rejected", code: report.code, reason: report.message };
+
+    if (report.code === "UNSUPPORTED")
+      return { status: "unchecked", reason: "this provider has no sandbox listing to check with" };
+
+    return { status: "error", code: report.code, reason: report.message };
+  }
+}
+
 export async function doctorCommand(session: Session): Promise<number> {
+  const { env, cwd } = session.ctx;
   const loaded = await session.config();
   const profile: ResolvedProfile = await session.profile();
+  const setup = await adapterSetup(profile, cwd, env);
   const client = await session.connect(profile);
+  const credentials = await checkCredentials(client);
+
+  if (credentials.status === "rejected")
+    throw credentialsRejected(
+      profile,
+      setup,
+      credentials.code === "FORBIDDEN" ? "FORBIDDEN" : "UNAUTHENTICATED",
+      credentials.reason,
+    );
+
   const capabilities = await client.capabilities();
   let plan: Awaited<ReturnType<typeof client.sandboxes.checkCreate>>;
 
@@ -1886,6 +2883,7 @@ export async function doctorCommand(session: Session): Promise<number> {
 
   const store = await session.store();
   const count = (await listAll(store, "sandbox")).length;
+  const docs = setup?.docs ?? null;
 
   session.ctx.out.success(
     {
@@ -1893,16 +2891,20 @@ export async function doctorCommand(session: Session): Promise<number> {
       profile: profile.name,
       provider: profile.provider,
       connected: true,
+      credentials,
       create: plan,
       sandboxesInStore: count,
       capabilities,
+      docs,
     },
     [
-      `config    ${loaded.path}${loaded.exists ? "" : " (not found, using defaults)"}`,
-      `profile   ${profile.name} (${profile.provider})`,
-      "connect   ok",
-      `create    ${plan.status}${plan.status === "supported" ? "" : `: ${plan.reason}`}`,
-      `store     ${count} sandbox record(s)`,
+      `config       ${loaded.path}${loaded.exists ? "" : " (not found, using defaults)"}`,
+      `profile      ${profile.name} (${profile.provider})`,
+      "connect      ok",
+      `credentials  ${credentials.status === "ok" ? "accepted" : `${credentials.status}: ${credentials.reason}`}`,
+      `create       ${plan.status}${plan.status === "supported" ? "" : `: ${plan.reason}`}`,
+      `store        ${count} sandbox record(s)`,
+      ...(docs && plan.status !== "supported" ? [`docs         ${docs}`] : []),
     ].join("\n"),
   );
 
@@ -1930,17 +2932,10 @@ export async function providersCommand(session: Session): Promise<number> {
 
   const rows = await Promise.all(
     providers.map(async (provider) => {
+      const location = officialLocation(provider, loaded, env);
+
       const resolved = await resolveAdapterModule(
-        {
-          name: provider.id,
-          provider: provider.id,
-          module: provider.module,
-          export: provider.export,
-          baseDir: cwd,
-          searchProject: searchProjectAdapters(loaded, env),
-          config: {},
-          credentials: {},
-        },
+        { ...location, provider: provider.id, config: {}, credentials: {} },
         cwd,
         env,
       );
@@ -1955,25 +2950,56 @@ export async function providersCommand(session: Session): Promise<number> {
           installed = false;
         }
 
+      // The adapter declares its variables, so they are known once it is installed.
+      const setup = installed ? await adapterSetup(location, cwd, env) : null;
+
+      // A profile that sets a value itself doesn't need the environment variable.
+      const needs = setup
+        ? missingSettings(setup, env, profileKeys(loaded, provider.id, env)).map((item) => ({
+            env: item.label,
+            description: item.description,
+            url: item.url,
+          }))
+        : null;
+
       return {
         id: provider.id,
         module: provider.module,
         experimental: provider.experimental,
         installed,
-        // A profile that sets a value itself doesn't need the environment variable.
-        missingEnv: missingEnv(provider, env, profileKeys(loaded, provider.id, env)),
+        /** False when the adapter is not installed, fails to load or declares no setup. */
+        known: setup !== null,
+        missingEnv: needs?.map((item) => item.env) ?? [],
+        needs: needs ?? [],
+        docs: setup?.docs ?? null,
+        profiles: Object.entries(loaded.value.profiles ?? {})
+          .filter(([, profile]) => profile.provider === provider.id)
+          .map(([name]) => name),
       };
     }),
   );
 
+  const width = Math.max(...rows.map((row) => row.id.length));
+
   session.ctx.out.success(
     { providers: rows },
     rows
-      .map(
-        (row) =>
-          `${row.id.padEnd(8)} ${row.installed ? "installed" : "not installed"}  ${
-            row.missingEnv.length ? `needs ${row.missingEnv.join(", ")}` : "credentials set"
-          }${row.experimental ? "  (experimental)" : ""}`,
+      .map((row) =>
+        [
+          `${row.id.padEnd(width)}  `,
+          !row.installed
+            ? `not installed  run \`beachside adapter add ${row.id}\``
+            : !row.known
+              ? `installed      settings unknown: the adapter failed to load or declares no setup; reinstall with \`beachside adapter add ${row.id}\``
+              : row.needs.length
+                ? `installed      needs ${row.needs.map((need) => need.env).join(", ")}`
+                : "installed      credentials set",
+          row.profiles.length ? `  profiles: ${row.profiles.join(", ")}` : "",
+          row.experimental ? "  (experimental)" : "",
+          ...row.needs.flatMap((need) =>
+            need.url ? [`\n${" ".repeat(width + 2)}${need.env}: ${need.url}`] : [],
+          ),
+        ].join(""),
       )
       .join("\n"),
   );

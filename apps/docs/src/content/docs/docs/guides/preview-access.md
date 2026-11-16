@@ -3,7 +3,7 @@ title: Preview access
 description: Access an HTTP service running inside a sandbox.
 ---
 
-Use `await box.preview(3000)` to get access to an HTTP service on port 3000 inside a running sandbox. Choose public or protected access when configuring the adapter. The available modes depend on the provider, and each adapter defaults to the mode it can serve: Daytona defaults to protected; E2B, boxd and Vercel default to public. boxd publishes port 3000 by default; Vercel publishes only the `ports` you configure.
+Use `await box.preview(3000)` to get access to an HTTP service on port 3000 inside a running sandbox. Choose public or protected access when configuring the adapter. The available modes depend on the provider, and each adapter defaults to the mode it can serve: Daytona, Modal, Runloop, Archil and exe.dev default to protected (Daytona's public mode signs expiring per-port links); E2B, boxd, Vercel, Boat and Freestyle default to public, and Boat and Freestyle offer public only. boxd publishes port 3000 by default; Vercel publishes only the `ports` you configure.
 
 This example uses Daytona's default protected access. Replace `existing-server-snapshot` with a prepared image whose startup configuration launches an HTTP server on port 3000:
 
@@ -58,9 +58,29 @@ Requests carrying preview headers must use `redirect: "error"`. Otherwise, a red
 
 Daytona's standard tokens cannot be revoked individually. Native stop/start rotates them; native pause/resume retains them. Looking up access can activate the requested preview route. Beachside verifies the sandbox's identity, running state and private visibility first, and does not change visibility during lookup.
 
-Daytona public access reports `UNSUPPORTED`: the native setting would publish ports across the sandbox. The adapter currently supports protected access only.
+## Expiring public links with Daytona
 
-## Public access with E2B
+With `preview: { access: "public" }`, Daytona returns a signed URL for that one port that anyone holding it can open, with no headers. The sandbox itself stays private, and the link stops working after `preview.expiresInSeconds` (default **3600**, from 1 second to 24 hours). The result reports when that is:
+
+```ts
+const client = await Beachside.connect({
+  adapter: daytonaAdapter,
+  credentials: { apiKey: process.env.DAYTONA_API_KEY! },
+  config: { target: "us", preview: { access: "public", expiresInSeconds: 900 } },
+});
+// ...
+const preview = await box.preview(3000); // { access: "public", url, expiresAt }
+```
+
+Each call signs a new URL; earlier ones keep working until they expire, and they survive a stop and start. Use this for links you hand to people; keep protected access for your own server-side calls. Signed public access has not been live-tested yet.
+
+## Modal connect tokens and tunnels
+
+Modal defaults to protected access: each `preview(port)` mints a Modal connect token for that port and returns it as an `Authorization: Bearer` header. For public links, set `preview: { access: "public", ports: [3000] }` together with `network: "internet"` or an allowlist; Modal publishes those ports as HTTPS tunnels when the sandbox is created or restored, and cannot add more later. Modal refuses tunnels on a blocked network, so public setup with the default `blocked` network rejects at connect. Neither mode has been live-tested. See the [Modal adapter README](https://github.com/beachside-compute/beachside/tree/main/packages/providers/modal#previews).
+
+Some providers' previews carry an `expiresAt` timestamp. When it is present, ask for a new preview before it passes.
+
+## Public and protected access with E2B
 
 E2B defaults to public preview access, matching E2B's native default. Setting it explicitly is equivalent:
 
@@ -78,7 +98,7 @@ This setting exposes the sandbox's HTTP services to anyone who can reach their U
 
 Select `preview: { access: "protected" }` to keep new sandboxes closed to inbound traffic: creation and restore disable public traffic and verify visibility before reporting success. If visibility cannot be confirmed, the operation remains uncertain and retains its confirmed resource identity for recovery and cleanup. Live tests have not yet qualified denial of incoming traffic in protected mode.
 
-Protected `preview()` reports `UNSUPPORTED` because the native read-only detail API used by the adapter cannot return the required token. Beachside does not call E2B's native connect method to retrieve one, because that method can resume compute. It does not fall back to public access.
+With protected access, `preview()` returns E2B's traffic token as an `e2b-traffic-access-token` header; requests without it get `403`. E2B hands that token out only from its connect call, so `preview()` first checks that the sandbox is running, private and has auto-resume off, then connects with the sandbox's observed remaining lifetime as the timeout, so the lifetime stays as it was. If the sandbox paused between the check and the call, E2B resumes it with that remaining lifetime and `preview()` fails with `CONFLICT` instead of returning access; inspect it and ask again. Like Daytona's preview token, the header is a credential: send it with `redirect: "error"` and don't log it. Protected access has not been tested live yet.
 
 Recovery preserves an operation's original visibility setting. Older create references without preview metadata, and version-1 restore references without a visibility field, used public access. Recovering those operations requires confirmed native public visibility, even if the current connection selects protected access.
 
@@ -88,4 +108,4 @@ URLs and headers are temporary access information. Do not log them or use them a
 
 Beachside validates that response URLs use HTTPS and contain no username, password, query or fragment. It excludes returned access details from diagnostics and recovery state.
 
-The complete [preview recipe](https://github.com/pandemicsyn/beachside/blob/main/apps/docs/examples/sandbox-preview.ts) uses an image that starts its own server. Offline tests cover the SDK and provider boundaries. Daytona protected access and E2B explicit public access passed live tests at `3188e33`, with sandbox cleanup confirmed. See [tested provider support](/docs/providers/support/) for the exact scope and remaining gaps.
+The complete [preview recipe](https://github.com/beachside-compute/beachside/blob/main/apps/docs/examples/sandbox-preview.ts) uses an image that starts its own server. Offline tests cover the SDK and provider boundaries. Daytona protected access and E2B explicit public access passed live tests at `3188e33`, with sandbox cleanup confirmed. See [tested provider support](/docs/providers/support/) for the exact scope and remaining gaps.

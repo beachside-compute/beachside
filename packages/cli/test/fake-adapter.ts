@@ -1,4 +1,5 @@
-import { createReadStream, createWriteStream } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { cpSync, createReadStream, createWriteStream, existsSync } from "node:fs";
 import { appendFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { pipeline } from "node:stream/promises";
@@ -7,6 +8,7 @@ import {
   AdapterFilesystemError,
   bindAdapter,
   defineAdapter,
+  type ExecInput,
 } from "@beachside/adapter";
 import { AdapterImage } from "beachside";
 import { createFakeAdapter } from "@beachside-internal/provider-fake";
@@ -176,6 +178,21 @@ export const builder = bindAdapter(
   {},
 );
 
+/** The builder with a default OCI image in its config, like a Daytona profile's `environment`. */
+export const builderWithImage = bindAdapter(
+  defineAdapter({
+    name: "fake",
+    displayName: "Fake test provider that builds images, with a default image",
+    config: z.strictObject({
+      environment: z.strictObject({ kind: z.literal("oci"), value: z.string() }).optional(),
+    }),
+    credentials: z.strictObject({}),
+    connect: ({ host }) => buildingSession(host),
+  }),
+  {},
+  {},
+);
+
 /**
  * A builder whose image delete fails outside the SDK's operation tracking, so the outcome is
  * unknown and no operation reference exists to observe. Connecting patches this process's SDK.
@@ -218,8 +235,65 @@ export const otherAccount = bindAdapter(
   {},
 );
 
+const snapshottingDefinition = createFakeAdapter({ url, token, snapshots: true });
+
 /** The fake adapter with simulated filesystem snapshots, like Daytona, E2B or Modal. */
-export const snapshotting = bindAdapter(createFakeAdapter({ url, token, snapshots: true }), {}, {});
+export const snapshotting = bindAdapter(snapshottingDefinition, {}, {});
+
+/**
+ * Snapshots whose capture completes but leaves the source restart unsent, like a Daytona capture
+ * that outlives the adapter's wait: only an explicit continuation finishes it.
+ */
+const restartPendingDefinition = defineAdapter({
+  name: "fake",
+  displayName: "Fake test provider whose captures wait for an explicit restart",
+  config: z.strictObject({}),
+  credentials: z.strictObject({}),
+  async connect({ host }) {
+    const session = await snapshottingDefinition.connect({ config: {}, credentials: {}, host });
+    const capture = session.snapshotCapture;
+    const observe = capture && "observe" in capture ? capture.observe : undefined;
+
+    if (!capture || !("submit" in capture) || !observe)
+      throw new Error("The snapshotting fake has no recoverable capture");
+
+    return {
+      ...session,
+      snapshotCapture: {
+        ...capture,
+        async submit(input, ctx) {
+          const result = await capture.submit(input, ctx);
+
+          if (!("snapshot" in result)) return result;
+
+          return ctx.unknown("Capture completed; source restart requires explicit continuation", {
+            kind: "snapshot_capture",
+            status: "partial",
+            snapshot: { ...result.snapshot.reference, kind: "snapshot" },
+            capture: result.capture,
+            restart: { status: "not-submitted" },
+          });
+        },
+        async continue(attempt, ctx) {
+          // Set to leave the capture uncertain, as an interrupted CLI would.
+          if (process.env.BEACHSIDE_FAKE_HOLD_RESTART === "1")
+            return ctx.unknown("Source restart was not sent");
+
+          const observed = await observe(attempt, {
+            signal: ctx.signal,
+            deadline: Date.now() + 5000,
+            pending: ctx.pending,
+            unknown: ctx.unknown,
+          });
+
+          return observed ?? ctx.unknown("Fake capture is not visible yet");
+        },
+      },
+    };
+  },
+});
+
+export const restartPending = bindAdapter(restartPendingDefinition, {}, {});
 
 const streamedFiles = process.env.BEACHSIDE_FAKE_FILES;
 
@@ -384,3 +458,150 @@ export const stdinStreaming = bindAdapter(
   {},
   {},
 );
+
+/** The local folder that stands in for one fake sandbox's home, under BEACHSIDE_FAKE_HOMES. */
+function localHome(id: string): string {
+  const homes = process.env.BEACHSIDE_FAKE_HOMES;
+
+  if (!homes) throw new Error("BEACHSIDE_FAKE_HOMES is required for the local-shell fake");
+
+  return join(homes, id);
+}
+
+/**
+ * The snapshotting fake whose exec runs a real local `sh` in a folder per sandbox, so setup
+ * steps, their state file and their failures behave as they would in a sandbox.
+ */
+export const localShell = bindAdapter(
+  defineAdapter({
+    name: "fake",
+    displayName: "Fake test provider with a local shell",
+    config: z.strictObject({}),
+    credentials: z.strictObject({}),
+    async connect({ host }) {
+      // With BEACHSIDE_FAKE_RESTART_PENDING, captures wait for an explicit restart, like Daytona.
+      const base =
+        process.env.BEACHSIDE_FAKE_RESTART_PENDING === "1"
+          ? restartPendingDefinition
+          : snapshottingDefinition;
+
+      const session = await base.connect({ config: {}, credentials: {}, host });
+
+      const exec = async (input: ExecInput) => {
+        const home = localHome(input.sandbox.id);
+
+        await mkdir(home, { recursive: true });
+
+        // The sandbox's create-time env lives on the fake server, as it would on a provider.
+        const state = await fetch(new URL("/_test/state", url), {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        // SAFETY: The fake's test state endpoint returns its resources in this shape.
+        const { resources } = (await state.json()) as {
+          resources: { ref: { nativeId: string }; env?: Record<string, string> }[];
+        };
+
+        const sandboxEnv =
+          resources.find((resource) => resource.ref.nativeId === input.sandbox.id)?.env ?? {};
+
+        const [file, ...args] =
+          input.command.kind === "shell" ? ["sh", "-c", input.command.script] : input.command.argv;
+
+        const result = spawnSync(file!, args, {
+          cwd: input.cwd ?? home,
+          env: {
+            PATH: process.env.PATH ?? "/usr/bin:/bin",
+            HOME: home,
+            ...sandboxEnv,
+            ...input.env,
+          },
+          input: input.stdin,
+          timeout: (input.deadlineSeconds ?? 300) * 1000,
+        });
+
+        return {
+          exitCode: result.status ?? 127,
+          stdout: new Uint8Array(result.stdout ?? []),
+          stderr: new Uint8Array(result.stderr ?? []),
+          truncated: false,
+        };
+      };
+
+      const { processes: _processes, ...rest } = session;
+      const capture = session.snapshotCapture;
+      const restore = session.snapshotRestore;
+
+      // oxlint-disable-next-line anti-slop/no-runtime-typeof -- A mutation is a function or a recoverable object.
+      if (!capture || !restore || typeof capture === "function" || typeof restore === "function")
+        throw new Error("The snapshotting fake has recoverable snapshot mutations");
+
+      // A snapshot keeps a copy of the home folder; a restore starts from that copy.
+      const snapshotCapture: typeof capture = {
+        ...capture,
+        async submit(input, ctx) {
+          const result = await capture.submit(input, ctx);
+
+          const id = z
+            .object({ snapshot: z.object({ reference: z.object({ nativeId: z.string() }) }) })
+            .safeParse(result);
+
+          if (id.success)
+            cpSync(
+              localHome(input.sandbox.id),
+              localHome(`snap-${id.data.snapshot.reference.nativeId}`),
+              {
+                recursive: true,
+              },
+            );
+
+          return result;
+        },
+      };
+
+      const snapshotRestore: typeof restore = {
+        ...restore,
+        async submit(input, ctx) {
+          const result = await restore.submit(input, ctx);
+          const id = z.object({ id: z.string() }).safeParse(result);
+          const saved = localHome(`snap-${input.snapshot.nativeId}`);
+
+          if (id.success && existsSync(saved))
+            cpSync(saved, localHome(id.data.id), { recursive: true });
+
+          return result;
+        },
+      };
+
+      return {
+        ...rest,
+        snapshotCapture,
+        snapshotRestore,
+        // Like Daytona: with BEACHSIDE_FAKE_CAPTURE_NEEDS_SANDBOX, capture is judged only on a sandbox.
+        async snapshotProfiles(target, ctx) {
+          if (process.env.BEACHSIDE_FAKE_CAPTURE_NEEDS_SANDBOX === "1" && !target.sandbox)
+            return { status: "unknown", reason: "Capture eligibility needs a source sandbox" };
+
+          return session.snapshotProfiles!(target, ctx);
+        },
+        exec: Object.assign(exec, { finiteStdin: "bytes" as const }),
+      };
+    },
+  }),
+  {},
+  {},
+);
+
+/** The fake adapter with a token the fake provider refuses, like a revoked API key. */
+export const rejected = bindAdapter(createFakeAdapter({ url, token: `${token}-revoked` }), {}, {});
+
+/** The fake adapter whose connect refuses the key outright, like a provider checking it up front. */
+export const refusing = defineAdapter({
+  name: "fake",
+  displayName: "Fake test provider that refuses its key at connect",
+  config: z.strictObject({}),
+  credentials: z.strictObject({}),
+  async connect() {
+    throw new AdapterError("UNAUTHENTICATED", "The fake provider refused the key");
+  },
+});

@@ -8,7 +8,7 @@ An adapter connects a provider's native API to Beachside. Install `@beachside/ad
 If your agent supports skills, install the `add-provider` skill in the adapter's repository instead; it carries the same guidance and loads when the agent needs it:
 
 ```sh
-npx skills add pandemicsyn/beachside --skill add-provider
+npx skills add beachside-compute/beachside --skill add-provider
 ```
 
 Otherwise, replace the bracketed fields and copy this prompt into an agent with access to the integration repository.
@@ -23,7 +23,7 @@ Read the current Beachside authoring docs and tested examples:
 - https://beachside.run/docs/guides/adapter-capabilities/
 - https://beachside.run/docs/guides/adapter-recovery/
 - https://beachside.run/docs/contributing/drivers/
-- https://github.com/pandemicsyn/beachside/tree/main/apps/docs/examples
+- https://github.com/beachside-compute/beachside/tree/main/apps/docs/examples
 
 If working in the Beachside repository, follow AGENTS.md and the
 .agents/skills/add-provider/SKILL.md workflow. Use current exported types
@@ -42,7 +42,7 @@ compute termination before reporting success. Release owned clients on
 close without implying that close destroys compute.
 
 When snapshot capture is in scope, follow the current state-portability
-spec at https://github.com/pandemicsyn/beachside/blob/main/specs/provider-state-portability.md:
+spec at https://github.com/beachside-compute/beachside/blob/main/specs/provider-state-portability.md:
 no-argument snapshot() uses sensible native defaults, with required
 lifecycle orchestration owned by the adapter. Expose options only for real
 choices. Document each provider's capture scope, memory inclusion, source

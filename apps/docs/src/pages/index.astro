@@ -9,26 +9,26 @@ import "../styles/tokens.css";
 const title = "Beachside | One SDK. Every sandbox.";
 
 const description =
-  "Beachside is a typed TypeScript API for Daytona, E2B, boxd, Boat, Runloop and Vercel sandboxes, with a public adapter API for other providers.";
+  "Beachside is a typed TypeScript API for boxd, Freestyle, Daytona, E2B, Boat, Runloop, Archil and Vercel sandboxes, with a public adapter API for other providers.";
 
 const fonts =
   "https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;800&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap";
 
-const github = "https://github.com/pandemicsyn/beachside";
+const github = "https://github.com/beachside-compute/beachside";
 
-const providers = ["daytona", "e2b", "boxd", "vercel"];
+const providers = ["boxd", "daytona", "e2b", "vercel"];
 
 const install = `npm install beachside @beachside/${providers[0]}`;
 
 const cliInstall = "npm install -g @beachside/cli";
 
-const skillInstall = "npx skills add pandemicsyn/beachside --skill beachside-cli -g";
+const skillInstall = "beachside skill setup";
 
 // One shell session per provider: only the setup line (and Daytona's snapshot) changes.
 const cliSessions = [
+  { provider: "boxd", env: "BOXD_API_KEY=... BOXD_ORG=... BOXD_NETWORK=internet", create: "", id: "bx_7kq2m9" },
   { provider: "e2b", env: "E2B_API_KEY=...", create: "", id: "i8mq2v0x7cz4" },
   { provider: "daytona", env: "DAYTONA_API_KEY=... DAYTONA_TARGET=us", create: " --prepared daytona-small", id: "3f2c9a1e-5b7d" },
-  { provider: "boxd", env: "BOXD_API_KEY=... BOXD_ORG=... BOXD_NETWORK=internet", create: "", id: "bx_7kq2m9" },
   { provider: "vercel", env: "VERCEL_TOKEN=... VERCEL_TEAM_ID=... VERCEL_PROJECT_ID=...", create: "", id: "sbx_x2Lq9Ma" },
 ].map(({ provider, env, create, id }) => {
   // Same layout as `beachside ls`: columns padded to their widest cell, two spaces apart.
@@ -92,6 +92,8 @@ const sunBands = [
   [1.4, "#C85BD0"],
   [1, "var(--sb-lav)"],
 ];
+
+const year = new Date().getFullYear();
 ---
 
 <!doctype html>
@@ -153,7 +155,7 @@ const sunBands = [
             <div class="eyebrow"><span></span>Sandbox router for TypeScript</div>
             <h1>One SDK.<br />Every <span class="accent-word">sandbox.</span></h1>
             <p class="lede">
-              A typed API to create, run code in, and tear down sandboxes on Daytona, E2B, boxd, Boat, Runloop and Vercel.
+              A typed API to create, run code in, and tear down sandboxes on boxd, Freestyle, Daytona, E2B, Boat, Runloop, Archil and Vercel.
               Keep application workflows consistent while configuring each provider explicitly.
             </p>
             <div class="cta-stack">
@@ -203,23 +205,22 @@ const sunBands = [
                   }
                 </div>
               </div>
-              <pre class="code" aria-label="Example: create a sandbox and run a command"><code><span class="k">import</span> {"{"} Beachside<span data-image-import>, Image</span> {"}"} <span class="k">from</span> <span class="s">"beachside"</span>
-<span class="k">import</span> {"{"} <span data-typed-plain>daytonaAdapter</span> {"}"} <span class="k">from</span> <span class="s">"@beachside/<span data-module>daytona</span>"</span>
+              <pre class="code" aria-label="Example: create a sandbox and run a command"><code><span class="k">import</span> {"{"} Beachside<span data-image-import hidden>, Image</span> {"}"} <span class="k">from</span> <span class="s">"beachside"</span>
+<span class="k">import</span> {"{"} <span data-typed-plain>boxdAdapter</span> {"}"} <span class="k">from</span> <span class="s">"@beachside/<span data-module>boxd</span>"</span>
 
 <span class="k">const</span> client = <span class="k">await</span> Beachside.connect({"{"}
-  adapter: <span class="typed"><span data-typed>daytonaAdapter</span><span class="caret" data-caret></span></span>,
-  credentials: {"{"} <span data-credentials>apiKey: process.env.<span class="t">DAYTONA_API_KEY</span>!</span> {"}"},
+  adapter: <span class="typed"><span data-typed>boxdAdapter</span><span class="caret" data-caret></span></span>,
+  credentials: {"{"} <span data-credentials>apiKey: process.env.<span class="t">BOXD_API_KEY</span>!</span> {"}"},
   config: {"{"}
-<span data-options>    target: <span class="s">"us"</span>,
-    environment: Image.prepared(<span class="s">"daytona-small"</span>),
-    network: <span class="s">"daytona-default"</span>,</span>
+<span data-options>    org: process.env.<span class="t">BOXD_ORG</span>!,
+    network: <span class="s">"internet"</span>,</span>
   {"}"},
 {"}"})
 <span class="k">await</span> client.sandboxes.with({"{}"}, <span class="k">async</span> (box) =&gt; {"{"}
   <span class="k">const</span> run = <span class="k">await</span> box.exec([<span class="s">"printf"</span>, <span class="s">"ready"</span>])
   console.log(run.stdoutText())
 {"}"})
-<span class="k">await</span> client.close()<span data-pad></span></code></pre>
+<span class="k">await</span> client.close()<span data-pad>{"\n "}</span></code></pre>
               <div class="code-status" aria-live="polite">
                 <span class="status-dot" data-status-dot></span>
                 <span class="status-text" data-status>connecting…</span>
@@ -243,11 +244,14 @@ const sunBands = [
         <div class="wrap adapters-row">
           <a class="adapters-label" href="/docs/#choose-a-provider">Adapters &amp; support →</a>
           <ul class="chips">
+            <li class="chip chip-boxd"><span></span>boxd</li>
+            <li class="chip chip-freestyle"><span></span>Freestyle</li>
             <li class="chip chip-daytona"><span></span>Daytona</li>
             <li class="chip chip-e2b"><span></span>E2B</li>
-            <li class="chip chip-boxd"><span></span>boxd (exp)</li>
             <li class="chip chip-boat"><span></span>Boat (exp)</li>
             <li class="chip chip-runloop"><span></span>Runloop (exp)</li>
+            <li class="chip chip-archil"><span></span>Archil (exp)</li>
+            <li class="chip chip-exe-dev"><span></span>exe.dev (exp)</li>
             <li class="chip chip-vercel"><span></span>Vercel (exp)</li>
             <li class="chip chip-modal"><span></span>Modal (exp)</li>
             <li class="chip chip-yours">+ your adapter</li>
@@ -262,7 +266,7 @@ const sunBands = [
             <h2>Same sandboxes. <span>Straight from your shell.</span></h2>
             <p>
               <code>beachside</code> creates, runs in and removes sandboxes on any provider with an adapter.
-              It never prompts, every command has a <code>--json</code> form, and exit codes say what to do next,
+              It never prompts for input, every command has a <code>--json</code> form, and exit codes clearly indicate what to do next,
               so your coding agent can drive it as easily as you can.
             </p>
             <div class="cli-links">
@@ -363,7 +367,7 @@ const sunBands = [
             <div class="code-bar"><span class="file file-only">adapters/acme.ts · excerpt</span></div>
             <Code code={adapterExample} lang="ts" theme={{ ...oceanDriveCodeTheme, type: "dark" }} class="adapter-code" />
             <div class="adapter-source">
-              <a class="band-link" href="https://github.com/pandemicsyn/beachside/blob/main/apps/docs/examples/acme-adapter.ts">View complete source →</a>
+              <a class="band-link" href="https://github.com/beachside-compute/beachside/blob/main/apps/docs/examples/acme-adapter.ts">View complete source →</a>
             </div>
           </div>
         </div>
@@ -371,8 +375,8 @@ const sunBands = [
     </main>
 
     <footer class="wrap footer">
-      <span>Apache-2.0 · beachside.run</span>
-      <span>Built with Astro + Starlight</span>
+      <span>© {year} Beachside Compute · Apache-2.0 · beachside.run · <a href="https://github.com/beachside-compute/beachside">GitHub</a> · <a href="https://x.com/pandemicsyn">X</a></span>
+      <span><a href="/docs/privacy/">Privacy</a> · Built with Astro + Starlight</span>
     </footer>
 
     <script>
@@ -425,7 +429,7 @@ const sunBands = [
 
       let tick: ReturnType<typeof setInterval> | undefined;
 
-      let current = "daytona";
+      let current = "boxd";
 
       // Each provider's split-form setup. An option is [key, env var] (reads process.env) or [key, , literal].
       const optionsNode = document.querySelector<HTMLElement>("[data-options]");
@@ -618,7 +622,7 @@ const sunBands = [
 
       setTyped("");
 
-      setTimeout(() => runHero("daytona", ""), motionOn() ? 900 : 0);
+      setTimeout(() => runHero("boxd", ""), motionOn() ? 900 : 0);
 
       // CLI section: type each command, print its output, and replay when the provider changes.
       const cliTerm = document.querySelector<HTMLElement>("[data-cli-sessions]");
@@ -1442,6 +1446,31 @@ const sunBands = [
         border: 2px solid var(--sb-pink);
         border-radius: 50%;
         background: transparent;
+      }
+      .chip-freestyle {
+        background: color-mix(in srgb, var(--sb-aqua) 12%, var(--sb-surface));
+        color: var(--sb-ink);
+      }
+      .chip-freestyle span {
+        border-radius: 2px;
+        background: var(--sb-aqua);
+        transform: rotate(45deg) scale(0.8);
+      }
+      .chip-archil {
+        background: color-mix(in srgb, var(--sb-lav) 14%, var(--sb-surface));
+        color: var(--sb-ink);
+      }
+      .chip-archil span {
+        border-radius: 2px;
+        background: var(--sb-lav);
+      }
+      .chip-exe-dev {
+        background: color-mix(in srgb, var(--sb-ink) 8%, var(--sb-surface));
+        color: var(--sb-ink);
+      }
+      .chip-exe-dev span {
+        border-radius: 50%;
+        background: var(--sb-ink);
       }
       .chip-vercel {
         background: color-mix(in srgb, var(--sb-aqua) 18%, var(--sb-surface));

@@ -59,7 +59,7 @@ const reports = await Promise.all(
 const packageReports = external
   ? []
   : await Promise.all(
-      ["boxd", "vercel"].map(async (name) =>
+      ["boxd", "freestyle", "vercel"].map(async (name) =>
         parseReport(
           JSON.parse(
             await readFile(
@@ -75,6 +75,15 @@ const packageReports = external
         ),
       ),
     );
+
+// boxd and Freestyle are supported; their profiles and results live beside their packages.
+const boxd = await loadProviderProfile(
+  fileURLToPath(new URL("./boxd-profile.ts", import.meta.url)),
+);
+
+const freestyle = await loadProviderProfile(
+  fileURLToPath(new URL("./freestyle-profile.ts", import.meta.url)),
+);
 
 const outputDirectory = option("--output");
 
@@ -101,7 +110,10 @@ const targets = [
     outputDirectory ? join(outputDirectory, "support.md") : supportPage,
     external
       ? renderSupportMatrix(reports, metadata)
-      : renderSupportOverview([...reports, ...packageReports], metadata),
+      : renderSupportOverview(
+          [...reports, ...packageReports],
+          [boxd.support, freestyle.support, ...metadata],
+        ),
   ],
 ] as const;
 

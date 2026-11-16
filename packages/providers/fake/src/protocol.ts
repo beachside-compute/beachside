@@ -22,6 +22,8 @@ export const FakeImage = z.strictObject({
   source: z.string().min(1).max(1024).nullable(),
   submissionId: z.string().min(1).max(128).nullable(),
   createdAt: z.iso.datetime().nullable(),
+  /** User labels set at snapshot capture. */
+  labels: z.record(z.string().min(1).max(64), z.string().max(256)).optional(),
 });
 
 export type FakeImage = z.infer<typeof FakeImage>;
@@ -49,6 +51,8 @@ export const FakeAction = z.discriminatedUnion("kind", [
     labels: z.record(z.string(), z.string()).optional(),
     env: CreateEnv.optional(),
     lifetimeSeconds: z.number().int().positive().safe().optional(),
+    /** Fork this running sandbox: copy its image, files and env instead of starting `image`. */
+    forkOf: SandboxRef.optional(),
   }),
   z.strictObject({ kind: z.literal("inspect"), ref: SandboxRef }),
   z.strictObject({
@@ -110,6 +114,7 @@ export const FakeAction = z.discriminatedUnion("kind", [
     scope: NativeScope,
     identity: InvocationIdentity,
     sandbox: SandboxRef,
+    labels: z.record(z.string().min(1).max(64), z.string().max(256)).optional(),
   }),
   z.strictObject({
     kind: z.literal("snapshotList"),

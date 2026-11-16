@@ -3,6 +3,10 @@ import { createHash } from "node:crypto";
 import { posix } from "node:path";
 import {
   AdapterError,
+  ALLOW_NETWORK_POLICY,
+  AllowNetworkSetting,
+  allowlistConfig,
+  allowlistFromCanonical,
   assertResourceScope,
   defaultLifetime,
   defineAdapter,
@@ -17,11 +21,15 @@ import {
   type SnapshotInfo,
   type SnapshotProfile,
   listedLabels,
+  PreviewPort,
+  PreviewResult,
+  throwAllowlistError,
 } from "@beachside/adapter";
 import {
   createSdkTransport,
   MODAL_ENDPOINT,
   ModalCreateRejected,
+  type ModalNetwork,
   type ModalTransport,
 } from "./transport";
 import { startModalProcess } from "./process";
@@ -56,6 +64,11 @@ const Configuration = z
      * `memoryMiB` its memory reservation. Unset dimensions take Modal's defaults.
      */
     resources: ResourceMinimums.optional(),
+    /**
+     * Outbound access: `"internet"` (the default), `"blocked"`, or `{ allow: [...] }` for HTTPS to
+     * the listed host names (`*.` wildcards allowed, matched by TLS SNI) plus any IPv4 ranges.
+     */
+    network: z.union([z.enum(["blocked", "internet"]), AllowNetworkSetting]).optional(),
     lifecycle: z
       .strictObject({
         /** Wall-clock lifetime; Modal allows sandboxes to run for up to 24 hours. */
@@ -64,6 +77,18 @@ const Configuration = z
       .optional(),
     /** @deprecated Use `lifecycle: { lifetimeSeconds }`. */
     timeoutSeconds: z.coerce.number().int().min(60).max(MAX_LIFETIME_SECONDS).optional(),
+    preview: z
+      .strictObject({
+        /**
+         * `protected` (default) mints a Modal connect token per `preview()`, sent as a bearer
+         * header; `public` returns the HTTPS tunnel of a port listed in `ports`, which anyone with
+         * the URL can open.
+         */
+        access: z.enum(["protected", "public"]).default("protected"),
+        /** Ports published as public tunnels at create; Modal cannot add tunnels later. */
+        ports: z.array(PreviewPort).max(16).default([]),
+      })
+      .default({ access: "protected", ports: [] }),
     snapshots: z
       .strictObject({
         /** Modal filesystem snapshots keep files only; `filesystem+memory` rejects at connect. */
@@ -81,8 +106,14 @@ const Configuration = z
         message: "Supply lifecycle.lifetimeSeconds or the deprecated timeoutSeconds, not both",
       });
   })
-  .transform(({ timeoutSeconds, ...value }) => ({
+  .transform(({ timeoutSeconds, network, ...value }) => ({
     ...value,
+    ...allowlistConfig("Modal", network),
+    networkPolicy: AllowNetworkSetting.safeParse(network).success
+      ? ALLOW_NETWORK_POLICY
+      : network === "blocked"
+        ? "blocked"
+        : "internet",
     lifetimeSeconds:
       value.lifecycle?.lifetimeSeconds ?? timeoutSeconds ?? defaultLifetime(MAX_LIFETIME_SECONDS),
   }));
@@ -125,13 +156,43 @@ const snapshotProfile = (retentionSeconds = SNAPSHOT_RETENTION_SECONDS): Snapsho
   minimumRetentionSeconds: retentionSeconds === 0 ? Number.MAX_SAFE_INTEGER : retentionSeconds,
 });
 
+const BLOCKED_TUNNELS =
+  'Modal public previews need outbound network for their tunnels, and Modal refuses open ports with a blocked network; use network "internet" or { allow: [...] }';
+
+/** Network policies one connection creates with: its allowlist, or blocked and internet. */
+export function modalNetworkPolicies(allowlist: string | undefined): string[] {
+  return allowlist ? [ALLOW_NETWORK_POLICY] : ["blocked", "internet"];
+}
+
+/** Native outbound access for a portable policy. */
+export function modalNetwork(networkPolicy: string, allowlist: string | undefined): ModalNetwork {
+  if (networkPolicy === "internet") return { kind: "open" };
+
+  if (networkPolicy !== ALLOW_NETWORK_POLICY || !allowlist) return { kind: "blocked" };
+  const list = allowlistFromCanonical(allowlist);
+
+  return { kind: "allowlist", domains: [...list.hosts], cidrs: [...list.cidrs] };
+}
+
+/**
+ * Modal reports no network settings back, so the create request also carries this tag. Finding it
+ * on a sandbox proves the same request set its network, since Modal applies a create atomically.
+ */
+const NETWORK_TAG = "beachside_network";
+
+export function modalNetworkTag(networkPolicy: string, allowlist: string | undefined): string {
+  if (networkPolicy !== ALLOW_NETWORK_POLICY || !allowlist) return networkPolicy;
+
+  return `allow-${createHash("sha256").update(allowlist).digest("hex").slice(0, 32)}`;
+}
+
 /** A restored sandbox is an ordinary Modal create from the snapshot image. */
-const restoreSupport = {
-  networkPolicies: ["blocked"],
+const restoreSupport = (networkPolicies: string[]) => ({
+  networkPolicies,
   resources: false,
   mounts: false,
   independentLifecycle: true,
-};
+});
 
 function writeCount(bytes: Uint8Array): number | undefined {
   const receipt = new TextDecoder().decode(bytes).trim();
@@ -152,6 +213,7 @@ type PreparedCreate = {
   labels: Record<string, string>;
   env?: Record<string, string> | undefined;
   lifetimeSeconds?: number | undefined;
+  networkPolicy: string;
 };
 
 /** Modal does not report reservations back, so the adapter records the full one in a tag. */
@@ -200,9 +262,49 @@ export function createModalAdapter(
   return defineAdapter({
     name: "modal",
     displayName: "Modal",
+    setup: {
+      credentials: {
+        tokenId: {
+          env: "MODAL_TOKEN_ID",
+          description: "A Modal token id; `modal token new` creates one.",
+          url: "https://modal.com/docs/cli/latest/token",
+        },
+        tokenSecret: {
+          env: "MODAL_TOKEN_SECRET",
+          description: "The secret for that Modal token.",
+          url: "https://modal.com/docs/cli/latest/token",
+        },
+      },
+      config: {
+        appName: {
+          env: "MODAL_APP_NAME",
+          required: true,
+          description: "The Modal app sandboxes belong to.",
+        },
+        environment: {
+          env: "MODAL_ENVIRONMENT",
+          required: true,
+          description: "The Modal environment, such as main.",
+        },
+      },
+      docs: "https://beachside.run/docs/providers/support/",
+    },
     config: Configuration,
     credentials: Credentials,
     async connect({ config, credentials, host }) {
+      throwAllowlistError(config);
+
+      if (config.preview.access === "public" && !config.preview.ports.length)
+        throw new AdapterError(
+          "INVALID_ARGUMENT",
+          "Modal public previews need preview.ports: Modal publishes tunnels only at create",
+        );
+
+      const publicPorts = config.preview.access === "public";
+
+      if (publicPorts && config.networkPolicy === "blocked")
+        throw new AdapterError("INVALID_ARGUMENT", BLOCKED_TUNNELS);
+
       if (config.snapshots?.preserve === Preserve.FILESYSTEM_AND_MEMORY)
         throw new AdapterError(
           "UNSUPPORTED",
@@ -224,6 +326,27 @@ export function createModalAdapter(
           : retentionSeconds
             ? retentionSeconds * 1000
             : null;
+
+      // Public tunnels cannot exist on a blocked network, so this setup does not offer it.
+      const networkPolicies = modalNetworkPolicies(config.allowlist).filter(
+        (policy) => !publicPorts || policy !== "blocked",
+      );
+
+      const restore = restoreSupport(networkPolicies);
+
+      const requirePolicy = (networkPolicy: string) => {
+        if (!networkPolicies.includes(networkPolicy))
+          throw new AdapterError(
+            "UNSUPPORTED",
+            networkPolicy === ALLOW_NETWORK_POLICY
+              ? "Modal allowlists are set in adapter setup: network: { allow: [...] }"
+              : config.allowlist
+                ? 'This Modal connection creates with its allowlist; use network "allow"'
+                : publicPorts && networkPolicy === "blocked"
+                  ? BLOCKED_TUNNELS
+                  : 'Modal network policy must be "blocked" or "internet"',
+          );
+      };
 
       const options = { ...config, ...credentials };
       const transport = transportFactory?.(options) ?? createSdkTransport(options);
@@ -327,7 +450,7 @@ export function createModalAdapter(
         mounts: [],
         // The adapter never mounts volumes, and Modal leaves mounts out of the root filesystem.
         mountHandling: "none",
-        restore: restoreSupport,
+        restore,
         dependencies: [],
         nativeDependencies: null,
       });
@@ -353,9 +476,14 @@ export function createModalAdapter(
               ...input.labels,
               beachside_submission: ctx.submissionId,
               beachside_operation: ctx.operationId,
+              [NETWORK_TAG]: modalNetworkTag(input.networkPolicy, config.allowlist),
             },
             timeoutMs: (input.lifetimeSeconds ?? config.lifetimeSeconds) * 1000,
+            network: modalNetwork(input.networkPolicy, config.allowlist),
           };
+
+          if (config.preview.access === "public" && config.preview.ports.length)
+            request.encryptedPorts = [...config.preview.ports];
 
           if (config.resources?.vcpus !== undefined) request.cpu = config.resources.vcpus;
 
@@ -388,6 +516,9 @@ export function createModalAdapter(
             record.tags.beachside_operation !== ctx.operationId
           )
             return ctx.unknown("Modal create identity could not be correlated");
+
+          if (record.tags[NETWORK_TAG] !== request.tags[NETWORK_TAG])
+            return ctx.unknown("Modal create network could not be verified; do not replay");
 
           return { id, state: record.running ? ("running" as const) : ("unknown" as const) };
         } catch (error) {
@@ -426,9 +557,54 @@ export function createModalAdapter(
       return {
         scope,
         defaultImage: config.image,
+        defaultNetworkPolicy: config.networkPolicy,
+        async preview(input) {
+          if (!PreviewPort.safeParse(input.port).success)
+            throw new AdapterError("INVALID_ARGUMENT", "Preview port must be 1 through 65535");
+          const record = await find(input.sandbox.id);
+
+          if (!record?.running)
+            throw new AdapterError(
+              record ? "UNAVAILABLE" : "NOT_FOUND",
+              record
+                ? "Modal preview requires a running sandbox"
+                : "Modal sandbox is not in this App",
+            );
+
+          if (config.preview.access === "public") {
+            if (!config.preview.ports.includes(input.port) || !transport.tunnelUrl)
+              throw new AdapterError(
+                "UNSUPPORTED",
+                `Modal publishes only the preview.ports set at create (${config.preview.ports.join(", ")})`,
+              );
+            const url = await transport.tunnelUrl(input.sandbox.id, input.port);
+
+            if (!url)
+              throw new AdapterError(
+                "UNAVAILABLE",
+                "Modal reports no tunnel for this port; the sandbox may predate preview.ports",
+              );
+
+            return PreviewResult.parse({ access: "public", url });
+          }
+
+          if (!transport.connectToken)
+            throw new AdapterError(
+              "UNSUPPORTED",
+              "This Modal transport cannot mint connect tokens",
+            );
+          const credentials = await transport.connectToken(input.sandbox.id, input.port);
+
+          // Modal reads the token from a bearer Authorization header (or a query parameter).
+          return PreviewResult.parse({
+            access: "protected",
+            url: credentials.url,
+            headers: { Authorization: `Bearer ${credentials.token}` },
+          });
+        },
         supports: {
           images: ["prepared", "oci"],
-          network: ["blocked"],
+          network: networkPolicies,
           exec: { commands: ["argv", "shell"], maxOutputBytes: MAX_BYTES },
           fileWrite: { overwrite: true, noClobber: true },
           createEnv: true,
@@ -456,6 +632,7 @@ export function createModalAdapter(
               Object.keys(input.labels).some((key) => key.startsWith("beachside_"))
             )
               throw new AdapterError("INVALID_ARGUMENT", "Reserved Modal tag prefix");
+            requirePolicy(input.networkPolicy);
             await verify();
 
             if (
@@ -470,6 +647,7 @@ export function createModalAdapter(
               labels: input.labels ?? {},
               env: input.env,
               lifetimeSeconds: input.lifetimeSeconds,
+              networkPolicy: input.networkPolicy,
             };
           },
           submit: submitCreate,
@@ -547,7 +725,7 @@ export function createModalAdapter(
         },
         snapshotProfiles: async () => snapshotSupport,
         resourceCapabilities: async () => ({
-          restore: { status: "supported" as const, value: restoreSupport },
+          restore: { status: "supported" as const, value: restore },
           volumes: {
             status: "unsupported" as const,
             reason: "Modal volumes are not exposed as Beachside volumes yet",
@@ -635,8 +813,7 @@ export function createModalAdapter(
                 "Modal restores keep the configured size and take no mounts",
               );
 
-            if (!restoreSupport.networkPolicies.includes(request.networkPolicy))
-              throw new AdapterError("UNSUPPORTED", 'Modal network policy must be "blocked"');
+            requirePolicy(request.networkPolicy);
             await requireSnapshot(input.snapshot);
 
             return input;
@@ -648,6 +825,7 @@ export function createModalAdapter(
                 labels: input.request.labels ?? {},
                 env: input.request.env,
                 lifetimeSeconds: input.request.lifetimeSeconds,
+                networkPolicy: input.request.networkPolicy,
               },
               ctx,
             );

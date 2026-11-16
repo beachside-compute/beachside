@@ -12,7 +12,7 @@ Official adapters and third-party adapters use the same public API from `@beachs
 The `add-provider` agent skill walks a coding agent through this whole guide: researching the native API, the shared setup options, create and destroy, uncertain outcomes, conformance tests, packaging and docs. Install it with the [`skills`](https://github.com/vercel-labs/skills) installer, which supports Claude Code, Codex, Cursor and other agents:
 
 ```sh
-npx skills add pandemicsyn/beachside --skill add-provider
+npx skills add beachside-compute/beachside --skill add-provider
 ```
 
 Run it in the repository where the adapter will live, then ask your agent to add the provider. Add `-g` to install it for every project instead. For an agent without a skill system, paste the [provider integration prompt](/docs/agents/build-a-provider/).
@@ -28,7 +28,7 @@ An adapter package provides:
 
 ## Start from the Acme example
 
-This adapter is [compiled and tested in the repository](https://github.com/pandemicsyn/beachside/blob/main/apps/docs/examples/acme.test.ts). `AcmeClient` is a deterministic stand-in for a native client; replace it with authenticated native calls that enforce the account, region, image, size and network guarantees the adapter declares.
+This adapter is [compiled and tested in the repository](https://github.com/beachside-compute/beachside/blob/main/apps/docs/examples/acme.test.ts). `AcmeClient` is a deterministic stand-in for a native client; replace it with authenticated native calls that enforce the account, region, image, size and network guarantees the adapter declares.
 
 ```ts
 import { z } from "zod";
@@ -61,6 +61,17 @@ const Credentials = z.strictObject({ token: z.string().min(1) });
 export const acmeAdapter = defineAdapter({
   name: "example.acme",
   displayName: "Acme fixture",
+  // Lets hosts such as the CLI fill settings from the environment and say where to get them.
+  setup: {
+    credentials: {
+      token: {
+        env: "ACME_TOKEN",
+        description: "An Acme API token",
+        url: "https://acme.example/keys",
+      },
+    },
+    config: { region: { env: "ACME_REGION", required: true, description: "The Acme region" } },
+  },
   config: Config,
   credentials: Credentials,
   async connect({ config, credentials, host }) {
@@ -139,7 +150,7 @@ const beachside = await Beachside.connect(
 );
 ```
 
-The [adapter source](https://github.com/pandemicsyn/beachside/blob/main/apps/docs/examples/acme-adapter.ts) and [AcmeClient fixture](https://github.com/pandemicsyn/beachside/blob/main/apps/docs/examples/acme-native.ts) are copyable files. The [Boat adapter](https://github.com/pandemicsyn/beachside/blob/main/packages/providers/boat/src/adapter.ts) is a complete recent example around a real native SDK.
+The [adapter source](https://github.com/beachside-compute/beachside/blob/main/apps/docs/examples/acme-adapter.ts) and [AcmeClient fixture](https://github.com/beachside-compute/beachside/blob/main/apps/docs/examples/acme-native.ts) are copyable files. The [Boat adapter](https://github.com/beachside-compute/beachside/blob/main/packages/providers/boat/src/adapter.ts) is a complete recent example around a real native SDK.
 
 ## Connect and verify the account
 
@@ -155,18 +166,18 @@ The [adapter source](https://github.com/pandemicsyn/beachside/blob/main/apps/doc
 
 Applications choose provider behavior in adapter setup, not in each call. Use these names wherever the provider has the matching choice, so that switching providers keeps the same setup vocabulary:
 
-| Setup key                   | Meaning                                     | How the adapter applies it                                                                                                      |
-| --------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `image`                     | Default image for creates that name none    | Return it as `defaultImage`. Check that it exists in the verified scope.                                                        |
-| `network`                   | `"blocked"` or `"internet"` outbound access | Return it as `defaultNetworkPolicy`; list every policy you enforce in `supports.network`. Default to `"blocked"` when possible. |
-| `resources`                 | Minimum `{ vcpus, memoryMiB }`              | Pick the smallest native size that meets every minimum with `smallestSize`; never round down. Report the size on `inspect`.     |
-| `lifecycle.lifetimeSeconds` | How long a sandbox may live before it stops | Default to 900 seconds, clamped to the provider's range. `renew` extends it where supported.                                    |
-| `lifecycle.idleSeconds`     | Stop after this long without activity       | Map it only when the provider has a native idle stop.                                                                           |
-| `preview`                   | `{ access, ports }` for preview URLs        | `access` is `"protected"` or `"public"`; return `headers` for protected URLs. Reject an access mode the provider cannot give.   |
+| Setup key                   | Meaning                                     | How the adapter applies it                                                                                                                                                                                                                                                 |
+| --------------------------- | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `image`                     | Default image for creates that name none    | Return it as `defaultImage`. Check that it exists in the verified scope.                                                                                                                                                                                                   |
+| `network`                   | `"blocked"`, `"internet"` or `{ allow }`    | Return it as `defaultNetworkPolicy`; list every policy you enforce in `supports.network`. Default to `"blocked"` when possible. Parse `{ allow: [...] }` with `allowlistConfig()` (its limits reject what the provider cannot hold) and report it as the `"allow"` policy. |
+| `resources`                 | Minimum `{ vcpus, memoryMiB }`              | Pick the smallest native size that meets every minimum with `smallestSize`; never round down. Report the size on `inspect`.                                                                                                                                                |
+| `lifecycle.lifetimeSeconds` | How long a sandbox may live before it stops | Default to 900 seconds, clamped to the provider's range. `renew` extends it where supported.                                                                                                                                                                               |
+| `lifecycle.idleSeconds`     | Stop after this long without activity       | Map it only when the provider has a native idle stop.                                                                                                                                                                                                                      |
+| `preview`                   | `{ access, ports }` for preview URLs        | `access` is `"protected"` or `"public"`; return `headers` for protected URLs. Reject an access mode the provider cannot give.                                                                                                                                              |
 
 Some older adapters still accept earlier native names for these settings as deprecated aliases; new adapters start with the shared names. A few rules keep these options honest:
 
-- Advertise `"blocked"` only when the native policy actually blocks egress, including account-tier exceptions. When a provider cannot block egress at all, require `network: "internet"` in setup instead of defaulting to it silently, as the boxd and Boat adapters do. Do not label peer or metadata isolation as blocked egress.
+- Advertise `"blocked"` only when the native policy actually blocks egress, including account-tier exceptions. When a provider cannot block egress at all, require `network: "internet"` in setup instead of defaulting to it silently, as the Boat adapter does. Do not label peer or metadata isolation as blocked egress.
 - Use one size vocabulary. Do not add native size keys or small/medium/large presets; numbers express sizes for every provider. If an existing adapter had a native size key, keep it as a deprecated alias for one minor release and reject setups that supply both.
 - Keep deprecated native network names working through `networkPolicyAliases`, which maps them to a portable name before the SDK checks support.
 - A caller's `create()` override always wins over the setup default. Reject an unsupported override before allocating anything; never fall back to another image or policy.
@@ -182,7 +193,7 @@ Set `supports.createEnv: true` only when `CreateInput.env` becomes native sandbo
 
 `destroy` reports `computeStopped: true` only after the provider confirms termination, and lists anything that remains in `retainedResources`.
 
-Plain async methods, as in the Acme example, suit calls that either complete or fail definitively. When a call can be lost after it reaches the provider, or the provider works asynchronously, use the `{ prepare, submit, observe }` form instead. `prepare` is read-only validation, `submit` dispatches once, and `observe` reads evidence without ever submitting again. A timeout after dispatch is an unknown outcome, not a failure. See [asynchronous recovery](/docs/guides/adapter-recovery/) and the [tested async example](https://github.com/pandemicsyn/beachside/blob/main/apps/docs/examples/async-adapter.ts).
+Plain async methods, as in the Acme example, suit calls that either complete or fail definitively. When a call can be lost after it reaches the provider, or the provider works asynchronously, use the `{ prepare, submit, observe }` form instead. `prepare` is read-only validation, `submit` dispatches once, and `observe` reads evidence without ever submitting again. A timeout after dispatch is an unknown outcome, not a failure. See [asynchronous recovery](/docs/guides/adapter-recovery/) and the [tested async example](https://github.com/beachside-compute/beachside/blob/main/apps/docs/examples/async-adapter.ts).
 
 To let applications reopen a sandbox from another process, return a `reference` built with `sandboxReference(provider, scope, nativeId, { operation, submission })` from create, and implement `reopen`, which verifies the reference against the current scope with `assertResourceScope` before reading native state.
 
@@ -200,6 +211,7 @@ Add an operation only when the native semantics satisfy the [capability checklis
 | `preview`                                      | `box.preview(port)`                      | The provider exposes HTTPS URLs for guest ports. Return `headers` for protected access.                                                                                                                                                                                                     |
 | `inventory`, `sandboxList`                     | `sandboxes.list()`                       | The provider lists sandboxes with verifiable ownership. Return references that `reopen` accepts, or `reference: null`, plus the page's `coverage`. Add `labels` (create labels without your markers, via `listedLabels`) and `createdAt` (via `listedTime`) when the provider returns them. |
 | `renew`, `suspend`, `resume`                   | `box.renew()`, `box.suspend()`, `resume` | The provider can extend, pause or resume a sandbox's lifetime. Add the matching capability read hooks.                                                                                                                                                                                      |
+| `sandboxFork`                                  | `box.fork()`, `box.checkFork()`          | The provider copies a running sandbox natively. Declare `preserve`, `execution`, `independentLifecycle` and the options it applies in `capabilities`; never fall back to snapshot and restore.                                                                                              |
 | `imageBuild`, `image*`, `snapshot*`, `volume*` | `images`, `snapshots`, `volumes`         | The provider can build images, capture state or manage volumes. See [snapshots and volumes](/docs/guides/snapshots-and-volumes/).                                                                                                                                                           |
 
 A missing native endpoint does not automatically make an operation unsupported. Bridge the gap inside the adapter when you can faithfully meet the contract, for example by mapping argv to a shell-only transport or capturing output bytes in the guest before a text-only channel transforms them. The adapter owns any such helper; callers never install helpers or choose wire encodings.
@@ -217,7 +229,7 @@ For processes, implement the `NativeProcess` hooks and opt in to each behavior:
 
 ### Lifetime renewal
 
-`renew` is a mutation over `RenewInput`: a verified sandbox reference and an optional positive `forSeconds`. Its read-only `prepare` resolves the setup default, validates native policy and state, and returns a positive whole-second window, rounded up where needed. Reject windows above the provider maximum before dispatch. One native call returns `RenewResult` with the reference, the resolved `requested.forSeconds`, `acknowledged: true`, and a current observation or `null`. `renewCapabilities` reports the minimum, maximum and step, and whether the clock covers the sandbox or only the running session. A later deadline alone never proves the renewal was accepted. See the [renewal example](https://github.com/pandemicsyn/beachside/blob/main/apps/docs/examples/sandbox-renew.ts).
+`renew` is a mutation over `RenewInput`: a verified sandbox reference and an optional positive `forSeconds`. Its read-only `prepare` resolves the setup default, validates native policy and state, and returns a positive whole-second window, rounded up where needed. Reject windows above the provider maximum before dispatch. One native call returns `RenewResult` with the reference, the resolved `requested.forSeconds`, `acknowledged: true`, and a current observation or `null`. `renewCapabilities` reports the minimum, maximum and step, and whether the clock covers the sandbox or only the running session. A later deadline alone never proves the renewal was accepted. See the [renewal example](https://github.com/beachside-compute/beachside/blob/main/apps/docs/examples/sandbox-renew.ts).
 
 ## Test the adapter
 
@@ -237,13 +249,13 @@ Publish the adapter as its own package. Official integrations are named `@beachs
 - Ship ESM with TypeScript declarations. Depend on `@beachside/adapter`, your schema library and the native SDK at a pinned version. The adapter does not depend on `beachside` at run time, and its declarations must not reference private workspace packages.
 - Qualify the packed artifact in a clean consumer: strict NodeNext declarations, Node and Bun execution, and npm, pnpm and Bun installs. The repository's `bun run package:smoke` does this for official packages.
 
-The [command line](/docs/cli/configuration/) loads any adapter through a profile's `module` and `export`, so a third-party package works there without changes. For an official adapter maintained in this repository, also:
+The [command line](/docs/cli/configuration/) loads any adapter through a profile's `module` and `export`, so a third-party package works there without changes. Declare `setup` on the definition, as above, to name the environment variable for each credential and config setting and, where you can, a link to where a person gets it. This adapter `setup` describes connection settings; it is unrelated to a profile's `setup` list and the named `setups` that run inside a sandbox. The CLI then fills the profile from those variables, lists what is missing (with its link) in `beachside providers` and missing-setting errors, and `beachside profile show` explains each setting. Every listed credential is required; mark config settings `required` when the adapter cannot connect without them. When two credentials stand in for each other, list them as groups in `alternatives`, such as `[["token"], ["sshKey"]]`: a profile needs every key of at least one group. `profile show` prints config values, so put anything secret in `credentials`. For an official adapter maintained in this repository, also:
 
 - add the package to the `build:packages` and `check:built` chains in the root `package.json`, and to the fixed release group with a changeset;
-- add a CLI descriptor to `packages/cli/src/providers.ts` naming the environment variables for its credentials and required configuration;
-- add a provider profile for [live qualification](https://github.com/pandemicsyn/beachside/blob/main/packages/sdk-qualification/provider-qualification/README.md) and a row to `providerStatus` in `packages/sdk-qualification/provider-qualification/support.ts`, which feeds [Provider support](/docs/providers/support/);
+- declare its `setup` and add its id, package and export to the official list in `packages/cli/src/providers.ts`;
+- add a provider profile for [live qualification](https://github.com/beachside-compute/beachside/blob/main/packages/sdk-qualification/provider-qualification/README.md) and a row to `providerStatus` in `packages/sdk-qualification/provider-qualification/support.ts`, which feeds [Provider support](/docs/providers/support/);
 - have a maintainer publish a `0.0.0` placeholder and configure npm trusted publishing for the new package name before the first release, or the release cannot publish it.
 
 ## Document it
 
-Every adapter gets a provider page that states its setup options and defaults, what it guarantees, what it does not support, and its image and network prerequisites. Mark an adapter experimental until it has passed live qualification, and keep fixture-tested, packed-tested and live-tested behavior distinct in the [provider support matrix](/docs/providers/support/). Contributors working in this repository can follow the [add-provider workflow](https://github.com/pandemicsyn/beachside/blob/main/.agents/skills/add-provider/SKILL.md), and coding agents can start from the [provider integration prompt](/docs/agents/build-a-provider/).
+Every adapter gets a provider page that states its setup options and defaults, what it guarantees, what it does not support, and its image and network prerequisites. Mark an adapter experimental until it has passed live qualification, and keep fixture-tested, packed-tested and live-tested behavior distinct in the [provider support matrix](/docs/providers/support/). Contributors working in this repository can follow the [add-provider workflow](https://github.com/beachside-compute/beachside/blob/main/.agents/skills/add-provider/SKILL.md), and coding agents can start from the [provider integration prompt](/docs/agents/build-a-provider/).

@@ -4,6 +4,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  realpath,
   readdir,
   readlink,
   rm,
@@ -31,7 +32,8 @@ let server: Awaited<ReturnType<typeof startFakeProviderServer>>;
 let dir: string;
 
 beforeAll(async () => {
-  root = await mkdtemp(join(tmpdir(), "beachside-cli-"));
+  // Child processes resolve macOS /var (and other temporary-directory aliases).
+  root = await realpath(await mkdtemp(join(tmpdir(), "beachside-cli-")));
   server = await startFakeProviderServer({
     hostname: "127.0.0.1",
     port: 0,
@@ -97,6 +99,11 @@ async function seedExec(command: string[] | string, exitCode: number, stdout: st
   });
 }
 
+/** A restore reads the sandbox's setup state first, to run any recorded startup. */
+async function seedSetupStateRead(state = "") {
+  await seedExec('cat "$HOME/.beachside/setup/state.json" 2>/dev/null || true', 0, state);
+}
+
 type Result = { code: number; stdout: string; stderr: string };
 
 async function cli(
@@ -109,6 +116,7 @@ async function cli(
     cwd,
     env: {
       PATH: process.env.PATH ?? "",
+      BEACHSIDE_TELEMETRY: "0",
       HOME: dir,
       BEACHSIDE_CONFIG: join(dir, "beachside.json"),
       BEACHSIDE_STATE_DIR: join(dir, "state"),
@@ -505,6 +513,173 @@ describe("beachside CLI against the fake provider", () => {
     expect(result.data).toMatchObject({ profile: "fake", provider: "fake", connected: true });
     expect(result.data.create.status).toBe("unavailable");
     expect(await fakeResources()).toHaveLength(0);
+  });
+
+  test("doctor checks the credentials with a read and reports it", async () => {
+    const result = envelope(await cli(["doctor", "--json"]));
+
+    expect(result.data.credentials).toEqual({ status: "ok" });
+
+    await writeConfig({
+      default: "bad",
+      profiles: { bad: { module: fixture, export: "rejected" } },
+    });
+
+    const bad = await cli(["doctor", "--json"]);
+
+    expect(bad.code).toBe(5);
+    expect(envelope(bad).error.code).toBe("UNAUTHENTICATED");
+    expect(envelope(bad).error.message).toContain("rejected the credentials for profile bad");
+    expect(envelope(bad).error.hint).toContain("beachside profile show");
+
+    await writeConfig({
+      default: "refused",
+      profiles: { refused: { module: fixture, export: "refusing" } },
+    });
+
+    const refused = await cli(["doctor", "--json"]);
+
+    expect(refused.code).toBe(5);
+    expect(envelope(refused).error.code).toBe("UNAUTHENTICATED");
+    expect(envelope(refused).error.message).toContain("profile refused");
+  });
+
+  test("profile ls, show, use and rm manage beachside.json without revealing credentials", async () => {
+    const configPath = join(dir, "beachside.json");
+    await writeConfig({
+      $schema: "https://beachside.run/schema/beachside.json",
+      default: "fake",
+      profiles: {
+        fake: { module: fixture, export: "fake", setup: ["node"] },
+        guarded: {
+          module: fixture,
+          export: "guarded",
+          credentials: { token: "env:FAKE_KEY" },
+          config: {},
+        },
+        literal: { module: fixture, export: "guarded", credentials: { token: "s3cret-value" } },
+      },
+      setups: { node: { setup: ["true"] } },
+    });
+    await chmod(configPath, 0o640);
+
+    const listed = envelope(await cli(["profile", "ls", "--json"])).data;
+
+    expect(listed.default).toBe("fake");
+    expect(listed.selected).toBe("fake");
+    expect(listed.profiles.map((row: { name: string }) => row.name)).toEqual([
+      "fake",
+      "guarded",
+      "literal",
+    ]);
+    expect(listed.profiles[0]).toMatchObject({ default: true, selected: true, setup: ["node"] });
+
+    const fromEnv = envelope(await cli(["profile", "ls", "--json"], { BEACHSIDE_PROVIDER: "e2b" }));
+
+    expect(fromEnv.data.selected).toBe("e2b");
+    expect(fromEnv.data.profiles.at(-1)).toMatchObject({ name: "e2b", source: "env" });
+
+    // --provider wins over a config profile of the same name, so the env row is the selected one.
+    const shadowed = envelope(await cli(["profile", "ls", "--provider", "guarded", "--json"])).data;
+    const rows = shadowed.profiles.filter((row: { name: string }) => row.name === "guarded");
+
+    expect(rows).toEqual([
+      expect.objectContaining({ source: "config", selected: false }),
+      expect.objectContaining({ source: "env", selected: true }),
+    ]);
+
+    const guarded = envelope(await cli(["profile", "show", "guarded", "--json"])).data;
+
+    expect(guarded.credentials.token).toEqual({
+      from: "env-reference",
+      env: "FAKE_KEY",
+      set: false,
+    });
+    expect(guarded.ready).toBe(false);
+
+    const literalData = envelope(await cli(["profile", "show", "literal", "--json"])).data;
+
+    // The guarded export declares no setup, so whether the profile is complete is unknown.
+    expect(literalData.ready).toBeNull();
+    expect(literalData.needs).toBeNull();
+
+    const literal = await cli(["profile", "show", "literal"]);
+
+    expect(literal.code).toBe(0);
+    expect(literal.stdout).toContain("credentials.token");
+    expect(literal.stdout).toContain("hidden");
+    expect(literal.stdout + literal.stderr).not.toContain("s3cret-value");
+    expect(
+      (await cli(["profile", "show", "literal", "--json"])).stdout.includes("s3cret-value"),
+    ).toBe(false);
+
+    expect((await cli(["profile", "show", "nope", "--json"])).code).toBe(3);
+
+    const used = envelope(await cli(["profile", "use", "guarded", "--json"])).data;
+
+    expect(used).toMatchObject({ default: "guarded", previous: "fake", changed: true });
+
+    const rewritten = JSON.parse(await readFile(configPath, "utf8"));
+
+    expect(rewritten.default).toBe("guarded");
+    expect(rewritten.$schema).toBe("https://beachside.run/schema/beachside.json");
+    expect(rewritten.setups).toEqual({ node: { setup: ["true"] } });
+    expect((await stat(configPath)).mode & 0o777).toBe(0o640);
+
+    await cli(["profile", "use", "fake"]);
+    await cli(["create", "--name", "web", "--prepared", "fake-starter"]);
+
+    const refused = await cli(["profile", "rm", "fake", "--json"]);
+
+    expect(refused.code).toBe(2);
+    expect(envelope(refused).error.message).toContain("sandbox web");
+
+    const removed = envelope(await cli(["profile", "rm", "fake", "--force", "--json"])).data;
+
+    expect(removed).toMatchObject({ removed: "fake", wasDefault: true, orphaned: ["sandbox web"] });
+
+    const after = JSON.parse(await readFile(configPath, "utf8"));
+
+    expect(after.default).toBeUndefined();
+    expect(Object.keys(after.profiles)).toEqual(["guarded", "literal"]);
+    expect((await cli(["profile", "use", "e2b", "--json"])).code).toBe(3);
+  });
+
+  test("profile rm is refused while a snapshot record uses the profile", async () => {
+    await writeConfig({
+      default: "snaps",
+      profiles: { snaps: { module: fixture, export: "snapshotting" } },
+    });
+    expect((await cli(["create", "--name", "web", "--prepared", "fake-starter"])).code).toBe(0);
+    expect((await cli(["snapshot", "create", "web", "--name", "snap"])).code).toBe(0);
+    expect((await cli(["rm", "web"])).code).toBe(0);
+
+    const refused = await cli(["profile", "rm", "snaps", "--json"]);
+
+    expect(refused.code).toBe(2);
+    expect(envelope(refused).error.message).toContain("snapshot snap");
+  });
+
+  test("profile ls rejects a default that names no profile", async () => {
+    await writeConfig({ default: "missing", profiles: {} });
+
+    expect((await cli(["profile", "ls", "--json"])).code).toBe(2);
+  });
+
+  test("schema config prints the JSON Schema for beachside.json", async () => {
+    const schema = JSON.parse((await cli(["schema", "config"])).stdout);
+
+    expect(schema.$id).toBe("https://beachside.run/schema/beachside.json");
+    expect(Object.keys(schema.properties)).toEqual(
+      expect.arrayContaining(["$schema", "default", "profiles", "setups", "limits"]),
+    );
+    expect((await cli(["schema", "nope"])).code).toBe(2);
+    expect((await cli(["schema", "config", "extra"])).code).toBe(2);
+    expect((await cli(["schema", "--help"])).code).toBe(0);
+    expect(schema.properties.profiles.additionalProperties.anyOf).toEqual([
+      { required: ["provider"] },
+      { required: ["module"] },
+    ]);
   });
 
   test("schema and help describe every command", async () => {
@@ -966,44 +1141,148 @@ describe("beachside CLI against the fake provider", () => {
     const installed = (base: string, agent: string) =>
       join(base, agent, "skills", "beachside-cli", "SKILL.md");
 
-    test("prints the bundled skill", async () => {
-      const bundled = await readFile(
+    const results = (data: { installed?: { result: string }[]; removed?: { result: string }[] }) =>
+      (data.installed ?? data.removed ?? []).map((item) => item.result);
+
+    const bundledGuide = () =>
+      readFile(
         join(import.meta.dir, "..", "..", "..", "skills", "beachside-cli", "SKILL.md"),
         "utf8",
       );
 
+    test("prints the bundled guide", async () => {
+      const bundled = await bundledGuide();
+
       expect(await cli(["skill"])).toMatchObject({ code: 0, stdout: bundled });
+      expect(await cli(["skill", "show"])).toMatchObject({ code: 0, stdout: bundled });
     });
 
-    test("install writes .agents and, where Claude Code is set up, .claude", async () => {
+    test("setup writes a stub that reads the guide from the installed CLI", async () => {
       await mkdir(join(dir, ".claude"));
 
-      const first = envelope(await cli(["skill", "install", "--json"]));
+      const first = envelope(await cli(["skill", "setup", "--json"]));
 
-      expect(first.data.installed.map((entry: { result: string }) => entry.result)).toEqual([
-        "written",
-        "written",
-      ]);
-      expect(await readFile(installed(dir, ".claude"), "utf8")).toContain("name: beachside-cli");
+      expect(results(first.data)).toEqual(["written", "written"]);
+      expect(first.data.dryRun).toBe(false);
+
+      const stub = await readFile(installed(dir, ".claude"), "utf8");
+
+      expect(stub).toContain("name: beachside-cli");
+      expect(stub).toContain('beachside-stub: "1"');
+      expect(stub).toContain("Run `beachside skill` and follow the guide it prints.");
+      // The description is the bundled guide's, so agents trigger on the same words.
+      const description = (await bundledGuide()).split("\n")[2];
+      expect(stub.split("\n")[2]).toBe(description);
+      expect(await readFile(installed(dir, ".agents"), "utf8")).toBe(stub);
 
       const again = envelope(await cli(["skill", "install", "--json"]));
 
-      expect(again.data.installed.map((entry: { result: string }) => entry.result)).toEqual([
-        "unchanged",
-        "unchanged",
+      expect(results(again.data)).toEqual(["unchanged", "unchanged"]);
+    });
+
+    test("setup without Claude Code writes only the shared folder", async () => {
+      const data = envelope(await cli(["skill", "setup", "--json"])).data;
+
+      expect(data.installed).toEqual([
+        {
+          location: "shared",
+          agents: ["codex", "opencode", "pi"],
+          path: installed(dir, ".agents"),
+          result: "written",
+        },
       ]);
     });
 
-    test("install never replaces a copy installed another way", async () => {
+    test("--agent picks folders and honors CLAUDE_CONFIG_DIR", async () => {
+      const claudeHome = join(dir, "claude-config");
+
+      const data = envelope(
+        await cli(["skill", "setup", "--agent", "claude", "--json"], {
+          CLAUDE_CONFIG_DIR: claudeHome,
+        }),
+      ).data;
+
+      expect(data.installed.map((item: { path: string }) => item.path)).toEqual([
+        join(claudeHome, "skills", "beachside-cli", "SKILL.md"),
+      ]);
+
+      const unknown = await cli(["skill", "setup", "--agent", "vim", "--json"]);
+
+      expect(unknown.code).toBe(2);
+      expect(envelope(unknown).error.code).toBe("USAGE");
+    });
+
+    test("--dry-run reports changes and writes nothing", async () => {
+      const data = envelope(await cli(["skill", "setup", "--dry-run", "--json"])).data;
+
+      expect(data.dryRun).toBe(true);
+      expect(results(data)).toEqual(["written"]);
+      expect(await readFile(installed(dir, ".agents"), "utf8").catch(() => null)).toBeNull();
+    });
+
+    test("status reports current, outdated, missing and foreign copies", async () => {
+      const states = async () =>
+        envelope(await cli(["skill", "status", "--json"])).data.skills.map(
+          (item: { location: string; state: string }) => `${item.location}:${item.state}`,
+        );
+
+      expect(await states()).toEqual(["shared:missing", "claude:missing"]);
+
+      // A full guide written by an older CLI is ours and outdated.
+      await mkdir(join(installed(dir, ".agents"), ".."), { recursive: true });
+      await writeFile(
+        installed(dir, ".agents"),
+        "old guide\n\n<!-- Installed by `beachside skill install`; rerun it to update this file. -->\n",
+      );
+      await mkdir(join(installed(dir, ".claude"), ".."), { recursive: true });
+      await writeFile(installed(dir, ".claude"), "my own notes\n");
+
+      expect(await states()).toEqual(["shared:outdated", "claude:foreign"]);
+
+      const updated = envelope(await cli(["skill", "setup", "--json"])).data;
+
+      expect(results(updated)).toEqual(["updated", "skipped"]);
+      expect(await states()).toEqual(["shared:current", "claude:foreign"]);
+    });
+
+    test("setup never replaces a copy installed another way unless forced", async () => {
       const foreign = installed(dir, ".agents");
       await mkdir(join(foreign, ".."), { recursive: true });
       await writeFile(foreign, "my own notes\n");
 
-      const result = await cli(["skill", "install", "--json"]);
+      const result = await cli(["skill", "setup", "--json"]);
 
       expect(result.code).toBe(1);
       expect(envelope(result).error.code).toBe("CONFLICT");
+      expect(envelope(result).error.hint).toContain("--force");
       expect(await readFile(foreign, "utf8")).toBe("my own notes\n");
+
+      const forced = envelope(await cli(["skill", "setup", "--force", "--json"])).data;
+
+      expect(results(forced)).toEqual(["replaced"]);
+      expect(await readFile(foreign, "utf8")).toContain("beachside-stub");
+    });
+
+    test("remove deletes only copies this CLI installed", async () => {
+      await mkdir(join(dir, ".claude"));
+      await cli(["skill", "setup"]);
+      await writeFile(installed(dir, ".claude"), "edited by hand\n");
+
+      const dry = envelope(await cli(["skill", "remove", "--dry-run", "--json"])).data;
+
+      expect(results(dry)).toEqual(["removed", "skipped"]);
+      expect(await readFile(installed(dir, ".agents"), "utf8")).toContain("beachside-stub");
+
+      const removed = envelope(await cli(["skill", "remove", "--json"])).data;
+
+      expect(results(removed)).toEqual(["removed", "skipped"]);
+      expect(await readFile(installed(dir, ".agents"), "utf8").catch(() => null)).toBeNull();
+      expect(await readFile(installed(dir, ".claude"), "utf8")).toBe("edited by hand\n");
+
+      expect(results(envelope(await cli(["skill", "remove", "--json"])).data)).toEqual([
+        "missing",
+        "skipped",
+      ]);
     });
 
     test("--project installs into the working directory", async () => {
@@ -1011,7 +1290,7 @@ describe("beachside CLI against the fake provider", () => {
       await mkdir(project);
 
       const result = await cli(
-        ["skill", "install", "--project"],
+        ["skill", "setup", "--project"],
         { HOME: join(dir, "home") },
         undefined,
         project,
@@ -1019,7 +1298,7 @@ describe("beachside CLI against the fake provider", () => {
 
       expect(result.code).toBe(0);
       expect(await readFile(installed(project, ".agents"), "utf8")).toContain(
-        "beachside skill install",
+        "beachside skill setup",
       );
     });
   });
@@ -1038,12 +1317,15 @@ describe("beachside CLI against the fake provider", () => {
       expect((await values("")).values).toContain("exec");
       expect((await values("exec", "web", "--ti")).values).toContain("--timeout");
       expect((await values("--provider", "")).values).toEqual([
+        "boxd",
+        "freestyle",
         "daytona",
         "e2b",
-        "boxd",
+        "vercel",
         "boat",
         "runloop",
-        "vercel",
+        "archil",
+        "exe-dev",
         "modal",
       ]);
       expect((await values("--config", "")).directive).toBe(":2");
@@ -1115,6 +1397,7 @@ describe("beachside CLI against the fake provider", () => {
       );
 
       expect(daytona.missingEnv).toEqual([]);
+      expect(daytona.profiles).toEqual(["us"]);
 
       await writeConfig({
         profiles: { e2b: { provider: "e2b", credentials: { apiKey: "env:E2B_API_KEY" } } },
@@ -1125,6 +1408,27 @@ describe("beachside CLI against the fake provider", () => {
       );
 
       expect(e2b.missingEnv).toEqual(["E2B_API_KEY"]);
+      expect(e2b.needs[0].url).toBe("https://console.e2b.dev/?tab=keys");
+      expect(e2b.docs).toBe("https://beachside.run/docs/providers/e2b/");
+    });
+
+    test("providers says settings are unknown for an adapter without a setup", async () => {
+      const scope = join(dir, ".config", "beachside", "adapters", "node_modules", "@beachside");
+      await mkdir(join(scope, "e2b"), { recursive: true });
+      await writeFile(
+        join(scope, "e2b", "package.json"),
+        JSON.stringify({ name: "@beachside/e2b", type: "module", exports: "./index.js" }),
+      );
+      await writeFile(
+        join(scope, "e2b", "index.js"),
+        `export * from ${JSON.stringify(fixture)};\n`,
+      );
+
+      const listed = await cli(["providers", "--json"]);
+      const e2b = envelope(listed).data.providers.find((row: { id: string }) => row.id === "e2b");
+
+      expect(e2b).toMatchObject({ installed: true, known: false, missingEnv: [], needs: [] });
+      expect((await cli(["providers"])).stdout).toMatch(/e2b\s+installed\s+settings unknown/);
     });
 
     test("an interrupted run destroys its sandbox and says so", async () => {
@@ -1153,6 +1457,7 @@ describe("beachside CLI against the fake provider", () => {
           cwd: dir,
           env: {
             PATH: process.env.PATH ?? "",
+            BEACHSIDE_TELEMETRY: "0",
             HOME: dir,
             BEACHSIDE_CONFIG: join(dir, "beachside.json"),
             BEACHSIDE_STATE_DIR: join(dir, "state"),
@@ -1513,6 +1818,35 @@ describe("beachside CLI against the fake provider", () => {
 
       expect((await image(["create", "--image", "node:24"])).code).toBe(0);
       expect(await buildLog()).toEqual(["node:24"]);
+    });
+
+    test("a profile's OCI environment follows the build rule and reuses the recorded build", async () => {
+      await writeConfig({
+        default: "builder",
+        profiles: {
+          builder: {
+            module: fixture,
+            export: "builderWithImage",
+            config: { environment: { kind: "oci", value: "python:3.12" } },
+          },
+        },
+      });
+
+      const unbuilt = await image(["create", "--json"]);
+
+      expect(unbuilt.code).toBe(4);
+      expect(envelope(unbuilt).error.message).toBe(
+        "image python:3.12 is not built for profile builder; run: beachside image build python:3.12",
+      );
+      expect(await fakeResources()).toEqual([]);
+
+      expect((await image(["image", "build", "python:3.12"])).code).toBe(0);
+
+      const created = await image(["create", "--name", "py", "--json"]);
+
+      expect(created.code).toBe(0);
+      expect(envelope(await image(["inspect", "py", "--json"])).data.image).toBe("python:3.12");
+      expect(await buildLog()).toEqual(["python:3.12"]);
     });
 
     test("a provider without image builds gets the OCI reference unchanged", async () => {
@@ -1991,6 +2325,7 @@ describe("streaming exec output", () => {
       cwd: dir,
       env: {
         PATH: process.env.PATH ?? "",
+        BEACHSIDE_TELEMETRY: "0",
         HOME: dir,
         BEACHSIDE_CONFIG: join(dir, "beachside.json"),
         BEACHSIDE_STATE_DIR: join(dir, "state"),
@@ -2299,7 +2634,11 @@ describe("directory transfer", () => {
     await writeFile(join(source, "out", "run.sh"), "echo ok\n", { mode: 0o755 });
     await writeFile(join(source, "out", "sub", "junit.xml"), "<testsuite/>\n");
     await symlink("sub/junit.xml", join(source, "out", "latest"));
-    const tar = Bun.spawn(["tar", "-c", "-f", join(dir, "out.tar"), "out"], { cwd: source });
+
+    const tar = Bun.spawn(["tar", "-c", "-f", join(dir, "out.tar"), "out"], {
+      cwd: source,
+      env: { ...process.env, COPYFILE_DISABLE: "1" },
+    });
 
     expect(await tar.exited).toBe(0);
     expect((await cli(["cp", join(dir, "out.tar"), `box:${staging}/part.aaaaaa`])).code).toBe(0);
@@ -2309,6 +2648,7 @@ describe("directory transfer", () => {
 
     const result = await cli(["cp", "-r", "box:/work/out/", "results", "--json"]);
 
+    expect(result.code).toBe(0);
     expect(envelope(result).data).toEqual({
       sandbox: "box",
       path: join(dir, "results", "out"),
@@ -2618,6 +2958,49 @@ describe("snapshots", () => {
     expect((await cli(["cp", "state.txt", "web:/work/state.txt"])).code).toBe(0);
   }
 
+  test("a capture left waiting for its source restart is continued and recorded", async () => {
+    await writeConfig({
+      default: "slow",
+      profiles: { slow: { module: fixture, export: "restartPending" } },
+    });
+    expect((await cli(["create", "--name", "web", "--prepared", "fake-starter"])).code).toBe(0);
+
+    const captured = await cli(["snapshot", "create", "web", "--name", "deps", "--json"]);
+
+    expect(captured.code).toBe(0);
+    expect(captured.stderr).toContain("restarting the source sandbox");
+    expect(envelope(captured).data).toMatchObject({
+      name: "deps",
+      status: "captured",
+      reference: { kind: "snapshot" },
+    });
+
+    const removed = await cli(["snapshot", "rm", "deps", "--force", "--json"]);
+
+    expect(removed.code).toBe(0);
+    expect(await snapshotNames()).toEqual([]);
+  });
+
+  test("snapshot rm continues an uncertain capture before deleting it", async () => {
+    await writeConfig({
+      default: "slow",
+      profiles: { slow: { module: fixture, export: "restartPending" } },
+    });
+    expect((await cli(["create", "--name", "web", "--prepared", "fake-starter"])).code).toBe(0);
+
+    const held = await cli(["snapshot", "create", "web", "--name", "deps"], {
+      BEACHSIDE_FAKE_HOLD_RESTART: "1",
+    });
+
+    expect(held.code).toBe(6);
+
+    const removed = await cli(["snapshot", "rm", "deps", "--force", "--json"]);
+
+    expect(removed.code).toBe(0);
+    expect(removed.stderr).toContain("recovered the uncertain capture");
+    expect(await snapshotNames()).toEqual([]);
+  });
+
   test("capture, restore with create and run, list, replace and delete", async () => {
     await warmSandbox();
 
@@ -2644,6 +3027,7 @@ describe("snapshots", () => {
     expect(envelope(restored).data).toMatchObject({ name: "web-2", image: "snapshot:deps" });
     expect((await cli(["cat", "web-2:/work/state.txt"])).stdout).toBe("warm cache\n");
 
+    await seedSetupStateRead();
     await seedExec(["true"], 0, "");
     expect((await cli(["run", "--snapshot", "deps", "--", "true"])).code).toBe(0);
 
@@ -2759,6 +3143,7 @@ describe("snapshots", () => {
     expect(envelope(other).error.message).toBe("Snapshot deps belongs to profile snaps, not fake");
 
     // For run, --env belongs to the command, so it stays allowed.
+    await seedSetupStateRead();
     await control("/_test/seed", {
       submissionId: "*",
       action: "exec",

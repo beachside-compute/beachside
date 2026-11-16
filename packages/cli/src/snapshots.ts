@@ -10,6 +10,7 @@ import {
   type SnapshotResult,
 } from "beachside";
 import { findTarget, type Flags } from "./commands";
+import { awaitingRestart, continueCapture } from "./capture";
 import { CliError, describeError, usage } from "./output";
 import type { Session } from "./session";
 import {
@@ -100,8 +101,17 @@ async function recoverCapture(session: Session, store: StateStore, entry: Entry)
   try {
     value = await (await client.recover(record.recovery)).observe();
   } catch (cause) {
-    if (cause instanceof BeachsideError && cause.effect !== "none") return entry;
-    throw cause;
+    const pending = awaitingRestart(cause);
+
+    if (pending)
+      try {
+        value = await continueCapture(session, client, pending);
+      } catch (continued) {
+        if (continued instanceof BeachsideError && continued.effect !== "none") return entry;
+        throw continued;
+      }
+    else if (cause instanceof BeachsideError && cause.effect !== "none") return entry;
+    else throw cause;
   }
 
   const parsed = CaptureResult.safeParse(value);
@@ -217,7 +227,14 @@ async function createCommand(session: Session, flags: Flags, args: readonly stri
   let result: SnapshotResult;
 
   try {
-    result = await box.snapshot({}, { signal: session.ctx.signal });
+    try {
+      result = await box.snapshot({}, { signal: session.ctx.signal });
+    } catch (cause) {
+      const pending = awaitingRestart(cause);
+
+      if (!pending) throw cause;
+      result = await continueCapture(session, client, pending);
+    }
   } catch (cause) {
     const report = describeError(cause);
 
@@ -591,7 +608,11 @@ export async function restoreSnapshot(
   const snapshot = await client.snapshots.get(SnapshotReference.parse(record.reference));
   const { network, env, labels, lifecycle } = input;
 
-  return snapshot.restore({ network, env, labels, lifecycle }, { signal: session.ctx.signal });
+  // The CLI runs the snapshot's recorded startup itself once the sandbox is on record.
+  return snapshot.restore(
+    { network, env, labels, lifecycle, recordedStartup: "skip" },
+    { signal: session.ctx.signal },
+  );
 }
 
 export const snapshotActions = ["create", "ls", "inspect", "rm", "forget"] as const;

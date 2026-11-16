@@ -101,6 +101,12 @@ export interface ModalSandboxRecord {
 }
 
 /** The injected boundary is deliberately smaller than Modal's SDK. */
+/** Outbound access for one sandbox, sent in its create request. */
+export type ModalNetwork =
+  | { kind: "blocked" }
+  | { kind: "open" }
+  | { kind: "allowlist"; domains: string[]; cidrs: string[] };
+
 export interface ModalTransport {
   lookupApp(appName: string, environment: string): Promise<string>;
   imageExists(imageId: string): Promise<boolean>;
@@ -118,7 +124,15 @@ export interface ModalTransport {
     regions?: string[];
     /** Native sandbox environment, sent in the single create request; values may be secrets. */
     env?: Record<string, string>;
+    /** Outbound access: all blocked, open, or an allowlist of TLS host names and IPv4 ranges. */
+    network: ModalNetwork;
+    /** Ports Modal publishes as public HTTPS tunnels from create. */
+    encryptedPorts?: number[];
   }): Promise<string>;
+  /** The public HTTPS tunnel URL for a port declared at create, or null when it has none. */
+  tunnelUrl?(sandboxId: string, port: number): Promise<string | null>;
+  /** A connect token routing authenticated HTTP to one container port. */
+  connectToken?(sandboxId: string, port: number): Promise<{ url: string; token: string }>;
   findByName(
     appName: string,
     environment: string,
@@ -334,6 +348,8 @@ export function createSdkTransport(input: {
       memoryMiB,
       regions,
       env,
+      network,
+      encryptedPorts,
     }) {
       // Environment values may be secrets; native error details never echo them.
       const secrets = [input.tokenId, input.tokenSecret, ...Object.values(env ?? {})].sort(
@@ -363,9 +379,19 @@ export function createSdkTransport(input: {
       }
 
       let sandbox: Sandbox;
-      const params: SandboxCreateParams = { name, tags, timeoutMs, regions, blockNetwork: true };
+      const params: SandboxCreateParams = { name, tags, timeoutMs, regions };
+
+      if (network.kind === "blocked") params.blockNetwork = true;
+
+      if (network.kind === "allowlist") {
+        // Modal sends an allowlist with both lists; an empty IP list allows no ranges.
+        params.outboundDomainAllowlist = network.domains;
+        params.outboundCidrAllowlist = network.cidrs;
+      }
 
       if (env) params.env = env;
+
+      if (encryptedPorts?.length) params.encryptedPorts = encryptedPorts;
 
       if (cpu !== undefined) params.cpu = cpu;
 
@@ -386,6 +412,17 @@ export function createSdkTransport(input: {
       if (!sandbox.sandboxId) throw new Error("Modal create returned no sandbox ID");
 
       return sandbox.sandboxId;
+    },
+    async tunnelUrl(sandboxId, port) {
+      const sandbox = await client.sandboxes.fromId(sandboxId);
+
+      return (await sandbox.tunnels(30_000))[port]?.url ?? null;
+    },
+    async connectToken(sandboxId, port) {
+      const sandbox = await client.sandboxes.fromId(sandboxId);
+      const credentials = await sandbox.createConnectToken({ port });
+
+      return { url: credentials.url, token: credentials.token };
     },
     async findByName(appName, environment, name) {
       try {

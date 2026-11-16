@@ -1,0 +1,301 @@
+import { expect, test, type Page, type Request } from "@playwright/test";
+import { gunzipSync } from "node:zlib";
+import { z } from "zod";
+import project from "../src/lib/analytics-project.json" with { type: "json" };
+import type {} from "../src/lib/analytics";
+
+const consentKey = "beachside-docs-analytics-consent-v1";
+
+const Event = z.object({
+  event: z.string(),
+  properties: z.object({ distinct_id: z.string().optional() }).passthrough(),
+});
+
+type CapturedEvent = z.infer<typeof Event>;
+
+function events(request: Request): CapturedEvent[] {
+  if (!/^\/(e|i\/v0\/e|batch)\/?$/.test(new URL(request.url()).pathname)) return [];
+  let body = request.postDataBuffer();
+
+  if (!body) return [];
+
+  if (body[0] === 0x1f && body[1] === 0x8b) body = gunzipSync(body);
+  let text = body.toString();
+
+  if (text.startsWith("data=")) {
+    const data = new URLSearchParams(text).get("data");
+
+    if (!data) return [];
+    text = Buffer.from(data, "base64").toString();
+  }
+
+  const parsed: unknown = JSON.parse(text);
+  const single = Event.safeParse(parsed);
+
+  if (single.success) return [single.data];
+  const batch = z.object({ batch: z.array(Event) }).safeParse(parsed);
+
+  if (batch.success) return batch.data.batch;
+
+  return z.array(Event).parse(parsed);
+}
+
+async function observe(page: Page) {
+  // Exercise the human visitor path; PostHog deliberately filters automated browsers.
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, "webdriver", { get: () => false });
+    Object.defineProperty(navigator, "userAgentData", { get: () => undefined });
+  });
+  const requests: Request[] = [];
+  const libraries: string[] = [];
+  const captured: CapturedEvent[] = [];
+  const reddit: string[] = [];
+  await page.route("**/*", async (route) => {
+    const request = route.request();
+    const url = new URL(request.url());
+
+    if (url.origin === project.host) {
+      requests.push(request);
+      captured.push(...events(request));
+
+      const config = {
+        featureFlags: {},
+        hasFeatureFlags: false,
+        supportedCompression: [],
+        // The client must keep this disabled even when remote settings enable it.
+        sessionRecording: { enabled: true, endpoint: "/s/", sampleRate: 1 },
+      };
+
+      if (url.pathname.endsWith("/config.js")) {
+        await route.fulfill({
+          contentType: "application/javascript",
+          body: `window._POSTHOG_REMOTE_CONFIG = ${JSON.stringify({ [project.key]: { config } })};`,
+        });
+      } else await route.fulfill({ json: config, headers: { "Access-Control-Allow-Origin": "*" } });
+    } else if (url.hostname === "127.0.0.1") {
+      if (/posthog[\w.-]*\.js/.test(url.pathname)) libraries.push(url.pathname);
+      await route.continue();
+    } else {
+      if (/(^|\.)reddit(static)?\.com$/.test(url.hostname)) reddit.push(request.url());
+      await route.abort();
+    }
+  });
+
+  return { requests, libraries, captured, reddit };
+}
+
+async function analyticsStorage(page: Page) {
+  return page.evaluate(() => ({
+    local: Object.keys(localStorage).filter((key) => /posthog|^ph_/.test(key)),
+    session: Object.keys(sessionStorage).filter((key) => /posthog|^ph_/.test(key)),
+  }));
+}
+
+const bar = (page: Page) => page.getByRole("region", { name: "Analytics preference" });
+
+test("landing loads no analytics or consent UI and its demos still work", async ({
+  page,
+  context,
+}) => {
+  const { requests, libraries } = await observe(page);
+  await page.goto("/");
+  await expect(bar(page)).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Analytics preferences" })).toHaveCount(0);
+  await page.locator('[data-provider="e2b"]').click();
+  await expect(page.locator('[data-provider="e2b"]')).toHaveAttribute("aria-pressed", "true");
+  await page.waitForTimeout(700);
+  expect(requests).toHaveLength(0);
+  expect(libraries).toHaveLength(0);
+  expect(await context.cookies()).toEqual([]);
+  expect(await analyticsStorage(page)).toEqual({ local: [], session: [] });
+});
+
+test("pending and rejected docs send nothing, including after navigation and reload", async ({
+  page,
+  context,
+}) => {
+  const { requests, libraries } = await observe(page);
+  await page.goto("/docs/");
+  await expect(bar(page)).toBeVisible();
+  await page.waitForTimeout(700);
+  expect(requests).toHaveLength(0);
+  expect(libraries).toHaveLength(0);
+  await bar(page).getByRole("button", { name: "Reject", exact: true }).click();
+  await expect(bar(page)).toBeHidden();
+  await page.goto("/docs/privacy/");
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Privacy", exact: true })).toBeVisible();
+  await page.waitForTimeout(700);
+  expect(requests).toHaveLength(0);
+  expect(libraries).toHaveLength(0);
+  expect(await context.cookies()).toEqual([]);
+  expect(await analyticsStorage(page)).toEqual({ local: [], session: [] });
+  expect(await page.evaluate((key) => localStorage.getItem(key), consentKey)).toBe("rejected");
+  await page.getByRole("button", { name: "Analytics preferences" }).click();
+  await expect(bar(page)).toBeVisible();
+});
+
+test("acceptance enables analytics; withdrawal stops requests and clears identifiers", async ({
+  page,
+  context,
+}) => {
+  const { captured, requests } = await observe(page);
+  await page.goto("/docs/");
+  await bar(page).getByRole("button", { name: "Accept", exact: true }).click();
+  await expect(bar(page)).toBeHidden();
+  await expect.poll(() => captured.some((event) => event.event === "$pageview")).toBe(true);
+  expect((await context.cookies()).some((cookie) => cookie.name.includes("beachside_docs"))).toBe(
+    true,
+  );
+  expect(requests.some((request) => /recorder|\/s\//.test(request.url()))).toBe(false);
+  await page.getByRole("button", { name: "Analytics preferences" }).click();
+  await bar(page).getByRole("button", { name: "Reject", exact: true }).click();
+  await page.waitForLoadState("load");
+  await expect(bar(page)).toBeHidden();
+  const afterRejection = requests.length;
+  await page.goto("/docs/privacy/");
+  await page.waitForTimeout(1000);
+  expect(requests).toHaveLength(afterRejection);
+  expect(await analyticsStorage(page)).toEqual({ local: [], session: [] });
+  expect(
+    (await context.cookies()).filter((cookie) => cookie.name.includes("beachside_docs")),
+  ).toEqual([]);
+});
+
+test("landing never tracks, even after docs acceptance", async ({ page }) => {
+  const { captured, requests, libraries } = await observe(page);
+  await page.goto("/docs/");
+  await bar(page).getByRole("button", { name: "Accept", exact: true }).click();
+  await expect.poll(() => captured.some((event) => event.event === "$pageview")).toBe(true);
+  await page.goto("/");
+  requests.length = 0;
+  libraries.length = 0;
+  await page.reload();
+  await page.locator('[data-provider="e2b"]').click();
+  await page.waitForTimeout(700);
+  expect(requests).toHaveLength(0);
+  expect(libraries).toHaveLength(0);
+  await expect(bar(page)).toHaveCount(0);
+});
+
+test("consent bar is compact on mobile and supports keyboard choice", async ({
+  page,
+}, testInfo) => {
+  await observe(page);
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.goto("/docs/");
+  await expect(bar(page)).toBeVisible();
+  const bounds = await bar(page).boundingBox();
+  expect(bounds!.x).toBeGreaterThanOrEqual(0);
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(375);
+  expect(bounds!.height).toBeLessThan(130);
+  await page.screenshot({ path: testInfo.outputPath("consent-mobile.png") });
+  await page.getByRole("button", { name: "Reject", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await expect(bar(page)).toBeHidden();
+});
+
+test("desktop consent notice fits its content in the bottom-right corner", async ({
+  page,
+}, testInfo) => {
+  await observe(page);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/docs/");
+  await expect(bar(page)).toBeVisible();
+  const bounds = await bar(page).boundingBox();
+  expect(bounds!.width).toBeLessThan(440);
+  expect(bounds!.height).toBeLessThan(80);
+  expect(1440 - bounds!.x - bounds!.width).toBeCloseTo(16, 0);
+  expect(900 - bounds!.y - bounds!.height).toBeCloseTo(16, 0);
+  await page.screenshot({ path: testInfo.outputPath("consent-desktop.png") });
+  await page.getByRole("button", { name: "Switch to dark theme" }).click();
+  await page.screenshot({ path: testInfo.outputPath("consent-desktop-dark.png") });
+});
+
+test("blocked storage fails closed across page loads", async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "localStorage", {
+      get() {
+        throw new DOMException("Blocked", "SecurityError");
+      },
+    });
+  });
+  const { requests } = await observe(page);
+  await page.goto("/docs/");
+  await expect(bar(page)).toBeVisible();
+  await bar(page).getByRole("button", { name: "Reject", exact: true }).click();
+  await page.reload();
+  await expect(bar(page)).toBeVisible();
+  expect(requests).toHaveLength(0);
+});
+
+const adsConsentKey = "beachside-ads-analytics-consent-v1";
+
+// The pixel.js request is blocked, so the stub keeps every Reddit call in its queue.
+const redditQueue = (page: Page) => page.evaluate(() => window.rdt?.callQueue);
+
+for (const path of ["/beta/", "/remote/"]) {
+  test(`${path} asks first and sends nothing until accepted`, async ({ page, context }) => {
+    const { requests, libraries, reddit } = await observe(page);
+    await page.goto(path);
+    await expect(bar(page)).toBeVisible();
+    await expect(bar(page)).toContainText("ad measurement");
+    await page.waitForTimeout(700);
+    expect(requests).toHaveLength(0);
+    expect(libraries).toHaveLength(0);
+    expect(reddit).toHaveLength(0);
+    await bar(page).getByRole("button", { name: "Reject", exact: true }).click();
+    await page.reload();
+    await page.waitForTimeout(700);
+    expect(requests).toHaveLength(0);
+    expect(reddit).toHaveLength(0);
+    expect(await context.cookies()).toEqual([]);
+    expect(await page.evaluate((key) => localStorage.getItem(key), adsConsentKey)).toBe("rejected");
+  });
+
+  test(`${path} loads PostHog and the Reddit Pixel after acceptance`, async ({ page }) => {
+    const { captured, reddit } = await observe(page);
+    await page.goto(path);
+    await bar(page).getByRole("button", { name: "Accept", exact: true }).click();
+    await expect.poll(() => captured.some((event) => event.event === "$pageview")).toBe(true);
+    await expect.poll(() => reddit.some((url) => url.includes("/ads/pixel.js"))).toBe(true);
+
+    const queued = await redditQueue(page);
+
+    expect(queued).toEqual([
+      ["init", "p2_test_pixel"],
+      ["track", "PageVisit"],
+    ]);
+  });
+}
+
+test("docs acceptance does not turn on the ad pages", async ({ page }) => {
+  const { captured, reddit } = await observe(page);
+  await page.goto("/docs/");
+  await bar(page).getByRole("button", { name: "Accept", exact: true }).click();
+  await expect.poll(() => captured.some((event) => event.event === "$pageview")).toBe(true);
+  captured.length = 0;
+  await page.goto("/beta/");
+  await expect(bar(page)).toBeVisible();
+  await page.waitForTimeout(700);
+  expect(captured).toHaveLength(0);
+  expect(reddit).toHaveLength(0);
+});
+
+test("a beta signup is a conversion only after acceptance, and never sends the email", async ({
+  page,
+}) => {
+  const { captured } = await observe(page);
+  await page.route("**/api/beta-signup", (route) => route.fulfill({ json: { ok: true } }));
+  await page.goto("/beta/");
+  await bar(page).getByRole("button", { name: "Accept", exact: true }).click();
+  await expect.poll(() => captured.some((event) => event.event === "$pageview")).toBe(true);
+  await page.locator("#email-hero").fill("person@example.com");
+  await page.locator("#email-hero").press("Enter");
+  await expect.poll(() => captured.some((event) => event.event === "beta_signup")).toBe(true);
+  expect(JSON.stringify(captured)).not.toContain("person@example.com");
+
+  const queued = await redditQueue(page);
+
+  expect(queued).toContainEqual(["track", "SignUp"]);
+});

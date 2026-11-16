@@ -130,7 +130,7 @@ Daytona and E2B streaming writes and copies use a temporary file in the destinat
 
 A lost response does not prove that a write failed. Errors retain known changes and related temporary paths. Once publication is confirmed, a later inspection or cleanup failure keeps `effect: "applied"`; remaining temporary paths show what still needs cleanup. Do not automatically retry an uncertain write.
 
-See the complete [artifact recipe](https://github.com/pandemicsyn/beachside/blob/main/apps/docs/examples/directory-files.ts) and [tested provider support](/docs/providers/support/) for the images and storage paths covered by live tests.
+See the complete [artifact recipe](https://github.com/beachside-compute/beachside/blob/main/apps/docs/examples/directory-files.ts) and [tested provider support](/docs/providers/support/) for the images and storage paths covered by live tests.
 
 ## Traversal and text lines
 
@@ -234,7 +234,7 @@ await box.exec({
 
 Streams and input over **1 MiB** need an adapter with incremental process stdin (Daytona, E2B and Vercel). Other adapters reject them before contacting the provider. Streamed input runs on the process transport, so `deadlineSeconds` (default 300) is enforced by the SDK, which requests termination when it passes. If the command exits before the stream ends, the call settles with its result. Output and exit status use the same result format and capture limit as other executions.
 
-An adapter may supply this input through a temporary file rather than a pipe. For ongoing input, use [`processes.start({ command, stdin: "pipe", output: { mode: "stream" } })`](/docs/guides/text-streaming/), then call `write()` and `closeStdin()`. Process stdin defaults to closed. See the complete [finite-input example](https://github.com/pandemicsyn/beachside/blob/main/apps/docs/examples/finite-stdin.ts) and [tested provider support](/docs/providers/support/) for provider limits and live test coverage.
+An adapter may supply this input through a temporary file rather than a pipe. For ongoing input, use [`processes.start({ command, stdin: "pipe", output: { mode: "stream" } })`](/docs/guides/text-streaming/), then call `write()` and `closeStdin()`. Process stdin defaults to closed. See the complete [finite-input example](https://github.com/beachside-compute/beachside/blob/main/apps/docs/examples/finite-stdin.ts) and [tested provider support](/docs/providers/support/) for provider limits and live test coverage.
 
 ## Recover an uncertain write
 

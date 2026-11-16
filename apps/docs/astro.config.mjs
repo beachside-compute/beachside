@@ -40,10 +40,12 @@ export default defineConfig({
         { tag: "script", content: openSearchFromQuery },
       ],
       social: [
-        { icon: "github", label: "GitHub", href: "https://github.com/pandemicsyn/beachside" },
+        { icon: "github", label: "GitHub", href: "https://github.com/beachside-compute/beachside" },
+        { icon: "x.com", label: "X", href: "https://x.com/pandemicsyn" },
       ],
       customCss: ["./src/styles/tokens.css", "./src/styles/docs.css"],
       components: {
+        Footer: "./src/components/DocsFooter.astro",
         SiteTitle: "./src/components/SiteTitle.astro",
         ThemeSelect: "./src/components/ThemeToggle.astro",
       },
@@ -91,6 +93,7 @@ export default defineConfig({
           items: [
             { slug: "docs/cli", label: "Overview" },
             { slug: "docs/cli/configuration" },
+            { slug: "docs/cli/setup" },
             { slug: "docs/cli/shell-and-agents" },
             { slug: "docs/cli/ci" },
             { slug: "docs/cli/rex", badge: "exp" },
@@ -101,6 +104,7 @@ export default defineConfig({
           label: "Using the SDK",
           items: [
             { slug: "docs/guides/resources" },
+            { slug: "docs/guides/setup" },
             { slug: "docs/guides/snapshots-and-volumes" },
             { slug: "docs/guides/files-and-output" },
             { slug: "docs/guides/text-streaming", label: "Processes and streaming" },
@@ -115,11 +119,14 @@ export default defineConfig({
           label: "Providers",
           items: [
             { slug: "docs/providers/support" },
+            { slug: "docs/providers/boxd", label: "boxd" },
+            { slug: "docs/providers/freestyle", label: "Freestyle" },
             { slug: "docs/providers/daytona" },
             { slug: "docs/providers/e2b" },
             { slug: "docs/providers/boat", label: "Boat", badge: "exp" },
-            { slug: "docs/providers/boxd", label: "boxd", badge: "exp" },
             { slug: "docs/providers/runloop", label: "Runloop", badge: "exp" },
+            { slug: "docs/providers/archil", label: "Archil", badge: "exp" },
+            { slug: "docs/providers/exe-dev", label: "exe.dev", badge: "exp" },
             { slug: "docs/providers/vercel", badge: "exp" },
           ],
         },
@@ -140,6 +147,7 @@ export default defineConfig({
             { slug: "docs/reference/generated-typescript" },
           ],
         },
+        { slug: "docs/privacy", label: "Privacy" },
       ],
     }),
   ],

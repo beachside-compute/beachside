@@ -57,6 +57,8 @@ Import from `beachside`.
 | `FileStreamWriteOptions`      | type      |
 | `FilesystemError`             | re-export |
 | `FileWriteOptions`            | type      |
+| `ForkCapabilities`            | type      |
+| `ForkRequest`                 | re-export |
 | `Image`                       | re-export |
 | `ImageBuildResult`            | type      |
 | `ImageHandle`                 | type      |
@@ -106,6 +108,7 @@ Import from `beachside`.
 | `RestoreInput`                | type      |
 | `RestoreRequest`              | re-export |
 | `ResumeResult`                | type      |
+| `RunSetupOptions`             | type      |
 | `SandboxCleanupError`         | re-export |
 | `SandboxHandle`               | type      |
 | `SandboxInfo`                 | type      |
@@ -117,8 +120,25 @@ Import from `beachside`.
 | `SandboxScopeCallbackOutcome` | type      |
 | `SandboxScopeOptions`         | type      |
 | `SandboxState`                | type      |
+| `Setup`                       | re-export |
+| `SetupCreateOptions`          | type      |
+| `SetupDefinition`             | re-export |
+| `SetupDefinitionInput`        | type      |
+| `SetupEvent`                  | type      |
+| `SetupFailedError`            | re-export |
+| `SetupInput`                  | type      |
+| `SetupOutput`                 | type      |
+| `SetupParallel`               | type      |
+| `SetupPhase`                  | type      |
+| `SetupReport`                 | type      |
+| `SetupRunOptions`             | type      |
+| `SetupStep`                   | type      |
+| `SetupStepOptions`            | type      |
+| `SetupStepRef`                | type      |
+| `SetupStepReport`             | type      |
 | `SnapshotHandle`              | type      |
 | `SnapshotInfo`                | re-export |
+| `SnapshotListInput`           | type      |
 | `SnapshotPlan`                | type      |
 | `SnapshotProfile`             | type      |
 | `SnapshotRequest`             | re-export |
@@ -146,17 +166,22 @@ Import from `beachside`.
 
 Import from `@beachside/daytona`.
 
-| Export                 | Kind      |
-| ---------------------- | --------- |
-| `boundedBytes`         | function  |
-| `createDaytonaAdapter` | re-export |
-| `daytona`              | re-export |
-| `daytonaAdapter`       | re-export |
-| `DaytonaDriver`        | class     |
-| `DaytonaEndpointPair`  | type      |
-| `DaytonaInput`         | type      |
-| `daytonaProvider`      | function  |
-| `daytonaRegistration`  | function  |
+| Export                     | Kind      |
+| -------------------------- | --------- |
+| `boundedBytes`             | function  |
+| `createDaytonaAdapter`     | re-export |
+| `daytona`                  | re-export |
+| `DAYTONA_ALLOWLIST_LIMITS` | value     |
+| `daytonaAdapter`           | re-export |
+| `DaytonaDriver`            | class     |
+| `DaytonaEndpointPair`      | type      |
+| `DaytonaInput`             | type      |
+| `daytonaNetworkFields`     | function  |
+| `DaytonaNetworkFields`     | type      |
+| `daytonaNetworkMatches`    | function  |
+| `DaytonaNetworkPolicy`     | type      |
+| `daytonaProvider`          | function  |
+| `daytonaRegistration`      | function  |
 
 ## E2B adapter
 
@@ -197,6 +222,9 @@ Import from `@beachside/adapter`.
 | `AdapterErrorCode`             | type      |
 | `AdapterFilesystemError`       | re-export |
 | `AdapterSession`               | type      |
+| `AdapterSetup`                 | type      |
+| `AdapterSetupConfigValue`      | type      |
+| `AdapterSetupValue`            | type      |
 | `AttemptContext`               | type      |
 | `bindAdapter`                  | re-export |
 | `BoundAdapter`                 | type      |

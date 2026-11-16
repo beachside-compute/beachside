@@ -91,11 +91,11 @@ export const officialSupport: SupportMetadata[] = [
       },
       previewProtected: {
         support: "conditional",
-        note: "Daytona protected header access only; standard token grants sandbox-wide command/file authority. Public setup unsupported. Native lookup can activate a route; no server start/resume or readiness claim. Bun preview-protected passed at 3188e33 in us with authenticated HTTP and denied missing/invalid headers; owned cleanup confirmed.",
+        note: "Daytona protected header access; the standard token grants sandbox-wide command/file authority. Native lookup can activate a route; no server start/resume or readiness claim. Bun preview-protected passed at 3188e33 in us with authenticated HTTP and denied missing/invalid headers; owned cleanup confirmed.",
       },
       previewPublic: {
-        support: "unsupported",
-        note: "Daytona's native public setting would publish every port on the sandbox, so the adapter supports protected previews only.",
+        support: "conditional",
+        note: "Public setup returns Daytona signed preview URLs: scoped to one port, expiring after preview.expiresInSeconds (1 s to 24 h, default 1 hour, reported as expiresAt), with the sandbox itself kept private. Fixture coverage only; no live signed-URL pass yet.",
       },
       directories: {
         support: "conditional",
@@ -165,15 +165,15 @@ export const officialSupport: SupportMetadata[] = [
       },
       previewPublic: {
         support: "conditional",
-        note: "E2B public access, the default, with observed native visibility and auto-resume off. Protected setup disables public traffic on create and restore; fresh protected token lookup unsupported. Bun preview-public passed at 3188e33 with observed public visibility, HTTP content and confirmed owned cleanup. Protected-mode ingress denial remains unqualified.",
+        note: "E2B public access, the default, with observed native visibility and auto-resume off. Protected setup disables public traffic on create and restore. Bun preview-public passed at 3188e33 with observed public visibility, HTTP content and confirmed owned cleanup. Protected-mode ingress denial remains unqualified.",
       },
       termination: {
         support: "conditional",
         note: "Active handles now use random scoped tag selectors for SIGTERM/SIGKILL; tags are not immutable native generations and other native clients can reuse them. Lost observation disables controls; no descendant cleanup guarantee. Historical PID-selected evidence follows. Calls share/cache acknowledgement or uncertainty without replay. Exit remains independently observed, including native -1. Bounded Bun live case passed at 131a8c6 with borrowed base on darwin-arm64/Bun 1.3.14 after the fixed-default routing correction: ready output, request acknowledgement/reuse, independently observed nonzero terminal result, owned cleanup and client close. The prior 4cc6a20 attachment failure remains recorded. Other images/platforms and signal delivery races are unqualified.",
       },
       previewProtected: {
-        support: "unsupported",
-        note: "Fresh traffic-token retrieval is absent from the pinned read-only detail API. Native connect may resume compute; protected preview rejects without calling it. Protected setup creates and restores private compute.",
+        support: "conditional",
+        note: "Protected setup creates and restores private compute (native allowPublicTraffic false). preview() checks running state, private visibility and auto-resume off, then reads the traffic token from native connect with a 1-second timeout, which never shortens the lifetime, and returns it as the e2b-traffic-access-token header. A sandbox paused between the check and the read is resumed by E2B. Fixture coverage only; protected ingress denial is not yet tested live.",
       },
       directories: {
         support: "conditional",
@@ -312,7 +312,7 @@ const featureEntries = Object.entries(features) as [
 ][];
 
 const evidenceHref =
-  "https://github.com/pandemicsyn/beachside/blob/main/packages/sdk-qualification/provider-qualification/LIVE-EVIDENCE.md";
+  "https://github.com/beachside-compute/beachside/blob/main/packages/sdk-qualification/provider-qualification/LIVE-EVIDENCE.md";
 
 function featureMatrix(reports: readonly QualificationReport[], profiles: SupportMetadata[]) {
   const historical = reports.flatMap((report) => parseReport(report).historicalEvidence ?? []);
@@ -432,13 +432,40 @@ export type ProviderStatus = {
 /** Hand-maintained release status; live columns are computed from recorded results. */
 export const providerStatus: ProviderStatus[] = [
   {
+    id: "boxd",
+    name: "boxd",
+    href: "/docs/providers/boxd/",
+    experimental: false,
+    note: "Live-tested across sandboxes, commands, files, pause/resume, previews, snapshots and volumes; egress allowlists, fork and servers in sandboxes were also checked live by hand.",
+    limits: [
+      "A machine created from an OCI image gets its egress (`blocked` or an allowlist) a moment after it starts, so the image's own startup can briefly reach the internet. Restores and forks have their egress from the first boot.",
+      "Snapshots of machines with mounted disks are rejected, and restores keep the captured size.",
+      "Create-time `env` is unsupported; pass `exec({ env })` instead.",
+      "Anything a command leaves in the background stops when the command returns; use `processes.start()` and `detach()` for servers.",
+      "Disks survive destroy and must be deleted explicitly.",
+    ],
+  },
+  {
+    id: "freestyle",
+    name: "Freestyle",
+    href: "/docs/providers/freestyle/",
+    experimental: false,
+    note: "Live-tested across sandboxes, commands, files, pause/resume, renewal, snapshots and public previews.",
+    limits: [
+      "No OCI images, volumes or regions; images are Freestyle snapshots of Ubuntu bases.",
+      "Egress allowlists match IPv4 ranges only, because Freestyle firewalls cannot match host names.",
+      "Protected previews are unsupported; public `style.dev` routes are open to anyone with the URL.",
+      "Commands and writes need a running VM; reads, listings and stat work on a paused VM without waking it.",
+    ],
+  },
+  {
     id: "daytona",
     name: "Daytona",
     href: "/docs/providers/daytona/",
     experimental: false,
     note: "Live-tested across sandboxes, commands, files, previews, snapshots and volumes.",
     limits: [
-      "Previews are protected only. The preview token also grants command and file access to the whole sandbox, so treat it as a credential.",
+      "Protected previews return a token that also grants command and file access to the whole sandbox, so treat it as a credential. Public previews are expiring signed links and have not been tested live.",
       "The `daytona-default` network setting still allows some essential services, so it is not strict outbound blocking.",
       "Snapshots capture the filesystem, not memory; running processes stop and restart.",
     ],
@@ -452,16 +479,9 @@ export const providerStatus: ProviderStatus[] = [
     limits: [
       'Do not rely on `network: "blocked"` for isolation. In our live test a blocked sandbox could still open direct IPv4 connections.',
       "Volumes and volume mounts are not supported.",
-      "Previews are public only.",
+      "Protected previews return an `e2b-traffic-access-token` header; they have not been tested live yet.",
       "File workflows were live-tested in `/home/user`; other paths and custom templates need their own checks.",
     ],
-  },
-  {
-    id: "boxd",
-    name: "boxd",
-    href: "/docs/providers/boxd/",
-    experimental: true,
-    note: "Only the basics have run live: sandboxes, commands, files and reconnecting. Previews, pause/resume and volumes have not.",
   },
   {
     id: "vercel",
@@ -483,6 +503,20 @@ export const providerStatus: ProviderStatus[] = [
     href: "/docs/providers/runloop/",
     experimental: true,
     note: "Not yet tested against the live Runloop service; sign-ups are invitation only.",
+  },
+  {
+    id: "archil",
+    name: "Archil",
+    href: "/docs/providers/archil/",
+    experimental: true,
+    note: "Checked by hand on the Free plan; not yet run through the live qualification suite.",
+  },
+  {
+    id: "exe-dev",
+    name: "exe.dev",
+    href: "/docs/providers/exe-dev/",
+    experimental: true,
+    note: "Checked by hand against the live exe.dev service; the qualification suite passed streaming and termination but has not yet completed the sandbox workflow.",
   },
   {
     id: "modal",

@@ -18,6 +18,9 @@ const packages = [
   ["@beachside/boxd", "packages/providers/boxd"],
   ["@beachside/boat", "packages/providers/boat"],
   ["@beachside/runloop", "packages/providers/runloop"],
+  ["@beachside/freestyle", "packages/providers/freestyle"],
+  ["@beachside/archil", "packages/providers/archil"],
+  ["@beachside/exe-dev", "packages/providers/exe-dev"],
   ["@beachside/vercel", "packages/providers/vercel"],
   ["@beachside/e2b", "packages/providers/e2b"],
   ["beachside", "packages/sdk"],
@@ -78,6 +81,9 @@ async function pack(directory) {
       "@beachside/boxd",
       "@beachside/boat",
       "@beachside/runloop",
+      "@beachside/freestyle",
+      "@beachside/archil",
+      "@beachside/exe-dev",
       "@beachside/cli",
     ].includes(manifest.name)
   ) {
@@ -278,6 +284,74 @@ async function flow() {
   await box.readFile("/home/user/file");
   await snapshot.delete(); await restored.destroy(); await box.destroy(); await client.close();
   return { url };
+}
+void flow;
+`;
+  else if (mode === "freestyle")
+    source = `
+import { Beachside, Image } from "beachside";
+import { freestyleAdapter } from "@beachside/freestyle";
+async function flow() {
+  const client = await Beachside.connect({ adapter: freestyleAdapter, config: { resources: { vcpus: 2 }, preview: { ports: [3000] } }, credentials: { apiKey: "fixture" } });
+  const box = await client.sandboxes.create({ environment: Image.prepared("freestyle/ubuntu-sm"), networkPolicy: "blocked" });
+  const preview = await box.preview(3000);
+  const url: string = preview.url;
+  const suspended = await box.suspend();
+  const preserve: "filesystem" | "filesystem+memory" = suspended.preserve;
+  await box.resume();
+  await box.exec(["true"]);
+  await box.writeFile("/root/file", new Uint8Array([0,255]), { overwrite: true });
+  await box.readFile("/root/file");
+  await box.destroy(); await client.close();
+  return { url, preserve };
+}
+void flow;
+`;
+  else if (mode === "archil")
+    source = `
+import { Beachside, Preserve } from "beachside";
+import { archilAdapter } from "@beachside/archil";
+async function flow() {
+  const client = await Beachside.connect({ adapter: archilAdapter, config: { region: "aws-us-east-1", resources: { vcpus: 2, memoryMiB: 4096 }, snapshots: { preserve: Preserve.FILESYSTEM } }, credentials: { apiKey: "fixture" } });
+  const volume = await client.volumes.create({ name: "workspace" });
+  const mounted = await client.sandboxes.create({ networkPolicy: "blocked", mounts: [volume.at("/workspace")] });
+  await mounted.destroy({ storage: "allow-unconfirmed" });
+  await volume.delete();
+  // Archil forks only unmounted sandboxes, so the snapshot source has no mounts.
+  const box = await client.sandboxes.create({ networkPolicy: "blocked" });
+  const preview = await box.preview(3000);
+  const url: string = preview.url;
+  const { snapshot } = await box.snapshot();
+  const restored = await snapshot.restore({ requireIndependentLifecycle: false });
+  const suspended = await box.suspend();
+  const preserve: "filesystem" | "filesystem+memory" = suspended.preserve;
+  await box.resume();
+  await box.exec(["true"]);
+  await box.writeFile("/root/file", new Uint8Array([0,255]), { overwrite: true });
+  await box.readFile("/root/file");
+  await restored.destroy(); await snapshot.delete(); await box.destroy(); await client.close();
+  return { url, preserve };
+}
+void flow;
+`;
+  else if (mode === "exe-dev")
+    source = `
+import { Beachside } from "beachside";
+import { exeDevAdapter, exeDev } from "@beachside/exe-dev";
+async function flow() {
+  const client = await Beachside.connect({ adapter: exeDevAdapter, config: { network: "internet", resources: { vcpus: 2 }, placement: { pool: "build" }, preview: { access: "public" } }, credentials: { token: "exe1.fixture" } });
+  const box = await client.sandboxes.create({ labels: { app: "smoke" } });
+  const preview = await box.preview(8000);
+  const url: string = preview.url;
+  const fork = await box.fork();
+  const suspended = await box.suspend();
+  const preserve: "filesystem" | "filesystem+memory" = suspended.preserve;
+  await box.resume();
+  await box.exec(["true"]);
+  await box.writeFile("/tmp/file", new Uint8Array([0,255]), { overwrite: true });
+  await box.readFile("/tmp/file");
+  await fork.destroy(); await box.destroy(); await client.close();
+  return { url, preserve, bound: exeDev({ sshKey: "key", network: "internet" }) };
 }
 void flow;
 `;
@@ -515,7 +589,7 @@ const daytonaSource = `
 import { Beachside, Image } from "beachside";
 import { createDaytonaAdapter } from "@beachside/daytona";
 let nativeState = "started";
-let name = "", mutations = 0, snapshotName = "", labels = {}, renewalWindows = [], blockAll = true;
+let name = "", mutations = 0, receiptCleanups = 0, snapshotName = "", labels = {}, renewalWindows = [], blockAll = true;
 const files = new Map([["/file", Uint8Array.from([0,255])]]);
 const origin = "https://proxy.app.daytona.io/toolbox";
 const native = (state = nativeState) => ({ sandboxClass: "container", volumes: [], autoDeleteInterval: -1, labels, id: "native-1", name, organizationId: "org-1", target: "us", state, networkBlockAll: blockAll, public: false, toolboxProxyUrl: origin });
@@ -538,8 +612,10 @@ const mock = async (input, init = {}) => {
   if (url.pathname === "/api/sandbox/native-1" && init.method === "DELETE") { mutations++; return json(native("destroyed")); }
   if (url.pathname === "/api/sandbox/native-1") return json(native());
   if (url.pathname.endsWith("/process/execute")) {
-    mutations++;
     const command = JSON.parse(init.body).command;
+    // Dropping a delivered receipt is cleanup, not a replayed mutation.
+    if (/^rm -rf -- '\\/tmp\\/\\.beachside-(?:exec|write)-[0-9a-f]{64}'$/.test(command)) { receiptCleanups++; return json({ exitCode: 0, result: "" }); }
+    mutations++;
     if ((command.startsWith("mkdir -m 700 -- ") && !command.includes("BEACHSIDE-EXEC-V1"))) return json({ exitCode: 0, result: "" });
     if (command.startsWith("cat ")) {
       const match = /^cat '([^']+)' > '([^']+)'/.exec(command);
@@ -595,7 +671,9 @@ try {
   const bytes = await box.readFile("/file", { signal: new AbortController().signal });
   if (bytes[0] !== 0 || bytes[1] !== 255) throw new Error("Binary file mismatch");
   await box.destroy();
-  if (mutations !== 10) throw new Error("Mutation replay in packed consumer: " + mutations);
+  // Ten mutations plus the exec (and its receipt) a fresh resume spends reading recorded setup state.
+  if (mutations !== 11) throw new Error("Mutation replay in packed consumer: " + mutations);
+  if (receiptCleanups !== 3) throw new Error("Packed Daytona receipts not dropped: " + receiptCleanups);
   if (process.env.PACKED_LIFECYCLE_EXAMPLE) {
     const { saveWorkspace, finishWorkspace, daytonaSetup } = await import("./lifecycle-example.mjs");
   globalThis.fetch = mock;
@@ -637,7 +715,7 @@ const adapter = createVercelAdapter(() => ({
   return Response.json(value);
  }
 }));
-const client = await Beachside.connect({ adapter, config: { teamId: "team", projectId: "project" }, credentials: { token: "fixture" } });
+const client = await Beachside.connect({ adapter, config: { teamId: "team", projectId: "project", network: "blocked" }, credentials: { token: "fixture" } });
 const box = await client.sandboxes.create({ networkPolicy: "vercel-deny-all" });
 assert.equal(box.id, "session_1");
 await box.destroy();
@@ -972,6 +1050,11 @@ try {
   );
 
   const externalDir = join(temporary, "external-adapter");
+
+  const adapterManifest = JSON.parse(
+    await readFile(join(root, "packages/adapter/package.json"), "utf8"),
+  );
+
   await mkdir(join(externalDir, "src"), { recursive: true });
   await writeFile(
     join(externalDir, "package.json"),
@@ -986,7 +1069,7 @@ try {
         overrides: { "@beachside/adapter": archiveOverrides["@beachside/adapter"] },
         dependencies: {
           "@beachside/adapter": archiveOverrides["@beachside/adapter"],
-          zod: "4.6.5",
+          zod: adapterManifest.dependencies.zod,
         },
       },
       null,
@@ -1065,9 +1148,9 @@ try {
 import { Beachside } from "beachside";
 import { boxdAdapter } from "@beachside/boxd";
 if (boxdAdapter.name !== "boxd") throw Error("External adapter identity mismatch");
-if (boxdAdapter.config.safeParse({ org: "team" }).success) throw Error("Internet setup must be explicit");
+if (boxdAdapter.config.parse({ org: "team" }).networkPolicy !== "internet") throw Error("Egress must default to internet");
 try {
-  await Beachside.connect({ adapter: boxdAdapter, config: { org: "team" }, credentials: { apiKey: "fixture" } });
+  await Beachside.connect({ adapter: boxdAdapter, config: { org: "team", network: "allowlist" }, credentials: { apiKey: "fixture" } });
   throw Error("Invalid configuration accepted");
 } catch (error) { if (error.code !== "INVALID_ARGUMENT") throw error; }
 console.log("Packed boxd imports and local validation passed without provider IO");
@@ -1088,9 +1171,9 @@ console.log("Packed boxd imports and local validation passed without provider IO
 import { Beachside } from "beachside";
 import { boatAdapter } from "@beachside/boat";
 if (boatAdapter.name !== "boat") throw Error("External adapter identity mismatch");
-if (boatAdapter.config.safeParse({}).success) throw Error("Internet setup must be explicit");
+if (boatAdapter.config.parse({}).networkPolicy !== "internet") throw Error("Egress must default to internet");
 try {
-  await Beachside.connect({ adapter: boatAdapter, config: {}, credentials: { apiKey: "fixture" } });
+  await Beachside.connect({ adapter: boatAdapter, config: { network: "blocked" }, credentials: { apiKey: "fixture" } });
   throw Error("Invalid configuration accepted");
 } catch (error) { if (error.code !== "INVALID_ARGUMENT") throw error; }
 console.log("Packed Boat imports and local validation passed without provider IO");
@@ -1111,7 +1194,7 @@ console.log("Packed Boat imports and local validation passed without provider IO
 import { Beachside } from "beachside";
 import { runloopAdapter } from "@beachside/runloop";
 if (runloopAdapter.name !== "runloop") throw Error("External adapter identity mismatch");
-if (runloopAdapter.config.parse({}).network !== "blocked") throw Error("Egress must default to blocked");
+if (runloopAdapter.config.parse({}).network !== "internet") throw Error("Egress must default to internet");
 try {
   await Beachside.connect({ adapter: runloopAdapter, config: { lifecycle: { lifetimeSeconds: 600, idleSeconds: 300 } }, credentials: { apiKey: "fixture" } });
   throw Error("Invalid configuration accepted");
@@ -1124,6 +1207,75 @@ console.log("Packed Runloop imports and local validation passed without provider
 
   for (const runtime of ["node", "bun"])
     console.log(`${runtime}: ${run(runtime, ["consumer.mjs"], runloop)}`);
+
+  const freestyle = join(temporary, "freestyle-consumer");
+  await consumer(
+    freestyle,
+    { ...sdkDeps, "@beachside/freestyle": archiveOverrides["@beachside/freestyle"] },
+    archiveOverrides,
+    `
+import { Beachside } from "beachside";
+import { freestyleAdapter } from "@beachside/freestyle";
+if (freestyleAdapter.name !== "freestyle") throw Error("External adapter identity mismatch");
+if (freestyleAdapter.config.parse({}).network !== "internet") throw Error("Egress must default to internet");
+try {
+  await Beachside.connect({ adapter: freestyleAdapter, config: { image: "my-snapshot", resources: { vcpus: 2 } }, credentials: { apiKey: "fixture" } });
+  throw Error("Invalid configuration accepted");
+} catch (error) { if (error.code !== "INVALID_ARGUMENT") throw error; }
+console.log("Packed Freestyle imports and local validation passed without provider IO");
+`,
+  );
+  await checkTypes(freestyle, "freestyle");
+  inspectGraph(freestyle, ["beachside", "@beachside/freestyle"]);
+
+  for (const runtime of ["node", "bun"])
+    console.log(`${runtime}: ${run(runtime, ["consumer.mjs"], freestyle)}`);
+
+  const archil = join(temporary, "archil-consumer");
+  await consumer(
+    archil,
+    { ...sdkDeps, "@beachside/archil": archiveOverrides["@beachside/archil"] },
+    archiveOverrides,
+    `
+import { Beachside } from "beachside";
+import { archilAdapter } from "@beachside/archil";
+if (archilAdapter.name !== "archil") throw Error("External adapter identity mismatch");
+if (archilAdapter.config.parse({ region: "aws-us-east-1" }).network !== "internet") throw Error("Egress must default to internet");
+try {
+  await Beachside.connect({ adapter: archilAdapter, config: {}, credentials: { apiKey: "fixture" } });
+  throw Error("Invalid configuration accepted");
+} catch (error) { if (error.code !== "INVALID_ARGUMENT") throw error; }
+console.log("Packed Archil imports and local validation passed without provider IO");
+`,
+  );
+  await checkTypes(archil, "archil");
+  inspectGraph(archil, ["beachside", "@beachside/archil"]);
+
+  for (const runtime of ["node", "bun"])
+    console.log(`${runtime}: ${run(runtime, ["consumer.mjs"], archil)}`);
+
+  const exeDevConsumer = join(temporary, "exe-dev-consumer");
+  await consumer(
+    exeDevConsumer,
+    { ...sdkDeps, "@beachside/exe-dev": archiveOverrides["@beachside/exe-dev"] },
+    archiveOverrides,
+    `
+import { Beachside } from "beachside";
+import { exeDevAdapter } from "@beachside/exe-dev";
+if (exeDevAdapter.name !== "exe-dev") throw Error("External adapter identity mismatch");
+if (exeDevAdapter.config.parse({}).placement !== "default") throw Error("Placement must default to the account's");
+try {
+  await Beachside.connect({ adapter: exeDevAdapter, config: { network: "blocked" }, credentials: { token: "exe1.fixture" } });
+  throw Error("Invalid configuration accepted");
+} catch (error) { if (error.code !== "INVALID_ARGUMENT") throw error; }
+console.log("Packed exe.dev imports and local validation passed without provider IO");
+`,
+  );
+  await checkTypes(exeDevConsumer, "exe-dev");
+  inspectGraph(exeDevConsumer, ["beachside", "@beachside/exe-dev"]);
+
+  for (const runtime of ["node", "bun"])
+    console.log(`${runtime}: ${run(runtime, ["consumer.mjs"], exeDevConsumer)}`);
 
   const e2bDeps = { ...sdkDeps, "@beachside/e2b": archiveOverrides["@beachside/e2b"] };
 

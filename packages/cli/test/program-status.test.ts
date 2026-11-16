@@ -4,31 +4,51 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startFakeProviderServer } from "@beachside-internal/provider-fake/server";
 import { main } from "../src/cli";
-import { programStatus, sequence } from "../src/program-status";
+import { meter, notification, programStatus, sequence } from "../src/program-status";
 
 const token = "local-test-token-12345";
 
 const esc = String.fromCharCode(27);
 
 const report = new RegExp(
-  `${esc}\\]7501;state=([a-z]+):id=beachside:app=beachside:msg=([^${esc}]*)${esc}\\\\`,
+  `${esc}\\]7501;state=([a-z]+)(?::id=beachside)?:app=beachside(?::progress=(\\d+))?:msg=([^${esc}]*)${esc}\\\\`,
   "g",
 );
 
+const notice = new RegExp(`${esc}\\]777;notify;([^;${esc}]*);([^${esc}]*)${esc}\\\\`, "g");
+
+/** Each desktop notification as title and body. */
+function notices(stderr: string): { title: string; body: string }[] {
+  return Array.from(stderr.matchAll(notice), ([, title, body]) => ({ title: title!, body: body! }));
+}
+
+type Report = { state: string; msg: string; progress?: number };
+
 /** Each report as `state` plus its decoded message. */
-function reports(stderr: string): { state: string; msg: string }[] {
+function reports(stderr: string): Report[] {
   const matches = stderr.matchAll(report);
 
-  return Array.from(matches, ([, state, msg]) => ({
-    state: state!,
-    msg: Buffer.from(msg!, "base64").toString("utf8"),
-  }));
+  return Array.from(matches, ([, state, progress, msg]) => {
+    const parsed: Report = {
+      state: state!,
+      msg: Buffer.from(msg!, "base64").toString("utf8"),
+    };
+
+    if (progress !== undefined) parsed.progress = Number(progress);
+
+    return parsed;
+  });
 }
 
 describe("program status sequences", () => {
-  test("encode one base64 line with the beachside record id", () => {
+  test("encode one base64 line, as the root record or one with an id", () => {
+    const msg = Buffer.from("beachside exec web").toString("base64");
+
     expect(sequence("working", "beachside exec web")).toBe(
-      `\x1b]7501;state=working:id=beachside:app=beachside:msg=${Buffer.from("beachside exec web").toString("base64")}\x1b\\`,
+      `\x1b]7501;state=working:app=beachside:msg=${msg}\x1b\\`,
+    );
+    expect(sequence("working", "beachside exec web", 40, "beachside")).toBe(
+      `\x1b]7501;state=working:id=beachside:app=beachside:progress=40:msg=${msg}\x1b\\`,
     );
   });
 
@@ -45,7 +65,38 @@ describe("program status sequences", () => {
     expect(report!.msg).toBe("é".repeat(256));
   });
 
-  test("report inside Rex or when forced, and only to a terminal", () => {
+  test("add a whole percentage to working reports only", () => {
+    expect(reports(sequence("working", "copy", 42.7))).toEqual([
+      { state: "working", msg: "copy", progress: 42 },
+    ]);
+    expect(reports(sequence("working", "copy", 250))[0]!.progress).toBe(100);
+    expect(reports(sequence("done", "copy", 50))[0]!.progress).toBeUndefined();
+  });
+
+  test("notifications drop separators and control characters", () => {
+    expect(notices(notification("beachside: done", "run;web\nok"))).toEqual([
+      { title: "beachside: done", body: "run web ok" },
+    ]);
+  });
+
+  test("the meter reports each new percentage and stops short of 100", () => {
+    const seen: (number | undefined)[] = [];
+
+    const status = {
+      report: (_s: string, _m: string, p?: number) => seen.push(p),
+      notify: () => {},
+    };
+
+    const tick = meter(status, "copy", 200);
+
+    tick(1);
+    tick(1);
+    tick(98);
+    tick(500);
+    expect(seen).toEqual([0, 1, 50, 99]);
+  });
+
+  test("report inside Rex, inside herdr-core or when forced, and only to a terminal", () => {
     const written: string[] = [];
     const write = (text: string) => written.push(text);
 
@@ -56,11 +107,26 @@ describe("program status sequences", () => {
     );
     programStatus({ REX_SESSION: "s1" }, false, write).report("working", "c");
     programStatus({ BEACHSIDE_PROGRAM_STATUS: "on" }, false, write).report("working", "d");
+    programStatus({ HC_TERMINAL_ID: "t3", BEACHSIDE_PROGRAM_STATUS: "off" }, true, write).report(
+      "working",
+      "g",
+    );
     expect(written).toEqual([]);
 
     programStatus({ REX_SESSION: "s1" }, true, write).report("working", "e");
     programStatus({ BEACHSIDE_PROGRAM_STATUS: "ON" }, true, write).report("done", "f");
-    expect(written.map((text) => reports(text)[0]!.msg)).toEqual(["e", "f"]);
+    programStatus({ HC_TERMINAL_ID: "t3" }, true, write).report("working", "h");
+    expect(written.map((text) => reports(text)[0]!.msg)).toEqual(["e", "f", "h"]);
+  });
+
+  test("Rex gets the beachside record; herdr-core, which shows only the root, gets the root", () => {
+    const written: string[] = [];
+    const write = (text: string) => written.push(text);
+
+    programStatus({ REX_SESSION: "s1" }, true, write).report("working", "rex");
+    programStatus({ HC_TERMINAL_ID: "t3" }, true, write).report("working", "herdr");
+    programStatus({ BEACHSIDE_PROGRAM_STATUS: "on" }, true, write).report("working", "other");
+    expect(written.map((text) => text.includes(":id=beachside:"))).toEqual([true, false, false]);
   });
 });
 
@@ -103,6 +169,7 @@ describe("program status from CLI commands", () => {
 
     const code = await main(args, {
       env: {
+        BEACHSIDE_TELEMETRY: "0",
         HOME: root,
         BEACHSIDE_CONFIG: join(root, "beachside.json"),
         BEACHSIDE_STATE_DIR: join(root, "state"),
@@ -142,6 +209,38 @@ describe("program status from CLI commands", () => {
     expect(result.code).toBe(125);
     expect(reports(result.stderr).map((report) => report.state)).toEqual(["working", "error"]);
     expect(reports(result.stderr)[1]!.msg).toStartWith("beachside exec missing: ");
+  });
+
+  test("cp of a file reports progress before done", async () => {
+    await writeFile(join(root, "data.bin"), new Uint8Array(4096));
+    const result = await run(["cp", "data.bin", "web:/tmp/data.bin"], true);
+
+    expect(result.code).toBe(0);
+    const states = reports(result.stderr);
+
+    expect(states[0]).toEqual({ state: "working", msg: "beachside cp data.bin" });
+    expect(states.some((state) => state.progress !== undefined)).toBe(true);
+    expect(states.at(-1)!.state).toBe("done");
+  });
+
+  test("a finished exec notifies once it ran longer than BEACHSIDE_NOTIFY_AFTER", async () => {
+    const quick = await run(["exec", "web", "--", "true"], true);
+
+    expect(notices(quick.stderr)).toEqual([]);
+
+    const long = await run(["exec", "web", "--", "true"], true, { BEACHSIDE_NOTIFY_AFTER: "0" });
+
+    // The fake provider has no exec, so the command fails; a failure notifies too.
+    const [sent, ...more] = notices(long.stderr);
+
+    expect(more).toEqual([]);
+    expect(sent!.title).toBe("beachside: failed");
+    expect(sent!.body).toStartWith("beachside exec web: ");
+    expect(
+      notices(
+        (await run(["exec", "web", "--", "true"], true, { BEACHSIDE_NOTIFY_AFTER: "off" })).stderr,
+      ),
+    ).toEqual([]);
   });
 
   test("quick reads, piped stderr and the off switch stay silent", async () => {

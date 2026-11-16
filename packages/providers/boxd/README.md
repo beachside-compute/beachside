@@ -1,6 +1,6 @@
 # @beachside/boxd
 
-Experimental external boxd adapter for Beachside. Implementation, offline fixtures and a live baseline are available; Install with `npm install beachside @beachside/boxd`. Requires Node 20+ or Bun and a boxd **member API key** fenced to your default organization. Native SDK pinned to `@boxd-sh/sdk@0.2.15`.
+boxd adapter for Beachside, tested live and against a deterministic copy of the boxd API. Install with `npm install beachside @beachside/boxd`. Requires Node 20+ or Bun and a boxd **member API key** fenced to your default organization. Native SDK pinned to `@boxd-sh/sdk@0.3.0`.
 
 ```ts
 import { Beachside } from "beachside";
@@ -9,7 +9,7 @@ import { boxdAdapter } from "@beachside/boxd";
 const client = await Beachside.connect({
   adapter: boxdAdapter,
   credentials: { apiKey: process.env.BOXD_API_KEY! },
-  config: { org: "my-org", network: "internet" },
+  config: { org: "my-org" },
 });
 try {
   const box = await client.sandboxes.create();
@@ -26,14 +26,15 @@ The organization ID/slug must match authenticated default-org inventory. Scope i
 | Setting | Behavior |
 | --- | --- |
 | `org` | Required authenticated default organization ID or slug. |
-| `network` | Required literal `internet`; omitted per-call policy uses this explicit choice. Deprecated alias: `networkPolicy`. |
+| `network` | `internet` (default), `blocked` or `{ allow: [...] }`; omitted per-call policy uses it. Deprecated alias: `networkPolicy`. |
+| `region` | Optional boxd region id (`fra`, `nyc`, ...) enabled for the org. Machine, disk and snapshot calls go to that region's endpoint; account and org calls stay home. The region's endpoint and zone are part of the scope, so references stay bound to it. Omitted uses the home region and endpoint. |
 | `resources` | Optional minimum `{ vcpus, memoryMiB }`; picks the smallest 1, 2, 4 or 8 vCPU size class (RAM respectively 4, 8, 16 or 32 GiB) and rejects at connect when none is big enough. Omitted uses native account defaults. `inspect().resources` reports the machine's size. Deprecated alias: `size` (a vCPU count). Fixed native 100 GB private disk. |
 | `preview` | Defaults to `{ access: "public", ports: [3000] }`: create pins HTTPS routes and disables browser protection; at most 16 ports. Explicit `protected` keeps browser protection on with no routes (lookup unsupported). |
 | `image` | Optional OCI reference; defaults to the authenticated cluster's default image. |
 | `lifecycle.lifetimeSeconds` | Initial hard expiry/default renewal window: 900 seconds, under 60 becomes 60, no adapter maximum (boxd documents none for `setDeleteAfter`). `create({ lifecycle })` overrides it per sandbox. Deprecated alias: top-level `lifetimeSeconds`. |
 | `volumes.sizeBytes` | Per-new-disk size: 10 GiB, configurable 1 GiB–1 TiB; native quotas still apply. |
 
-Create uses peer/metadata isolation, with **internet egress allowed**. `isolated` is not deny-all networking. Explicit blocked policy, regions and labels are rejected before allocation. Create-time `env` is unsupported (`supports.createEnv` is absent): boxd's machine `env` configures the image's main process and is not established for exec sessions, so the SDK rejects `create({ env })` before allocation; pass `exec({ env })` instead. The production endpoint is fixed. Native image startup can run workload code before the separate expiry-setting request; create and expiry installation are not atomic.
+Create uses peer/metadata isolation. Egress is a separate native allowlist: `blocked` sets it to `["none"]`, `internet` to `[]` (unrestricted), and `network: { allow }` to the parsed list (up to 256 host names, `*.` wildcards and public IPv4 addresses or ranges; non-public ranges reject at connect; boxd admits HTTP/HTTPS by host name and other traffic by address). A create from an image sends `deleteAfter` with the machine, so expiry is atomic with create; boxd sets the allowlist on an existing machine only, so it is installed right after create, before readiness and hand-out, and the image's own startup can briefly run with open egress. A restore sends a machine spec with `isolated`, its labels and (for `blocked` or an allowlist) its egress, so the list is in force from first boot; boxd unions a spec's egress with the snapshot's, so the exact list is still set afterwards. If boxd refuses an allowlist (it refuses provider-wide wildcards such as `*.amazonaws.com` only when they are applied), the machine is set to `["none"]`. A lost create reply, or an older server that ignores create-time timers, gets egress and expiry applied separately. A lost or refused allowlist response leaves a partial create, never a replay; recovery applies the egress again, installs a lifetime on a machine that has none, and reports an unknown outcome if the machine's allowlist no longer matches. Labels follow boxd's rules (keys 1-63 of `a-z 0-9 . _ / -`, alphanumeric at both ends, no `boxd/` prefix; values up to 256 characters without control characters; at most 64), are checked before allocation, are listed by `sandboxes.list()`, and merge over the captured labels on restore. A per-create `region` must equal the configured one. Create-time `env` is unsupported (`supports.createEnv` is absent): boxd's machine `env` configures the image's main process and is not established for exec sessions, so the SDK rejects `create({ env })` before allocation; pass `exec({ env })` instead. The production endpoint is fixed.
 
 ## Support
 
@@ -42,15 +43,18 @@ Create uses peer/metadata isolation, with **internet egress allowed**. `isolated
 | Compute | Create/readiness, scoped inspect/reopen/inventory and confirmed destroy. |
 | Exec | Safely quoted argv/shell, cwd/env, original stdout/stderr bytes; combined output collection bounded to 1 MiB with truthful truncation. Finite byte stdin up to 1 MiB, in 64 KiB frames followed by native EOF. Sustained processes stream stdout/stderr as they arrive, as text or exact bytes, over one native `Exec` call; `terminate()` cancels that call, which kills the command's process group. Incremental stdin, PTYs, other signals, status checks and process reopening remain unsupported. |
 | Files | Bounded binary reads/writes up to 1 MiB. Overwrite uses native upload with an actual byte-count acknowledgement. Default no-clobber uses Python 3 exclusive creation. Complete bounded `readDirectory`; recursive-opt-in mkdir/remove. |
-| Extra filesystem operations | Python 3 lstat/stat/exists (dangling links exist), regular-file copy, same-filesystem move, staged writes and incremental reads in 64 KiB chunks. Walk/text lines compose these hooks. |
+| Extra filesystem operations | Python 3 lstat/stat/exists (dangling links exist), regular-file copy, same-filesystem move, staged writes and incremental reads in 1 MiB pieces through native upload and download. Walk/text lines compose these hooks. |
 | Volumes | Independent block disks; CRUD and whole-disk create-time mounts, read-only/read-write, one machine at a time even read-only. No subpaths or versions. |
 | Suspend/resume | Pause retains files, RAM, processes and sockets. Resume/wake handles standby and hibernation under the same UUID. Inbound native traffic can wake compute automatically. |
 | Renew | Resets sandbox-wide wall-clock deletion window (at least 60 seconds, no maximum; `renewCapabilities` omits `maxSeconds`); acknowledgement and observed expiry are separate. |
 | Snapshots | Native memory-and-disk capture of a running machine without mounted disks, briefly paused; restore into a new machine that resumes the captured processes; inspect, provider-scope list and delete. Each capture gets its own name and the reference pins the captured version. |
 | Previews | Default public setup, existing pinned route and running scoped compute with browser protection disabled. Read-only lookup. Protected access unsupported. |
-| Strict network policy / builds | Unsupported. OCI images boot directly; there is no image-build artifact. |
+| Network policy | `internet` (default), `blocked` and `{ allow: [...] }` allowlists on create and restore. |
+| Builds | Unsupported. OCI images boot directly; there is no image-build artifact. |
 
-Native snapshots capture private disk plus RAM, briefly pause the source (which keeps running) and restore running memory into a new machine. A boxd snapshot name holds only its latest version, so each capture uses a fresh `beachside-snapshot-<hash>` name derived from the attempt, checkpointed before the native call so a lost response is found by name rather than captured again. The reference's `generation` is the captured version: inspect, restore and delete fail with `CONFLICT` without effects if the name was saved again outside Beachside. boxd restores by name or id and always boots the latest version, so a restore checks the version first and reports an unknown outcome, with the new machine's identity, if the machine it booted names another version. Restores replay the captured size and network, cannot attach disks and keep `internet` policy; the configured expiry, preview routes and browser-protection setting are applied as on create. Sources with mounted disks are rejected because boxd does not document what capture keeps of them. Connection fate during the pause and snapshot retention are undocumented and reported as unknown; there is no scheduled deletion. Memory exclusion, no-pause capture and fork are not offered.
+Native snapshots capture private disk plus RAM, briefly pause the source (which keeps running) and restore running memory into a new machine. A boxd snapshot name holds only its latest version, so each capture uses a fresh `beachside-snapshot-<hash>` name derived from the attempt, checkpointed before the native call so a lost response is found by name rather than captured again. The reference's `generation` is the captured version: inspect, restore and delete fail with `CONFLICT` without effects if the name was saved again outside Beachside. boxd restores by name or id and always boots the latest version, so a restore checks the version first and reports an unknown outcome, with the new machine's identity, if the machine it booted names another version. Restores replay the captured size, cannot attach disks and apply the connection's `blocked`, `internet` or allowlist policy (in the machine spec, so from first boot); the configured expiry, preview routes and browser-protection setting are applied as on create. Sources with mounted disks are rejected because boxd does not document what capture keeps of them. Connection fate during the pause and snapshot retention are undocumented and reported as unknown; there is no scheduled deletion. Memory exclusion and no-pause capture are not offered.
+
+`box.fork()` uses boxd's native `ForkVm`: the fork gets the source's disk, RAM and running processes while the source pauses for a fraction of a second, inherits its egress allowlist (a source whose list is not the connection's `blocked`, `internet` or allowlist is refused) and gets `deleteAfter` in the same call and merges request labels over the source's, within boxd's 64-label limit. `lifetimeSeconds` sets its expiry. The fork UUID is checkpointed before the call, so a lost response is found again by it and never forked twice.
 
 ## Disks and cleanup
 
@@ -85,7 +89,7 @@ Paths are arguments, never interpolated programs. Recursive removal does not wal
 
 ```ts
 // Public exposure on port 3000 is the default; choose other ports when connecting:
-// config: { org: "my-org", network: "internet",
+// config: { org: "my-org",
 //   preview: { access: "public", ports: [3000, 8080] }, size: 1 }
 const preview = await box.preview(3000); // read-only; requires this configured pinned route
 ```

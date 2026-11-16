@@ -56,15 +56,24 @@ test("Boat conformance: one native attempt, distinct accounts, lost and late res
   expect(fixture.count("POST", /^\/sandboxes$/)).toBe(3);
 });
 
-test("setup requires explicit internet and rejects blocked egress before any effect", async () => {
-  const { fixture, adapter, connect } = setup();
+test("setup defaults to internet and rejects blocked egress before any effect", async () => {
+  const { fixture, adapter } = setup();
 
   await expect(
-    Beachside.connect({ adapter, config: {}, credentials: { apiKey: "fixture-main" } }),
+    Beachside.connect({
+      adapter,
+      // Untyped on purpose: JavaScript callers can pass any value.
+      config: JSON.parse('{"network":"blocked"}'),
+      credentials: { apiKey: "fixture-main" },
+    }),
   ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
   expect(fixture.calls).toHaveLength(0);
 
-  const client = await connect();
+  const client = await Beachside.connect({
+    adapter,
+    config: {},
+    credentials: { apiKey: "fixture-main" },
+  });
 
   try {
     expect((await client.capabilities()).network).toEqual(["internet"]);
@@ -488,4 +497,22 @@ test("API keys never appear in errors", async () => {
 
   expect(error).toMatchObject({ code: "UNAUTHENTICATED" });
   expect(error?.message).not.toContain("secret-key-123");
+});
+
+test("Boat previews host the port on an ungated public URL", async () => {
+  const { fixture, connect } = setup();
+  const client = await connect();
+
+  try {
+    const box = await client.sandboxes.create();
+    expect(await box.preview(3000)).toEqual({
+      access: "public",
+      url: `https://${box.id}-3000.boat.host`,
+    });
+    const host = fixture.calls.find((call) => call.path.endsWith("/host"));
+    expect(host?.body).toEqual({ port: 3000, public: true });
+    await expect(box.preview(0)).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+  } finally {
+    await client.close();
+  }
 });

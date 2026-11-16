@@ -15,6 +15,7 @@ import {
   rmCommand,
   runCommand,
   shCommand,
+  setupCommand,
 } from "./commands";
 import {
   commandExitCode,
@@ -29,10 +30,12 @@ import { imageCommand } from "./images";
 import { snapshotCommand } from "./snapshots";
 import { skillCommand } from "./skill";
 import { adapterCommand } from "./adapters";
+import { profileCommand } from "./profiles";
 import { gcCommand } from "./gc";
 import { complete, completionCommand, formatCompletion } from "./completion";
-import type { Env } from "./config";
+import { configJsonSchema, type Env } from "./config";
 import { programStatus } from "./program-status";
+import { eventProperties, record, telemetryCommand, type Delivery } from "./telemetry";
 
 type FlagSpec = {
   type: "string" | "boolean";
@@ -82,6 +85,66 @@ const globalFlags = {
   },
   help: { type: "boolean", short: "h", description: "Show help" },
   version: { type: "boolean", short: "V", description: "Print the CLI version" },
+} satisfies Record<string, FlagSpec>;
+
+/** Flags that pick what runs in a sandbox after it starts; shared by create, run and setup. */
+const setupFlags = {
+  setup: {
+    type: "string",
+    multiple: true,
+    value: "name|path",
+    description:
+      "Run a named setup from beachside.json or a local script once the sandbox starts (repeatable, comma-separated)",
+  },
+  "setup-cmd": {
+    type: "string",
+    multiple: true,
+    value: "shell",
+    description: "Run a shell line as a setup step, after --setup (repeatable)",
+  },
+  startup: {
+    type: "string",
+    multiple: true,
+    value: "path",
+    description:
+      "Run a local script every time the sandbox comes up without its processes, such as after a restore (repeatable)",
+  },
+  "startup-cmd": {
+    type: "string",
+    multiple: true,
+    value: "shell",
+    description: "Run a shell line as a startup step (repeatable)",
+  },
+  "no-default-setup": {
+    type: "boolean",
+    description: "Skip the setups the profile lists by default",
+  },
+  "quiet-setup": {
+    type: "boolean",
+    description: "Show setup step names and failures, not their output",
+  },
+  "setup-timeout": {
+    type: "string",
+    value: "duration",
+    description: "Overall limit for setup and startup, e.g. 45m (default 30m; each step 10m)",
+  },
+} satisfies Record<string, FlagSpec>;
+
+/** Setup cache controls; shared by create and run. */
+const cacheFlags = {
+  cache: {
+    type: "boolean",
+    description:
+      "Cache this setup as a snapshot and restore it next time, even if no named setup asks for it",
+  },
+  "no-cache": {
+    type: "boolean",
+    description: "Neither use nor build a setup cache for this sandbox",
+  },
+  "refresh-cache": {
+    type: "boolean",
+    description: "Build the setup cache again now, replacing the current one",
+  },
 } satisfies Record<string, FlagSpec>;
 
 const createFlags = {
@@ -140,6 +203,8 @@ const createFlags = {
     description:
       "Keep retrying for up to this long when the provider refuses before creating anything (rate limit, capacity), e.g. 5m",
   },
+  ...setupFlags,
+  ...cacheFlags,
 } satisfies Record<string, FlagSpec>;
 
 const execFlags = {
@@ -195,15 +260,36 @@ const pushFlags = {
 
 export const commands: readonly CommandSpec[] = [
   {
+    name: "telemetry",
+    summary: "Show or change basic CLI usage telemetry (on by default; SDK sends none)",
+    usage: "beachside telemetry [status | enable | disable]",
+    flags: {},
+    passthrough: false,
+    remoteExit: false,
+    examples: ["beachside telemetry status", "beachside telemetry disable"],
+    run: telemetryCommand,
+  },
+  {
     name: "create",
     summary: "Create a sandbox and print its name",
     usage:
-      "beachside create [--name <name>] [--image <oci-ref> | --prepared <id> | --snapshot <name>] [--network <policy>] [--ttl <duration>] [--env K=V]...",
+      "beachside create [--name <name>] [--image <oci-ref> | --prepared <id> | --snapshot <name>] [--network <policy>] [--ttl <duration>] [--env K=V]... [--setup <name|path>]... [--setup-cmd <shell>]... [--with rex|herdr]...",
     flags: {
       ...createFlags,
       "if-not-exists": {
         type: "boolean",
         description: "Return the named sandbox if it is still alive instead of failing",
+      },
+      "rm-on-failure": {
+        type: "boolean",
+        description: "Remove the sandbox if its setup fails, instead of keeping it to look at",
+      },
+      with: {
+        type: "string",
+        multiple: true,
+        value: "server",
+        description:
+          "Install and start a server reachable over your tailnet: rex or herdr (repeatable; needs TAILSCALE_AUTH_KEY, implies --network internet)",
       },
     },
     passthrough: false,
@@ -214,6 +300,10 @@ export const commands: readonly CommandSpec[] = [
       "beachside create --name ci --env-file .env --env API_TOKEN",
       "beachside create --name job-42 --ttl 1h",
       "beachside create --name job-42 --retry 5m --json",
+      "beachside create --name web --with rex",
+      "beachside create --name web --setup node --setup-cmd 'npm i -g pnpm'",
+      "beachside create --name web --setup ./setup.sh --startup-cmd 'pnpm dev > /tmp/dev.log 2>&1 &'",
+      "beachside create --name web --setup node --cache",
     ],
     run: createCommand,
   },
@@ -277,7 +367,8 @@ export const commands: readonly CommandSpec[] = [
   },
   {
     name: "gc",
-    summary: "Destroy the provider's sandboxes that carry the given labels, such as a killed job's",
+    summary:
+      "Destroy the provider's sandboxes that carry the given labels, such as a killed job's, and prune stale setup caches",
     usage: "beachside gc --label k=v... [--older-than <duration>] [--dry-run]",
     flags: {
       label: {
@@ -350,6 +441,7 @@ export const commands: readonly CommandSpec[] = [
       "beachside run -- python3 -c 'print(2 + 2)'",
       "beachside run --network internet -- curl -sI https://example.com",
       "beachside run --push . --timeout 15m --ttl 30m -- sh -c 'npm ci && npm test'",
+      "beachside run --push . --setup-cmd 'npm ci' -- npm test",
     ],
     run: runCommand,
   },
@@ -423,6 +515,35 @@ export const commands: readonly CommandSpec[] = [
     run: snapshotCommand,
   },
   {
+    name: "setup",
+    summary: "Run setup in an existing sandbox, or list the named setups",
+    usage:
+      "beachside setup <sandbox> [--setup <name|path>]... [--setup-cmd <shell>]... [--force] | setup ls | setup cache ls|rm <setup>|prune [--dry-run]",
+    flags: {
+      ...setupFlags,
+      force: {
+        type: "boolean",
+        description: "Run every step, even ones the sandbox already has",
+      },
+      "dry-run": {
+        type: "boolean",
+        description: "setup cache rm and prune: list what would be deleted and change nothing",
+      },
+    },
+    passthrough: false,
+    remoteExit: false,
+    examples: [
+      "beachside setup ls",
+      "beachside setup web",
+      "beachside setup web --setup playwright",
+      "beachside setup web --setup node --force",
+      "beachside setup cache ls",
+      "beachside setup cache rm node",
+      "beachside setup cache prune --dry-run",
+    ],
+    run: setupCommand,
+  },
+  {
     name: "cp",
     summary: "Copy files or directories to or from a sandbox",
     usage: "beachside cp [-r] <src> <dst>   (one side is <sandbox>:/path)",
@@ -474,7 +595,8 @@ export const commands: readonly CommandSpec[] = [
   },
   {
     name: "doctor",
-    summary: "Check config, credentials and the provider connection without creating anything",
+    summary:
+      "Check config, the provider connection and that the provider accepts the credentials, without creating anything",
     usage: "beachside doctor",
     flags: {},
     passthrough: false,
@@ -499,6 +621,28 @@ export const commands: readonly CommandSpec[] = [
     run: adapterCommand,
   },
   {
+    name: "profile",
+    summary:
+      "List profiles, show where a profile's settings come from, pick the default or remove one",
+    usage: "beachside profile ls | show [<name>] | use <name> | rm <name> [--force]",
+    flags: {
+      force: {
+        type: "boolean",
+        description:
+          "rm: remove the profile even though stored sandboxes, snapshots or images use it",
+      },
+    },
+    passthrough: false,
+    remoteExit: false,
+    examples: [
+      "beachside profile ls",
+      "beachside profile show e2b --json",
+      "beachside profile use boxd",
+      "beachside profile rm old-daytona",
+    ],
+    run: profileCommand,
+  },
+  {
     name: "providers",
     summary:
       "List official providers, whether their adapter is installed and their credentials set",
@@ -511,18 +655,38 @@ export const commands: readonly CommandSpec[] = [
   },
   {
     name: "skill",
-    summary: "Print the agent skill for this CLI, or install it for your coding agents",
-    usage: "beachside skill [install [--project]]",
+    summary: "Print the agent skill for this CLI, or set it up for your coding agents",
+    usage: "beachside skill [show | setup | status | remove] [--agent <name>]... [--project]",
     flags: {
+      agent: {
+        type: "string",
+        multiple: true,
+        value: "name",
+        description:
+          "Only this agent: claude, codex, opencode or pi (repeatable; default: detected agents)",
+      },
       project: {
         type: "boolean",
-        description:
-          "Install into this folder's .agents/skills (and .claude/skills) instead of your home",
+        description: "Use this folder's .agents/skills (and .claude/skills) instead of your home",
+      },
+      "dry-run": {
+        type: "boolean",
+        description: "Report what setup or remove would change without changing anything",
+      },
+      force: {
+        type: "boolean",
+        description: "Let setup replace a beachside-cli skill that beachside did not install",
       },
     },
     passthrough: false,
     remoteExit: false,
-    examples: ["beachside skill", "beachside skill install", "beachside skill install --project"],
+    examples: [
+      "beachside skill",
+      "beachside skill setup",
+      "beachside skill setup --project --dry-run",
+      "beachside skill status --json",
+      "beachside skill remove --agent claude",
+    ],
     run: skillCommand,
   },
   {
@@ -558,6 +722,11 @@ export const exitCodes = [
   { code: 6, meaning: "outcome unknown: an effect may have happened, inspect before retrying" },
   { code: 7, meaning: "retryable: rate limit, capacity or unavailable before any effect" },
   { code: 8, meaning: "partial: some steps were confirmed; read error.known" },
+  {
+    code: 9,
+    meaning:
+      "setup failed: a setup or startup step exited nonzero or timed out; error.known.sandbox names the sandbox if it was kept",
+  },
   { code: 125, meaning: "exec/run: the CLI or provider failed; details in the error" },
   {
     code: 130,
@@ -596,7 +765,7 @@ function topHelp(): string {
     "",
     "Commands:",
     ...commands.map((command) => `  ${command.name.padEnd(10)} ${command.summary}`),
-    "  schema     Print a machine-readable description of every command",
+    "  schema     Print a machine-readable description of every command (`schema config`: beachside.json)",
     "",
     "Global flags:",
     ...flagLines(globalFlags),
@@ -654,6 +823,8 @@ function commandIndex(head: readonly string[]): number {
 }
 
 export type Io = {
+  /** Optional delivery seam for offline CLI tests. */
+  telemetryDelivery?: Delivery;
   env: Env;
   cwd: string;
   streams: Streams;
@@ -709,6 +880,20 @@ function statusTitle(name: string, flags: Flags): string | undefined {
   return ["beachside", name, target].filter(Boolean).join(" ");
 }
 
+/** Commands that notify when they finish after a long run. */
+const notifyCommands = new Set(["run", "exec", "sh"]);
+
+/** Seconds before a finished command notifies; `BEACHSIDE_NOTIFY_AFTER` overrides, `off` stops it. */
+function notifyAfter(name: string, env: Io["env"]): number | undefined {
+  if (!notifyCommands.has(name)) return undefined;
+  const setting = env.BEACHSIDE_NOTIFY_AFTER?.trim().toLowerCase();
+
+  if (setting === "off") return undefined;
+  const seconds = setting ? Number(setting) : 30;
+
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : 30_000;
+}
+
 function exitMessage(code: number): string {
   return code === 0 ? "done" : `exit code ${code}`;
 }
@@ -741,7 +926,33 @@ export async function main(argv: readonly string[], io: Io): Promise<number> {
     }
 
     if (name === "schema") {
-      out.streams.stdout(`${JSON.stringify(schema(), null, 2)}\n`);
+      // Flags such as --json or --help leave the schema as it is; a string flag takes its value.
+      const valued = new Set(
+        Object.entries(globalFlags).flatMap(([flag, spec]) =>
+          spec.type === "string" ? [flag] : [],
+        ),
+      );
+
+      const topics = head.slice(nameIndex + 1).filter((arg, index, args) => {
+        const previous = args[index - 1];
+
+        return (
+          !arg.startsWith("-") && !(previous?.startsWith("--") && valued.has(previous.slice(2)))
+        );
+      });
+
+      if (topics.length > 1) throw usage(`schema takes at most one topic, got ${topics.join(" ")}`);
+      const topic = topics[0];
+
+      if (topic !== undefined && topic !== "config")
+        throw usage(
+          `Unknown schema ${topic}`,
+          "`beachside schema` describes the commands; `beachside schema config` describes beachside.json",
+        );
+
+      out.streams.stdout(
+        `${JSON.stringify(topic === "config" ? configJsonSchema() : schema(), null, 2)}\n`,
+      );
 
       return 0;
     }
@@ -811,18 +1022,80 @@ export async function main(argv: readonly string[], io: Io): Promise<number> {
     const session = new Session(context);
     const title = statusTitle(command.name, flags);
 
+    const notifyMs = title ? notifyAfter(command.name, io.env) : undefined;
+    const started = Date.now();
+
+    /** Report the final state, and notify when a long command finishes. */
+    const finish = (state: "done" | "error", message: string) => {
+      if (!title) return;
+      status.report(state, message);
+
+      if (notifyMs !== undefined && Date.now() - started >= notifyMs)
+        status.notify(state === "done" ? "beachside: done" : "beachside: failed", message);
+    };
+
+    let telemetryCode = 1;
+    let telemetryError: string | undefined;
+
     try {
       if (title) status.report("working", title);
       const code = await command.run(session, flags);
+      telemetryCode = code;
 
-      if (title) status.report(code === 0 ? "done" : "error", `${title}: ${exitMessage(code)}`);
+      finish(code === 0 ? "done" : "error", `${title}: ${exitMessage(code)}`);
 
       return code;
     } catch (cause) {
-      if (title) status.report("error", `${title}: ${describeError(cause).message}`);
+      telemetryError = describeError(cause).code;
+      finish("error", `${title}: ${describeError(cause).message}`);
       throw cause;
     } finally {
       await session.close();
+
+      try {
+        const actions = {
+          image: ["build", "ls", "inspect", "rm", "forget"],
+          snapshot: ["create", "ls", "inspect", "rm", "forget"],
+          adapter: ["add", "ls", "rm"],
+          skill: ["show", "setup", "status", "remove"],
+        } satisfies Record<string, readonly string[]>;
+
+        const first = flags.positionals[0];
+        const allowedActions = Object.entries(actions).find(([name]) => name === command.name)?.[1];
+
+        const action =
+          first && allowedActions?.includes(first)
+            ? first
+            : command.name === "setup" &&
+                first === "cache" &&
+                ["ls", "rm", "prune"].includes(flags.positionals[1] ?? "")
+              ? `cache ${flags.positionals[1]}`
+              : undefined;
+
+        const event = eventProperties({
+          command: command.name,
+          action,
+          providers: [...session.usedProviders],
+          code: telemetryCode,
+          error: telemetryError,
+          remote: command.remoteExit,
+          interrupted: io.signal.aborted,
+          duration: Date.now() - started,
+          env: io.env,
+          terminal: io.stderrTerminal === true,
+        });
+
+        if (event)
+          await record(
+            io.env,
+            io.stderrTerminal === true,
+            io.streams.stderr,
+            event,
+            io.telemetryDelivery,
+          );
+      } catch {
+        /* Analytics cannot affect the command result. */
+      }
     }
   } catch (cause) {
     const report = describeError(cause);

@@ -293,7 +293,7 @@ test("overview cells report live results only, never fixture or packed passes", 
   expect(compact(overview([{ ...record("passed"), runCleanup: "incomplete" }]))).toContain(
     ociCell("Live test blocked"),
   );
-  expect(compact(overview([]))).toContain("| Public HTTP previews | Not supported |");
+  expect(compact(overview([]))).toContain("| Mount volumes | Not tested live | Not supported |");
 });
 
 test("overview provider rows count live-passed features and mark experimental providers", () => {
@@ -303,9 +303,10 @@ test("overview provider rows count live-passed features and mark experimental pr
   expect(row("Daytona")).toMatch(/Supported +\| 1 feature, last run September 29, 2026/);
   expect(row("E2B")).toMatch(/Supported +\| None yet/);
   expect(row("Boat")).toMatch(/Experimental +\| None yet/);
+  // boxd and Freestyle are supported with their profiles and results beside their packages.
   expect(
     providerStatus.filter((status) => !status.experimental).map((status) => status.id),
-  ).toEqual(officialSupport.map((profile) => profile.id));
+  ).toEqual(["boxd", "freestyle", ...officialSupport.map((profile) => profile.id)]);
 });
 
 test("official declarations and caveats move to the evidence page with stable anchors", () => {

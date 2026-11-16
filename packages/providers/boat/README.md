@@ -9,7 +9,7 @@ import { boatAdapter } from "@beachside/boat";
 const client = await Beachside.connect({
   adapter: boatAdapter,
   credentials: { apiKey: process.env.BOAT_API_KEY! },
-  config: { network: "internet" },
+  config: {},
 });
 try {
   const box = await client.sandboxes.create();
@@ -25,7 +25,7 @@ Scope is the account id from `GET /me` plus the fixed `https://boat.dev/api/v1` 
 
 | Setting | Behavior |
 | --- | --- |
-| `network` | Required literal `internet`. Boat has no provider egress controls. |
+| `network` | Optional; only `internet`. Boat has no provider egress controls. |
 | `image` | `ubuntu-24.04` (stock machine), a named snapshot, or a `bsh_` share code. No OCI images. |
 | `resources` | Optional minimum `{ vcpus, memoryMiB }`; picks the smallest machine type: `small` (2 vCPU, 4 GiB), `default` (4, 8 GiB), `large` (8, 16 GiB), `xlarge` (16, 32 GiB; plan-dependent). Default `default`. `inspect().resources` reports Boat's size. Deprecated alias: `machine`. |
 | `environment` | Omitted: `noEnv`, so sandboxes get none of the account's secrets. Set a Boat environment name to attach one. |
@@ -42,7 +42,8 @@ Scope is the account id from `GET /me` plus the fixed `https://boat.dev/api/v1` 
 - **Renew** sets a new auto-stop window.
 - **Snapshots** save the disk of a running or archived sandbox as a Boat named snapshot. Each capture gets its own `beachside-snapshot-*` name, and the reference pins the frozen artifact (`snapshotId`) as its generation, so a name saved again outside Beachside no longer restores or deletes. Restore creates a sandbox `from` the name on a fresh machine of the captured type; memory and processes are not kept. `snapshots.list()` covers every named snapshot in the account. Named snapshots are kept until deleted.
 - **Destroy** permanently deletes with `X-Ascii-Confirm-Delete` and waits for the deletion operation to finish removing the machine. Named snapshots survive.
-- Unsupported: fork, snapshot sharing, restore size overrides, volumes, previews, interactive processes, directory operations, blocked egress, regions and labels.
+- Previews: `preview(port)` calls Boat's host-port API with `public: true` and returns the ungated HTTPS URL (`access: "public"`). Hosting a port is idempotent; it stays hosted until the sandbox goes.
+- Unsupported: fork, snapshot sharing, restore size overrides, volumes, protected previews, interactive processes, directory operations, blocked egress, regions and labels.
 
 Every mutation is sent once. Refusals Boat documents as effect-free become ordinary errors; lost responses and ambiguous 5xx become `OUTCOME_UNKNOWN` and are never replayed.
 

@@ -19,6 +19,10 @@ import {
   PreserveSchema,
   ResourceMinimums,
   DEFAULT_LIFETIME_SECONDS,
+  AllowNetworkSetting,
+  ALLOW_NETWORK_POLICY,
+  allowlistConfig,
+  throwAllowlistError,
   type SandboxInfo,
   type SandboxReference,
 } from "@beachside/adapter";
@@ -42,10 +46,15 @@ import {
 import type { DriverResult } from "@beachside-internal/provider-spi";
 import {
   boundedBytes,
+  DAYTONA_ALLOWLIST_LIMITS,
   daytonaProvider,
+  daytonaNetworkMatches,
   daytonaRegistration,
   type DaytonaEndpointPair,
+  type DaytonaNetworkPolicy,
 } from "./index";
+
+const NamedNetwork = z.enum(["blocked", "internet", "daytona-default"]);
 
 const Configuration = z
   .strictObject({
@@ -62,7 +71,12 @@ const Configuration = z
         z.strictObject({ kind: z.literal("oci"), value: z.string().min(1) }),
       ])
       .optional(),
-    network: z.enum(["blocked", "internet", "daytona-default"]).optional(),
+    /**
+     * `daytona-default`, `internet`, `blocked`, or `{ allow: [...] }`: outbound HTTP(S) only to
+     * those hosts (up to 100, `*.` wildcards) plus up to 10 IPv4 ranges. Allowlists, like
+     * `internet` and `blocked`, need an organization without limited egress (Tier 3 and above).
+     */
+    network: z.union([NamedNetwork, AllowNetworkSetting]).optional(),
     networkPolicy: z.enum(["blocked", "internet", "daytona-default"]).optional(),
     snapshots: z
       .strictObject({
@@ -82,8 +96,17 @@ const Configuration = z
      */
     resources: ResourceMinimums.optional(),
     preview: z
-      .strictObject({ access: z.enum(["protected", "public"]).default("protected") })
-      .default({ access: "protected" }),
+      .strictObject({
+        /**
+         * `protected` returns the URL with Daytona's sandbox-wide `x-daytona-preview-token` header;
+         * `public` returns a signed URL for that port only, which anyone holding it can open
+         * until it expires.
+         */
+        access: z.enum(["protected", "public"]).default("protected"),
+        /** Lifetime of each public (signed) preview URL: 1 second to 24 hours. */
+        expiresInSeconds: z.number().int().min(1).max(86_400).default(3600),
+      })
+      .default({ access: "protected", expiresInSeconds: 3600 }),
     lifecycle: z
       .strictObject({
         lifetimeSeconds: z.number().int().positive().safe().optional(),
@@ -109,16 +132,29 @@ const Configuration = z
         message: "Supply network or the deprecated networkPolicy, not both",
       });
   })
-  .transform(({ network, ...value }) => ({
-    ...value,
-    networkPolicy: network ?? value.networkPolicy ?? "daytona-default",
-    ttlMinutes:
-      value.lifecycle?.lifetimeSeconds === undefined
-        ? (value.ttlMinutes ?? DEFAULT_LIFETIME_SECONDS / 60)
-        : nativeMinutes(value.lifecycle.lifetimeSeconds),
-    autoStopMinutes:
-      value.lifecycle?.idleSeconds === undefined ? 0 : Math.ceil(value.lifecycle.idleSeconds / 60),
-  }));
+  .transform(({ network, ...value }) => {
+    const allow = allowlistConfig("Daytona", network, DAYTONA_ALLOWLIST_LIMITS);
+
+    const named = NamedNetwork.safeParse(network);
+
+    const networkPolicy: DaytonaNetworkPolicy = AllowNetworkSetting.safeParse(network).success
+      ? ALLOW_NETWORK_POLICY
+      : ((named.success ? named.data : undefined) ?? value.networkPolicy ?? "daytona-default");
+
+    return {
+      ...value,
+      networkPolicy,
+      ...allow,
+      ttlMinutes:
+        value.lifecycle?.lifetimeSeconds === undefined
+          ? (value.ttlMinutes ?? DEFAULT_LIFETIME_SECONDS / 60)
+          : nativeMinutes(value.lifecycle.lifetimeSeconds),
+      autoStopMinutes:
+        value.lifecycle?.idleSeconds === undefined
+          ? 0
+          : Math.ceil(value.lifecycle.idleSeconds / 60),
+    };
+  });
 
 /** Daytona keeps lifetimes in whole minutes, so seconds round up. */
 function nativeMinutes(seconds: number): number {
@@ -440,16 +476,22 @@ export function createDaytonaAdapter(
 ) {
   const configSchema = Configuration.superRefine((value, ctx) => {
     try {
+      const configuration = {
+        apiUrl: value.apiUrl,
+        toolboxOrigin: value.toolboxOrigin,
+        target: value.target,
+        networkPolicy: value.networkPolicy,
+        ttlMinutes: String(value.ttlMinutes),
+        autoStopMinutes: String(value.autoStopMinutes),
+      };
+
+      // An allowlist that failed to parse is reported by connect; validate the rest here.
+      if (value.networkPolicy === ALLOW_NETWORK_POLICY)
+        Object.assign(configuration, { allowlist: value.allowlist ?? "invalid.invalid" });
+
       daytonaRegistration(fetchImpl, trustedEndpoints).validate({
         credentials: { apiKey: "validation-only" },
-        configuration: {
-          apiUrl: value.apiUrl,
-          toolboxOrigin: value.toolboxOrigin,
-          target: value.target,
-          networkPolicy: value.networkPolicy,
-          ttlMinutes: String(value.ttlMinutes),
-          autoStopMinutes: String(value.autoStopMinutes),
-        },
+        configuration,
       });
     } catch {
       ctx.addIssue({
@@ -463,14 +505,27 @@ export function createDaytonaAdapter(
   return defineAdapter({
     name: "daytona",
     displayName: "Daytona",
+    setup: {
+      credentials: {
+        apiKey: {
+          env: "DAYTONA_API_KEY",
+          description: "A Daytona API key from the dashboard.",
+          url: "https://app.daytona.io/dashboard/keys",
+        },
+      },
+      config: {
+        target: {
+          env: "DAYTONA_TARGET",
+          required: true,
+          description: "The Daytona region (target) sandboxes run in, such as us.",
+        },
+      },
+      docs: "https://beachside.run/docs/providers/daytona/",
+    },
     config: configSchema,
     credentials: Credentials,
     async connect({ config, credentials }) {
-      if (config.preview.access === "public")
-        throw new AdapterError(
-          "UNSUPPORTED",
-          "Daytona public previews require sandbox-wide publication; this adapter supports preview.access protected only",
-        );
+      throwAllowlistError(config);
 
       const { driver, scope } = await daytonaProvider({
         apiKey: credentials.apiKey,
@@ -478,6 +533,7 @@ export function createDaytonaAdapter(
         toolboxOrigin: config.toolboxOrigin,
         target: config.target,
         networkPolicy: config.networkPolicy,
+        allowlist: config.allowlist,
         ttlMinutes: config.ttlMinutes,
         autoStopMinutes: config.autoStopMinutes,
         resources: config.resources,
@@ -504,7 +560,12 @@ export function createDaytonaAdapter(
 
       // Both non-blocked policies send the same native settings, so they share the
       // partition that existing provider-managed egress references already carry.
-      if (config.networkPolicy !== "blocked")
+      if (config.networkPolicy === ALLOW_NETWORK_POLICY)
+        Object.assign(partition, {
+          networkPolicy: ALLOW_NETWORK_POLICY,
+          allowlist: config.allowlist,
+        });
+      else if (config.networkPolicy !== "blocked")
         Object.assign(partition, { networkPolicy: "daytona-default" });
 
       const resourceBinding = {
@@ -575,7 +636,7 @@ export function createDaytonaAdapter(
             "Daytona native network/visibility policy is unavailable",
           );
 
-        if (value.networkBlockAll !== (config.networkPolicy === "blocked") || value.public)
+        if (!daytonaNetworkMatches(value, config.networkPolicy, config.allowlist) || value.public)
           throw new AdapterError("CONFLICT", "Daytona native network/visibility policy differs");
         const operation = value.labels?.["beachside.operation"];
         const submission = value.labels?.["beachside.submission"];
@@ -817,10 +878,13 @@ export function createDaytonaAdapter(
               "Mounted restore of a Linux VM snapshot is not mapped",
             );
 
-          if (input.request.networkPolicy === "blocked")
+          if (
+            input.request.networkPolicy === "blocked" ||
+            input.request.networkPolicy === ALLOW_NETWORK_POLICY
+          )
             throw new AdapterError(
               "UNSUPPORTED",
-              "Mounted restore requires internet or daytona-default network; blocked startup enforcement is unqualified",
+              "Mounted restore requires internet or daytona-default network; blocked or allowlisted startup enforcement is unqualified",
             );
 
           const checked = await resourceState.fields.checkMounts!(
@@ -985,7 +1049,7 @@ export function createDaytonaAdapter(
           if (
             !detail ||
             detail.volumes?.length !== mounts.length ||
-            detail.networkBlockAll !== (config.networkPolicy === "blocked") ||
+            !daytonaNetworkMatches(detail, config.networkPolicy, config.allowlist) ||
             detail.public !== false ||
             mounts.some(
               (mount) =>
@@ -2277,9 +2341,18 @@ export function createDaytonaAdapter(
               "Daytona preview requires running compute; resume explicitly before requesting access",
             );
 
+          const publicAccess = config.preview.access === "public";
+
+          // A public preview is a signed, port-scoped URL; the sandbox itself stays private.
+          const endpoint = publicAccess
+            ? `signed-preview-url?expiresInSeconds=${config.preview.expiresInSeconds}`
+            : "preview-url";
+
+          const requestedAt = Date.now();
+
           try {
             const response = await (fetchImpl ?? fetch)(
-              `${config.apiUrl}/sandbox/${encodeURIComponent(input.sandbox.id)}/ports/${input.port}/preview-url`,
+              `${config.apiUrl}/sandbox/${encodeURIComponent(input.sandbox.id)}/ports/${input.port}/${endpoint}`,
               {
                 headers: { Authorization: `Bearer ${credentials.apiKey}` },
                 signal: ctx.signal,
@@ -2312,6 +2385,16 @@ export function createDaytonaAdapter(
 
             if (native.sandboxId !== input.sandbox.id)
               throw new AdapterError("CONFLICT", "Daytona preview response identity differs");
+
+            if (publicAccess)
+              return PreviewResult.parse({
+                access: "public",
+                url: native.url,
+                // Measured from before the request, so the reported time is never late.
+                expiresAt: new Date(
+                  requestedAt + config.preview.expiresInSeconds * 1000,
+                ).toISOString(),
+              });
 
             return PreviewResult.parse({
               access: "protected",

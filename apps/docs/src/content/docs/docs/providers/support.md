@@ -11,46 +11,64 @@ A live pass covers the image, region and network setting it ran with, not every 
 
 ## Providers
 
-| Provider                                  | Status       | Passed live                           | Notes                                                                                                                    |
-| ----------------------------------------- | ------------ | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| [Daytona](/docs/providers/daytona/)       | Supported    | 14 features, last run October 9, 2026 | Live-tested across sandboxes, commands, files, previews, snapshots and volumes.                                          |
-| [E2B](/docs/providers/e2b/)               | Supported    | 11 features, last run October 9, 2026 | Live-tested across sandboxes, commands, files, previews, pause/resume and snapshots.                                     |
-| [boxd](/docs/providers/boxd/)             | Experimental | 4 features, last run October 11, 2026 | Only the basics have run live: sandboxes, commands, files and reconnecting. Previews, pause/resume and volumes have not. |
-| [Vercel Sandbox](/docs/providers/vercel/) | Experimental | None yet                              | Not yet tested against the live Vercel service.                                                                          |
-| [Boat](/docs/providers/boat/)             | Experimental | None yet                              | Not yet tested against the live Boat service.                                                                            |
-| [Runloop](/docs/providers/runloop/)       | Experimental | None yet                              | Not yet tested against the live Runloop service; sign-ups are invitation only.                                           |
-| Modal                                     | Experimental | None yet                              | Not yet tested against the live Modal service.                                                                           |
+| Provider                                  | Status       | Passed live                             | Notes                                                                                                                                                                          |
+| ----------------------------------------- | ------------ | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| [boxd](/docs/providers/boxd/)             | Supported    | 12 features, last run November 11, 2026 | Live-tested across sandboxes, commands, files, pause/resume, previews, snapshots and volumes; egress allowlists, fork and servers in sandboxes were also checked live by hand. |
+| [Freestyle](/docs/providers/freestyle/)   | Supported    | 10 features, last run November 11, 2026 | Live-tested across sandboxes, commands, files, pause/resume, renewal, snapshots and public previews.                                                                           |
+| [Daytona](/docs/providers/daytona/)       | Supported    | 14 features, last run October 9, 2026   | Live-tested across sandboxes, commands, files, previews, snapshots and volumes.                                                                                                |
+| [E2B](/docs/providers/e2b/)               | Supported    | 11 features, last run October 9, 2026   | Live-tested across sandboxes, commands, files, previews, pause/resume and snapshots.                                                                                           |
+| [Vercel Sandbox](/docs/providers/vercel/) | Experimental | None yet                                | Not yet tested against the live Vercel service.                                                                                                                                |
+| [Boat](/docs/providers/boat/)             | Experimental | None yet                                | Not yet tested against the live Boat service.                                                                                                                                  |
+| [Runloop](/docs/providers/runloop/)       | Experimental | None yet                                | Not yet tested against the live Runloop service; sign-ups are invitation only.                                                                                                 |
+| [Archil](/docs/providers/archil/)         | Experimental | None yet                                | Checked by hand on the Free plan; not yet run through the live qualification suite.                                                                                            |
+| [exe.dev](/docs/providers/exe-dev/)       | Experimental | None yet                                | Checked by hand against the live exe.dev service; the qualification suite passed streaming and termination but has not yet completed the sandbox workflow.                     |
+| Modal                                     | Experimental | None yet                                | Not yet tested against the live Modal service.                                                                                                                                 |
 
 ## What has been tested live
 
-This table covers the supported providers. boxd, Vercel Sandbox, Boat, Runloop, and Modal are experimental; see the notes above and each provider's guide.
+This table covers the supported providers. Vercel Sandbox, Boat, Runloop, Archil, exe.dev, and Modal are experimental; see the notes above and each provider's guide.
 
-| Feature                               | Daytona         | E2B                  |
-| ------------------------------------- | --------------- | -------------------- |
-| Create, inspect and destroy sandboxes | Tested live     | Tested live          |
-| Pause and resume                      | Tested live     | Tested live          |
-| Protected HTTP previews               | Tested live     | Not supported        |
-| Public HTTP previews                  | Not supported   | Tested live          |
-| Stop a running command                | Tested live     | Tested live          |
-| Extend a sandbox's lifetime           | Tested live     | Tested live          |
-| Reconnect to a sandbox later          | Tested live     | Tested live          |
-| Run commands and capture output       | Tested live     | Tested live          |
-| Stream output and use terminals       | Tested live     | Tested live          |
-| Send input to a command               | Not tested live | Not tested live      |
-| Read and write files                  | Tested live     | Tested live          |
-| List, copy and move files             | Tested live     | Tested live          |
-| Build images                          | Not tested live | Not tested live      |
-| Block outbound network                | Not tested live | **Failed live test** |
-| Restore a snapshot with volumes       | Tested live     | Not supported        |
-| Snapshot and restore                  | Tested live     | Tested live          |
-| Create and delete volumes             | Tested live     | Not supported        |
-| Mount volumes                         | Tested live     | Not supported        |
+| Feature                               | boxd            | Freestyle       | Daytona         | E2B                  |
+| ------------------------------------- | --------------- | --------------- | --------------- | -------------------- |
+| Create, inspect and destroy sandboxes | Tested live     | Tested live     | Tested live     | Tested live          |
+| Pause and resume                      | Tested live     | Tested live     | Tested live     | Tested live          |
+| Protected HTTP previews               | Not supported   | Not supported   | Tested live     | Not tested live      |
+| Public HTTP previews                  | Tested live     | Tested live     | Not tested live | Tested live          |
+| Stop a running command                | Not tested live | Not tested live | Tested live     | Tested live          |
+| Extend a sandbox's lifetime           | Tested live     | Tested live     | Tested live     | Tested live          |
+| Reconnect to a sandbox later          | Tested live     | Tested live     | Tested live     | Tested live          |
+| Run commands and capture output       | Tested live     | Tested live     | Tested live     | Tested live          |
+| Stream output and use terminals       | Not supported   | Not tested live | Tested live     | Tested live          |
+| Send input to a command               | Tested live     | Tested live     | Not tested live | Not tested live      |
+| Read and write files                  | Tested live     | Tested live     | Tested live     | Tested live          |
+| List, copy and move files             | Tested live     | Tested live     | Tested live     | Tested live          |
+| Build images                          | Not supported   | Not supported   | Not tested live | Not tested live      |
+| Block outbound network                | Not tested live | Not tested live | Not tested live | **Failed live test** |
+| Restore a snapshot with volumes       | Not supported   | Not supported   | Tested live     | Not supported        |
+| Snapshot and restore                  | Tested live     | Tested live     | Tested live     | Tested live          |
+| Create and delete volumes             | Tested live     | Not supported   | Tested live     | Not supported        |
+| Mount volumes                         | Tested live     | Not supported   | Tested live     | Not supported        |
 
 ## Known limits
 
+**boxd**
+
+- A machine created from an OCI image gets its egress (`blocked` or an allowlist) a moment after it starts, so the image's own startup can briefly reach the internet. Restores and forks have their egress from the first boot.
+- Snapshots of machines with mounted disks are rejected, and restores keep the captured size.
+- Create-time `env` is unsupported; pass `exec({ env })` instead.
+- Anything a command leaves in the background stops when the command returns; use `processes.start()` and `detach()` for servers.
+- Disks survive destroy and must be deleted explicitly.
+
+**Freestyle**
+
+- No OCI images, volumes or regions; images are Freestyle snapshots of Ubuntu bases.
+- Egress allowlists match IPv4 ranges only, because Freestyle firewalls cannot match host names.
+- Protected previews are unsupported; public `style.dev` routes are open to anyone with the URL.
+- Commands and writes need a running VM; reads, listings and stat work on a paused VM without waking it.
+
 **Daytona**
 
-- Previews are protected only. The preview token also grants command and file access to the whole sandbox, so treat it as a credential.
+- Protected previews return a token that also grants command and file access to the whole sandbox, so treat it as a credential. Public previews are expiring signed links and have not been tested live.
 - The `daytona-default` network setting still allows some essential services, so it is not strict outbound blocking.
 - Snapshots capture the filesystem, not memory; running processes stop and restart.
 
@@ -58,7 +76,7 @@ This table covers the supported providers. boxd, Vercel Sandbox, Boat, Runloop, 
 
 - Do not rely on `network: "blocked"` for isolation. In our live test a blocked sandbox could still open direct IPv4 connections.
 - Volumes and volume mounts are not supported.
-- Previews are public only.
+- Protected previews return an `e2b-traffic-access-token` header; they have not been tested live yet.
 - File workflows were live-tested in `/home/user`; other paths and custom templates need their own checks.
 
 ## Runtimes
@@ -67,4 +85,4 @@ The SDK targets server-side Node.js and Bun. Packed package checks run the publi
 
 ## Evidence
 
-The [live test evidence](https://github.com/pandemicsyn/beachside/blob/main/packages/sdk-qualification/provider-qualification/LIVE-EVIDENCE.md) in the repository lists every recorded run with its date, SDK commit, image, region and network setting, plus the detailed caveats behind each cell above.
+The [live test evidence](https://github.com/beachside-compute/beachside/blob/main/packages/sdk-qualification/provider-qualification/LIVE-EVIDENCE.md) in the repository lists every recorded run with its date, SDK commit, image, region and network setting, plus the detailed caveats behind each cell above.

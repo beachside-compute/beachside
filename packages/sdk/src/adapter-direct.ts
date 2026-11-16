@@ -1,4 +1,25 @@
 import { withSandbox, type SandboxScopeOptions } from "./scoped-sandbox";
+import {
+  applySetup,
+  prepareSetup,
+  runOptions,
+  runSetupOn,
+  setupReportOf,
+  startupAfterResume,
+  wantsSetup,
+  type RunSetupOptions,
+  validateSetupEnv,
+  type SetupHost,
+} from "./setup-flow";
+import {
+  hasSetupKeys,
+  splitSetup,
+  validateSetupOptions,
+  type SetupCreateOptions,
+  type SetupReport,
+  type SetupRunOptions,
+  type SetupTarget,
+} from "./setup";
 import { connectionBudget, type ConnectionWaitOptions, type CloseOptions } from "./connection-wait";
 import {
   adapterFileLimit,
@@ -85,6 +106,9 @@ import {
   checkCreate,
   type Support,
   SnapshotRequest,
+  ForkRequest,
+  forkOptionProblem,
+  type ForkCapabilities,
   type SnapshotPlan,
   type CreatePlan,
   type DirectCapabilities,
@@ -190,9 +214,13 @@ function sealedReference(value: RecoveryReference): RecoveryReference {
 
   freezeReference(copy);
 
-  const createsResource = ["create", "image_build", "volume_create", "snapshot_restore"].includes(
-    copy.kind,
-  );
+  const createsResource = [
+    "create",
+    "image_build",
+    "volume_create",
+    "snapshot_restore",
+    "sandbox_fork",
+  ].includes(copy.kind);
 
   const artifactOperation = ["snapshot_delete", "volume_delete", "image_delete"].includes(
     copy.kind,
@@ -207,11 +235,13 @@ function sealedReference(value: RecoveryReference): RecoveryReference {
 
   const boundResource = ["snapshot_restore", "snapshot_delete"].includes(copy.kind)
     ? copy.resource?.kind === "snapshot"
-    : copy.kind === "volume_delete"
-      ? copy.resource?.kind === "volume"
-      : copy.kind === "image_delete"
-        ? copy.resource?.kind === "image"
-        : !copy.resource;
+    : copy.kind === "sandbox_fork"
+      ? copy.resource?.kind === "sandbox"
+      : copy.kind === "volume_delete"
+        ? copy.resource?.kind === "volume"
+        : copy.kind === "image_delete"
+          ? copy.resource?.kind === "image"
+          : !copy.resource;
 
   const boundLifecycle =
     ["sandbox_suspend", "sandbox_resume"].includes(copy.kind) === !!copy.lifecycle &&
@@ -238,11 +268,13 @@ function sealedReference(value: RecoveryReference): RecoveryReference {
 function assertRecoveryResourceKind(kind: string, resource?: ResourceReference): void {
   const expected = ["snapshot_restore", "snapshot_delete"].includes(kind)
     ? "snapshot"
-    : kind === "volume_delete"
-      ? "volume"
-      : kind === "image_delete"
-        ? "image"
-        : null;
+    : kind === "sandbox_fork"
+      ? "sandbox"
+      : kind === "volume_delete"
+        ? "volume"
+        : kind === "image_delete"
+          ? "image"
+          : null;
 
   if (expected && resource?.kind !== expected)
     throw new BeachsideError("INVALID_ARGUMENT", "Recovery resource kind differs from operation");
@@ -410,7 +442,7 @@ async function readWhileOpen<T>(client: AdapterDirectClient, work: Promise<T>): 
 export type AdapterCapabilities = DirectCapabilities;
 
 export type RecoveredOperation =
-  | OperationHandle<SandboxHandle<true>, "create" | "snapshot_restore">
+  | OperationHandle<SandboxHandle<true>, "create" | "snapshot_restore" | "sandbox_fork">
   | OperationHandle<SuspendResult, "sandbox_suspend">
   | OperationHandle<ResumeResult, "sandbox_resume">
   | OperationHandle<RenewResult, "sandbox_renew">
@@ -900,6 +932,7 @@ export class AdapterSandbox {
     this.#reference = reference ? freezeReference(reference) : null;
     instrument(this, "capabilities", client.telemetry, "beachside.capabilities");
     instrument(this, "checkSnapshot", client.telemetry, "beachside.snapshot.check");
+    instrument(this, "checkFork", client.telemetry, "beachside.sandbox.fork.check");
     instrument(this, "preview", client.telemetry, "beachside.sandbox.preview");
     instrument(this, "inspect", client.telemetry, "beachside.sandbox.inspect");
     instrument(this, "submitExec", client.telemetry, "beachside.exec.submit", {
@@ -1046,8 +1079,73 @@ export class AdapterSandbox {
       { ...options, sandboxId: this.id, sandboxReference: this.reference },
     );
   }
-  async resume(options: WaitOptions = {}): Promise<ResumeResult> {
-    return (await this.submitResume(options)).wait(options);
+  /**
+   * Resume a suspended sandbox. When it comes back without its processes (`execution: "fresh"`),
+   * the startup steps recorded by setup run again; pass `recordedStartup: "skip"` to leave them.
+   */
+  async resume(
+    options: WaitOptions & SetupRunOptions & { recordedStartup?: "run" | "skip" } = {},
+  ): Promise<ResumeResult> {
+    const { onSetupOutput, onSetupStep, setupTimeoutSeconds, recordedStartup, ...wait } = options;
+
+    const setupOptions = runOptions({ onSetupOutput, onSetupStep, setupTimeoutSeconds });
+
+    validateSetupOptions(setupOptions);
+    const result = await (await this.submitResume(wait)).wait(wait);
+
+    if (result.execution === "fresh" && recordedStartup !== "skip" && this.client.session.exec)
+      await startupAfterResume(this, this.setupHost(), setupOptions, wait.signal);
+
+    return result;
+  }
+  /** What setup did on this handle during create, restore, resume or `runSetup`, or null. */
+  get setupReport(): SetupReport | null {
+    return setupReportOf(this);
+  }
+  /**
+   * Run setup steps on this sandbox. Steps the sandbox already recorded, in the same order, are
+   * skipped unless `force`. A failure throws `SetupFailedError` and keeps the sandbox.
+   */
+  async runSetup(
+    input: Pick<SetupCreateOptions, "setup" | "startup"> & SetupRunOptions & RunSetupOptions,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<SetupReport> {
+    this.client.ensureOpen();
+
+    const { force, recordedStartup, record, env, runStartup, ...rest } = input;
+
+    validateSetupOptions(rest);
+
+    const extra: RunSetupOptions = { force: force ?? false };
+
+    if (env !== undefined) {
+      validateSetupEnv(env);
+      extra.env = { ...env };
+    }
+
+    if (recordedStartup !== undefined) extra.recordedStartup = recordedStartup;
+
+    if (record !== undefined) extra.record = record;
+
+    if (runStartup === false) extra.runStartup = false;
+
+    return runSetupOn(this, this.setupHost(), { ...rest, ...extra }, options.signal);
+  }
+  /** @internal How setup reaches this sandbox. */
+  setupHost(): SetupHost {
+    const session = this.client.session;
+
+    return {
+      streams: session.processes?.supports?.execCapture === "bytes" && !!session.processes.start,
+      target: (box) => {
+        const target: SetupTarget = { exec: (input, options) => box.exec(input, options) };
+
+        if (session.files?.write)
+          target.writeFile = (path, bytes, options) => box.writeFile(path, bytes, options);
+
+        return target;
+      },
+    };
   }
   async submitRenew(
     input?: RenewRequest,
@@ -1120,6 +1218,110 @@ export class AdapterSandbox {
     options: WaitOptions = {},
   ): Promise<SnapshotResult> {
     return (await this.submitSnapshot(request, options)).wait(options);
+  }
+  /**
+   * Fork this sandbox with the provider's native fork. The fork is a new sandbox that inherits
+   * the source's files (and, where the provider copies memory, its processes) and network
+   * policy. Providers without a native fork reject with UNSUPPORTED; Beachside never emulates a
+   * fork with a snapshot and restore.
+   */
+  async submitFork(
+    request: ForkRequest = {},
+    options: WaitOptions = {},
+  ): Promise<OperationHandle<SandboxHandle<true>, "sandbox_fork">> {
+    this.client.ensureOpen();
+    assertSignal(options.signal);
+    request = validateResourceInput(ForkRequest, request, "Invalid fork request");
+
+    const signal = AbortSignal.any([
+      this.client.signal,
+      ...(options.signal ? [options.signal] : []),
+    ]);
+
+    const plan = await this.checkForkWithSignal(request, signal);
+
+    if (plan.status === "unsupported") throw new UnsupportedFeatureError("fork", [plan.reason]);
+
+    if (plan.status !== "supported") throw new BeachsideError("UNAVAILABLE", plan.reason, "none");
+
+    // checkForkWithSignal reports a missing reference as unsupported.
+    const reference = this.reference!;
+    assertSignal(signal);
+
+    return this.client.submit(
+      "sandbox_fork",
+      { sandbox: { id: this.id, reference }, request },
+      (result, recovery) => {
+        if (
+          result.kind !== "completed" ||
+          !("id" in result.value) ||
+          result.value.state !== "running"
+        )
+          throw new OutcomeUnknownError(recovery);
+
+        return new AdapterSandbox(this.client, result.value.id, result.value.reference ?? null);
+      },
+      { ...options, resource: reference },
+    );
+  }
+  async fork(request: ForkRequest = {}, options: WaitOptions = {}): Promise<SandboxHandle<true>> {
+    return (await this.submitFork(request, options)).wait(options);
+  }
+  /**
+   * Whether this sandbox can fork natively with these options, without any effect. Beyond the
+   * declared options it runs the adapter's read-only fork checks against this source (its state,
+   * mounts, egress, merged labels), so `supported` means `fork()` would be sent.
+   */
+  async checkFork(request: ForkRequest = {}): Promise<Support<ForkCapabilities>> {
+    const signal = this.client.signal;
+    const plan = await this.checkForkWithSignal(request, signal);
+
+    if (plan.status !== "supported") return plan;
+
+    try {
+      await raceAbort(
+        prepareOperation(
+          this.client.session,
+          "sandbox_fork",
+          { sandbox: { id: this.id, reference: this.reference! }, request },
+          signal,
+        ),
+        signal,
+      );
+    } catch (error) {
+      if (!(error instanceof AdapterError)) throw error;
+
+      if (error.code === "UNSUPPORTED" || error.code === "INVALID_ARGUMENT")
+        return { status: "unsupported", reason: error.message };
+
+      if (["CONFLICT", "UNAVAILABLE", "CAPACITY"].includes(error.code))
+        return { status: "unavailable", reason: error.message };
+
+      throw new BeachsideError(error.code, error.message);
+    }
+
+    return plan;
+  }
+  private async checkForkWithSignal(
+    request: ForkRequest,
+    signal: AbortSignal,
+  ): Promise<Support<ForkCapabilities>> {
+    assertSignal(signal);
+    request = validateResourceInput(ForkRequest, request, "Invalid fork request");
+
+    if (!this.reference)
+      return { status: "unsupported", reason: "Fork needs a verified sandbox reference" };
+
+    const caps = await internalMethod(this.client.capabilities)(
+      { sandbox: sandboxInput(this.id, this.reference) },
+      { signal },
+    );
+
+    if (caps.fork.status !== "supported") return caps.fork;
+
+    const problem = forkOptionProblem(caps.fork.value.options, request);
+
+    return problem ? { status: "unsupported", reason: problem } : caps.fork;
   }
   capabilities(): Promise<AdapterCapabilities> {
     return internalMethod(this.client.capabilities)({
@@ -2268,6 +2470,7 @@ export class AdapterDirectClient {
               "sandbox_renew",
               "snapshot_capture",
               "snapshot_restore",
+              "sandbox_fork",
               "snapshot_delete",
               "volume_create",
               "volume_delete",
@@ -2323,6 +2526,7 @@ export class AdapterDirectClient {
             "image_build",
             "volume_create",
             "snapshot_restore",
+            "sandbox_fork",
             "snapshot_delete",
             "volume_delete",
             "image_delete",
@@ -2340,9 +2544,13 @@ export class AdapterDirectClient {
             "sandbox_renew",
           ].includes(checked.kind) &&
             !checked.sandboxId) ||
-          (["snapshot_restore", "snapshot_delete", "volume_delete", "image_delete"].includes(
-            checked.kind,
-          ) &&
+          ([
+            "snapshot_restore",
+            "sandbox_fork",
+            "snapshot_delete",
+            "volume_delete",
+            "image_delete",
+          ].includes(checked.kind) &&
             !checked.resource)
         )
           throw new BeachsideError("INVALID_ARGUMENT", "Observation sandbox binding is invalid");
@@ -2403,8 +2611,23 @@ export class AdapterDirectClient {
       get: (reference, options = {}) => this.reopenSandbox(reference, options),
       list: (input) => listSandboxes(this, input),
       checkCreate: (input) => this.checkCreate(input),
-      create: async (input, options = {}) =>
-        waitFor(this.telemetry, await internalMethod(this.submitCreate)(input, options), options),
+      create: async (input, options = {}) => {
+        const { setupOptions, rest } = splitSetup(input);
+
+        if (wantsSetup(setupOptions) && !this.session.exec)
+          throw new BeachsideError("UNSUPPORTED", "Setup needs exec, which this adapter lacks");
+        const resolved = await prepareSetup(setupOptions);
+
+        const box = await waitFor(
+          this.telemetry,
+          await internalMethod(this.submitCreate)(rest, options),
+          options,
+        );
+
+        if (!wantsSetup(setupOptions)) return box;
+
+        return applySetup(box, box.setupHost(), resolved, setupOptions, "created", options.signal);
+      },
       submitCreate: (input, options = {}) => this.submitCreate(input, options),
     };
     this.images = {
@@ -2490,7 +2713,8 @@ export class AdapterDirectClient {
     });
   }
   async checkCreate(input?: CreateInput): Promise<Support<CreatePlan>> {
-    return this.checkCreateWithSignal(input, this.signal);
+    // Setup does not change what the provider is asked for.
+    return this.checkCreateWithSignal(splitSetup(input).rest, this.signal);
   }
   private async checkCreateWithSignal(
     input: CreateInput | undefined,
@@ -2554,6 +2778,12 @@ export class AdapterDirectClient {
     input?: CreateInput,
     options: { signal?: AbortSignal } = {},
   ): Promise<OperationHandle<SandboxHandle<true>, OperationKind>> {
+    if (hasSetupKeys(input))
+      throw new BeachsideError(
+        "INVALID_ARGUMENT",
+        "Setup runs with sandboxes.create() or sandboxes.with(); after submitCreate(), call box.runSetup()",
+      );
+
     const request = validateCreate(
       input,
       this.session.defaultImage,
@@ -2901,6 +3131,19 @@ export class AdapterDirectClient {
       return checked;
     }
 
+    if (checked.kind === "sandbox_fork") {
+      if (checked.sandbox)
+        assertSandboxReference(
+          checked.sandbox,
+          sandboxReference(this.provider, this.scope, checked.sandbox.nativeId, {
+            operation: reference.operationId,
+            submission: reference.submissionId,
+          }),
+        );
+
+      return checked;
+    }
+
     if (checked.kind === "snapshot_restore") {
       if (JSON.stringify(checked.mounts) !== JSON.stringify(reference.mounts ?? []))
         throw asUnknown(reference, "Provider partial restore selections differ");
@@ -2993,9 +3236,13 @@ export class AdapterDirectClient {
       );
 
     if (
-      ["snapshot_restore", "snapshot_delete", "volume_delete", "image_delete"].includes(
-        reference.kind,
-      ) &&
+      [
+        "snapshot_restore",
+        "sandbox_fork",
+        "snapshot_delete",
+        "volume_delete",
+        "image_delete",
+      ].includes(reference.kind) &&
       !reference.resource
     )
       throw new BeachsideError("INVALID_ARGUMENT", "Recovery resource is missing");
@@ -3038,6 +3285,7 @@ export class AdapterDirectClient {
         "image_build",
         "volume_create",
         "snapshot_restore",
+        "sandbox_fork",
         "snapshot_delete",
         "volume_delete",
         "image_delete",
@@ -3090,6 +3338,7 @@ export class AdapterDirectClient {
           "snapshot_capture",
         );
       case "snapshot_restore":
+      case "sandbox_fork":
       case "create":
         return new AdapterOperation(
           this,
@@ -3097,7 +3346,7 @@ export class AdapterDirectClient {
           (result, ref) => {
             const value = completed(result, ref);
 
-            if (!("id" in value) || (ref.kind === "snapshot_restore" && value.state !== "running"))
+            if (!("id" in value) || (ref.kind !== "create" && value.state !== "running"))
               throw asUnknown(ref);
 
             if (

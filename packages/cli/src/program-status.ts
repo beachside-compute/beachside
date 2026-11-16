@@ -1,25 +1,33 @@
 import type { Env } from "./config";
 
 /**
- * Program Status Protocol (OSC 7501) reports, so terminals such as Rex can show a command's
- * state on its tab: `ESC ] 7501 ; state=working:app=beachside:msg=<base64> ESC \`.
+ * Program Status Protocol (OSC 7501) reports, so terminals such as Rex and Herdr can show a
+ * command's state on its tab: `ESC ] 7501 ; state=working:app=beachside:msg=<base64> ESC \`.
  *
  * Reports go to stderr and only to a terminal, so piped output and `--json` stay byte-clean.
- * `BEACHSIDE_PROGRAM_STATUS=on|off` overrides the default, which reports inside Rex only.
+ * `BEACHSIDE_PROGRAM_STATUS=on|off` overrides the default, which reports inside Rex and inside
+ * herdr-core terminals (the Herdr app) only.
  */
 export type ProgramState = "working" | "done" | "error";
 
 export type ProgramStatus = {
-  report(state: ProgramState, message: string): void;
+  /** `progress` is a whole percentage for a `working` report; absent means indeterminate. */
+  report(state: ProgramState, message: string, progress?: number): void;
+  /** A desktop notification (OSC 777), for a long command that has finished. */
+  notify(title: string, body: string): void;
 };
 
-/** The record id, so a program in the sandbox reporting its own root record never replaces ours. */
-const id = "beachside";
+/**
+ * Rex takes the record id `beachside`, so a program in the sandbox reporting its own root record
+ * never replaces ours. herdr-core shows only the root record, so everywhere else the report is
+ * the root.
+ */
+const rexRecord = "beachside";
 
 /** The protocol allows 2048 decoded bytes; one short line is all a tab or picker shows. */
 const maxMessageBytes = 512;
 
-export const silentStatus: ProgramStatus = { report: () => {} };
+export const silentStatus: ProgramStatus = { report: () => {}, notify: () => {} };
 
 export function programStatus(
   env: Env,
@@ -27,15 +35,70 @@ export function programStatus(
   write: (text: string) => void,
 ): ProgramStatus {
   const setting = env.BEACHSIDE_PROGRAM_STATUS?.toLowerCase();
-  const wanted = setting === "on" || (setting !== "off" && Boolean(env.REX_SESSION));
+  const rex = Boolean(env.REX_SESSION);
+  const herdr = Boolean(env.HC_TERMINAL_ID);
+  const wanted = setting === "on" || (setting !== "off" && (rex || herdr));
 
   if (!wanted || !terminal) return silentStatus;
 
-  return { report: (state, message) => write(sequence(state, message)) };
+  const id = rex ? rexRecord : undefined;
+
+  return {
+    report: (state, message, progress) => write(sequence(state, message, progress, id)),
+    notify: (title, body) => write(notification(title, body)),
+  };
 }
 
-export function sequence(state: ProgramState, message: string): string {
-  return `\x1b]7501;state=${state}:id=${id}:app=beachside:msg=${encode(message)}\x1b\\`;
+/** One report; `id` names a secondary record, and without it the report is the root record. */
+export function sequence(
+  state: ProgramState,
+  message: string,
+  progress?: number,
+  id?: string,
+): string {
+  const percent =
+    state === "working" && progress !== undefined
+      ? `:progress=${Math.max(0, Math.min(100, Math.floor(progress)))}`
+      : "";
+
+  const record = id ? `:id=${id}` : "";
+
+  return `\x1b]7501;state=${state}${record}:app=beachside${percent}:msg=${encode(message)}\x1b\\`;
+}
+
+/** OSC 777 desktop notification. Fields are plain text, so `;` and control characters go. */
+export function notification(title: string, body: string): string {
+  return `\x1b]777;notify;${plain(title)};${plain(body)}\x1b\\`;
+}
+
+/**
+ * Report a transfer's progress as bytes go by: one `working` report each time the whole
+ * percentage changes. It stays below 100 until the caller reports the final state, since
+ * `total` is an estimate (tar headers and padding add a little).
+ */
+export function meter(
+  status: ProgramStatus,
+  message: string,
+  total: number,
+): (bytes: number) => void {
+  let sent = 0;
+  let shown = -1;
+
+  return (bytes) => {
+    sent += bytes;
+    const percent = total > 0 ? Math.min(99, Math.floor((sent / total) * 100)) : 0;
+
+    if (percent === shown) return;
+    shown = percent;
+    status.report("working", message, percent);
+  };
+}
+
+function plain(text: string): string {
+  return Array.from(text, (char) => (isControl(char.codePointAt(0)!) || char === ";" ? " " : char))
+    .join("")
+    .trim()
+    .slice(0, 256);
 }
 
 /** Base64 of one line: control characters would make the terminal discard the whole report. */

@@ -1,0 +1,19 @@
+---
+import DefaultFooter from "@astrojs/starlight/components/Footer.astro";
+import AnalyticsConsent from "./AnalyticsConsent.astro";
+
+const year = new Date().getFullYear();
+
+const isDocs = Astro.url.pathname === "/docs" || Astro.url.pathname.startsWith("/docs/");
+---
+
+<DefaultFooter />
+<p class="docs-copyright">© {year} Beachside Compute</p>
+<style>
+  .docs-copyright {
+    margin-top: 1.5rem;
+    font-size: var(--sl-text-xs);
+    color: var(--sl-color-gray-3);
+  }
+</style>
+{isDocs && <AnalyticsConsent />}

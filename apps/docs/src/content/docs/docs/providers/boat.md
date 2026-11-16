@@ -12,7 +12,7 @@ import { boatAdapter } from "@beachside/boat";
 const client = await Beachside.connect({
   adapter: boatAdapter,
   credentials: { apiKey: process.env.BOAT_API_KEY! },
-  config: { network: "internet" },
+  config: {},
 });
 try {
   const box = await client.sandboxes.create();
@@ -28,13 +28,13 @@ try {
 
 Create an API key in the Boat dashboard. `connect` verifies it with `GET /me` and scopes everything to that account id. Sandboxes made by other members of a Boat organization are outside the scope: inspect, reopen and inventory reject or skip them.
 
-The package also exports `boat()`, which takes credentials and config in one object and returns an adapter you pass straight to `Beachside.connect`: `Beachside.connect(boat({ apiKey, network: "internet" }))`. It is the same setup; use whichever reads better.
+The package also exports `boat()`, which takes credentials and config in one object and returns an adapter you pass straight to `Beachside.connect`: `Beachside.connect(boat({ apiKey }))`. It is the same setup; use whichever reads better.
 
 ## Setup
 
 | Setting                     | Default        | Notes                                                                                                                                                                                                                         |
 | --------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `network`                   | required       | Must be `"internet"`. Boat has no provider-level egress controls, so blocked or allowlisted creates fail before anything is allocated.                                                                                        |
+| `network`                   | `internet`     | The only value. Boat has no provider-level egress controls, so blocked or allowlisted creates fail before anything is allocated.                                                                                              |
 | `image`                     | `ubuntu-24.04` | Boat's stock Ubuntu 24.04 machine. Any other value is a Boat named snapshot (`my-base`) or a `bsh_` share code, sent as `from`. OCI images are unsupported.                                                                   |
 | `resources`                 | `default` type | Minimum `{ vcpus, memoryMiB }`. Picks the smallest of `small` (2 vCPU, 4 GiB), `default` (4, 8 GiB), `large` (8, 16 GiB) or `xlarge` (16, 32 GiB; plan-dependent). Deprecated alias: `machine`.                               |
 | `environment`               | none           | Name of a Boat environment to attach. **Omitted, sandboxes start with `noEnv`: none of your account's variables, secret files or logins.** Name an environment only for code you trust with them.                             |
@@ -47,16 +47,17 @@ Boat runs sandboxes in the EU (Germany, Finland, France) and does not let you pi
 
 Everything below is tested on every change, using the real Boat client against a simulated API. **No live Boat run has been made yet.**
 
-| Feature           | Support                                                                                                                                                              | Live tested |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| Compute lifecycle | Create with an `Idempotency-Key`, inspect, inventory, reference reopening, and destroy by permanent delete with confirmed teardown.                                  | No          |
-| Commands          | argv and shell, with `cwd` and `env`; exact stdout/stderr bytes up to 1 MiB per stream; finite byte stdin; deadlines up to 600 seconds.                              | No          |
-| Streaming output  | Live stdout/stderr as UTF-8 text from detached commands, with no 600-second cap; stop with `terminate()`. No byte output.                                            | No          |
-| Files             | Binary read and overwrite write up to 5 MiB, under `/home/user` or `/tmp`. No-clobber writes are unsupported.                                                        | No          |
-| Suspend/resume    | `suspend()` archives the disk and stops the machine; `resume()` restores the disk onto a fresh machine. Memory, processes and connections are not kept.              | No          |
-| Renewal           | `renew()` sets a new auto-stop window of 60 seconds to 30 days.                                                                                                      | No          |
-| Snapshots         | Capture the disk of a running or archived sandbox as a named snapshot; inspect, list, restore onto a fresh machine and delete. See below.                            | No          |
-| Unsupported       | Fork, snapshot sharing, restore size overrides, volumes, previews, piped input, byte streaming, terminals, directory operations, blocked egress, regions and labels. | —           |
+| Feature           | Support                                                                                                                                                                                  | Live tested |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| Compute lifecycle | Create with an `Idempotency-Key`, inspect, inventory, reference reopening, and destroy by permanent delete with confirmed teardown.                                                      | No          |
+| Commands          | argv and shell, with `cwd` and `env`; exact stdout/stderr bytes up to 1 MiB per stream; finite byte stdin; deadlines up to 600 seconds.                                                  | No          |
+| Streaming output  | Live stdout/stderr as UTF-8 text from detached commands, with no 600-second cap; stop with `terminate()`. No byte output.                                                                | No          |
+| Files             | Binary read and overwrite write up to 5 MiB, under `/home/user` or `/tmp`. No-clobber writes are unsupported.                                                                            | No          |
+| Suspend/resume    | `suspend()` archives the disk and stops the machine; `resume()` restores the disk onto a fresh machine. Memory, processes and connections are not kept.                                  | No          |
+| Renewal           | `renew()` sets a new auto-stop window of 60 seconds to 30 days.                                                                                                                          | No          |
+| Snapshots         | Capture the disk of a running or archived sandbox as a named snapshot; inspect, list, restore onto a fresh machine and delete. See below.                                                | No          |
+| Previews          | `preview(port)` hosts the port on an ungated Boat HTTPS URL; anyone holding the URL can open it. Boat's token-gated URLs are not used, because they carry the token in the query string. | No          |
+| Unsupported       | Fork, snapshot sharing, restore size overrides, volumes, protected previews, piped input, byte streaming, terminals, directory operations, blocked egress, regions and labels.           | —           |
 
 ## Snapshots
 
@@ -86,4 +87,15 @@ Beachside sends each mutation once; the generated client and the adapter add no 
 
 If provisioning outlasts the in-call wait, the sandbox id is already saved and Beachside finishes by reading its state. If a create ends `cancelled` or `error`, the error's `outcome.sandbox` holds the reference so you can inspect or destroy it.
 
-See the [provider research issue](https://github.com/pandemicsyn/beachside/issues/40), [Boat API docs](https://docs.boat.dev/api/v1) and [TypeScript SDK docs](https://docs.boat.dev/sdks/typescript).
+## Limits
+
+- Not yet tested against the live Boat service.
+- No blocked egress: sandboxes always reach the internet.
+- No fork, volumes, protected previews, piped input, byte streaming, terminals, directory operations, regions or labels.
+- Command deadlines go up to 600 seconds; run longer work as a streamed process.
+- Files are limited to 5 MiB, under `/home/user` or `/tmp`, and no-clobber writes are unsupported.
+- Suspend archives the disk only; memory, processes and connections are lost.
+- Previews are public: anyone with the URL can open the port.
+- Named snapshots count toward your Boat plan's allowance and survive the sandbox, so delete them when done.
+
+See the [provider research issue](https://github.com/beachside-compute/beachside/issues/40), [Boat API docs](https://docs.boat.dev/api/v1) and [TypeScript SDK docs](https://docs.boat.dev/sdks/typescript).

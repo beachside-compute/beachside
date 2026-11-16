@@ -3,7 +3,7 @@ title: Command line
 description: Create, use and clean up sandboxes on any Beachside provider from your shell or your agent.
 ---
 
-`beachside` creates and manages sandboxes from the command line, on any provider with a Beachside adapter. It is built for coding agents first: it never prompts, every command has a stable `--json` form, and exit codes say what to do next. People get readable output by default.
+`beachside` creates and manages sandboxes from the command line, on any provider with a Beachside adapter. It is built for coding agents first: it never prompts for input, every command has a stable `--json` form, and exit codes clearly indicate what to do next. People get readable output by default.
 
 ## Install
 
@@ -14,9 +14,9 @@ npm install -g @beachside/cli
 beachside adapter add e2b
 ```
 
-The CLI runs on Node.js or Bun; `beachside adapter` uses npm to install. `beachside adapter add` takes one or more provider ids (`daytona`, `e2b`, `vercel`, `boxd`, `modal`, `runloop`, `boat`) and installs each official adapter at the same version as the CLI, so the two always match. It then imports the package to check that the adapter is there. Running it again with nothing to change skips npm, so it is safe in CI setup steps. `beachside adapter ls` shows what is installed and flags an official adapter whose version differs from the CLI's; `beachside adapter rm e2b` removes one.
+The CLI runs on Node.js or Bun; `beachside adapter` uses npm to install. `beachside adapter add` takes one or more provider ids (`boxd`, `freestyle`, `daytona`, `e2b`, `vercel`, `modal`, `runloop`, `archil`, `exe-dev`, `boat`) and installs each official adapter at the same version as the CLI, so the two always match. It then imports the package to check that the adapter is there. Running it again with nothing to change skips npm, so it is safe in CI setup steps. `beachside adapter ls` shows what is installed and flags an official adapter whose version differs from the CLI's; `beachside adapter rm e2b` removes one.
 
-`beachside providers` lists the official adapters, whether each is installed and which credentials are missing.
+`beachside providers` lists the official adapters, whether each is installed, which credentials are missing and where to get them, and the profiles that use each one.
 
 ## Quick start
 
@@ -24,7 +24,7 @@ Pick a provider with environment variables, check the setup, then work:
 
 ```sh
 export BEACHSIDE_PROVIDER=e2b E2B_API_KEY=...
-beachside doctor                                  # checks config and credentials; creates nothing
+beachside doctor                                  # checks the config and that the provider accepts the key; creates nothing
 
 beachside create --name web
 beachside cp ./app.py web:/home/user/app.py
@@ -72,7 +72,7 @@ beachside gc --label run=$GITHUB_RUN_ID
 beachside gc --label ci=true --older-than 2h --dry-run
 ```
 
-`gc` destroys every listed sandbox whose labels match all the `--label` pairs, and drops any store record for it. `--older-than` keeps sandboxes the provider says are younger than that, and skips ones without a reported creation time. `--dry-run` shows what would go. At least one `--label` is required, so `gc` never sweeps an account by age alone. Sandboxes the provider lists without a reopenable reference (Modal) and sandboxes adopted into the store are skipped and reported. boxd, Runloop and Boat keep no labels, so `gc` finds nothing there. On every provider, `--ttl` stays the backstop: the provider removes a sandbox when its lifetime ends even if nothing runs `gc`.
+`gc` destroys every listed sandbox whose labels match all the `--label` pairs, and drops any store record for it. `--older-than` keeps sandboxes the provider says are younger than that, and skips ones without a reported creation time. `--dry-run` shows what would go. At least one `--label` is required, so `gc` never sweeps an account by age alone. Sandboxes the provider lists without a reopenable reference (Modal) and sandboxes adopted into the store are skipped and reported. Boat keeps no labels, so `gc` finds nothing there. On every provider, `--ttl` stays the backstop: the provider removes a sandbox when its lifetime ends even if nothing runs `gc`.
 
 ## Commands and arguments
 
@@ -100,7 +100,7 @@ beachside run --snapshot deps --cwd /work/app -- npm test
 
 `snapshot create <sandbox>` captures a sandbox from the store and records the snapshot under `--name` (default `<sandbox>-snap`). What it keeps, files only or memory too, and whether the source pauses during capture depend on the provider and the profile's `snapshots.preserve`; the command prints both. A provider that cannot capture fails with exit 4 before anything happens.
 
-`create --snapshot <name>` and `run --snapshot <name>` start a sandbox from a recorded snapshot, on the profile that captured it. The snapshot fixes the image, so `--image`, `--prepared` and `--build` do not apply. `--env`, `--label` and `--ttl` work as on any create, for example to pass a CI job its secrets. A provider that can't apply one of them on restore fails with exit 4 before anything is created: Boat and boxd take only `--ttl`, Runloop takes `--env` and `--ttl`, and Daytona and E2B take `--env` only for filesystem snapshots, because a memory snapshot resumes its processes with the environment they had.
+`create --snapshot <name>` and `run --snapshot <name>` start a sandbox from a recorded snapshot, on the profile that captured it. The snapshot fixes the image, so `--image`, `--prepared` and `--build` do not apply. `--env`, `--label` and `--ttl` work as on any create, for example to pass a CI job its secrets. A provider that can't apply one of them on restore fails with exit 4 before anything is created: Boat and boxd take only `--ttl`, Runloop takes `--env`, `--label` and `--ttl` (`--ttl` only when the profile sets no `idleSeconds`), and Daytona and E2B take `--env` only for filesystem snapshots, because a memory snapshot resumes its processes with the environment they had.
 
 To refresh a snapshot, capture it again with `snapshot create <sandbox> --name <name> --replace`. The record keeps the old snapshot until the new one exists, then the old one is deleted. A snapshot still in use by a running sandbox can't be deleted; the command says so and leaves it on the provider.
 
@@ -132,11 +132,57 @@ Add `--json`, or set `BEACHSIDE_JSON=1`, and stdout holds exactly one JSON docum
 
 The [command reference](/docs/cli/reference/) lists every exit code, and `beachside schema` prints all commands, flags and exit codes as JSON.
 
+## Servers in a sandbox
+
+`--with` installs a server in a new sandbox and puts it on your [Tailscale](https://tailscale.com) tailnet, so you can open it from your own machine without a public port:
+
+```sh
+export TAILSCALE_AUTH_KEY=...   # reusable, ephemeral, tagged tag:beachside
+beachside create --name web --with rex
+beachside create --name dev --with herdr
+```
+
+| Server  | What you get                                                                                                                  |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `rex`   | A [Rex](https://www.superlogical.com/rex/docs) server on Rex's own Tailscale. Add its `https://` address in Rex.              |
+| `herdr` | A Tailscale SSH device for [Herdr](https://herdr.dev). Run the printed `hc machine add …` command to add it to the Herdr app. |
+
+`create` prints how to connect when it finishes, and `inspect` shows it again. `--with` implies `--network internet`, because the sandbox downloads the server and reaches Tailscale. The tailnet setup is the same for both: see [Set up Tailscale once](/docs/cli/rex/#set-up-tailscale-once). Devices are named `beachside-<sandbox>`, and `rm` logs each device out of your tailnet before the sandbox goes, so it doesn't linger offline. If setup fails after the sandbox exists, `create` exits 8 and keeps the sandbox, so you can look inside or remove it.
+
+herdr connects over Tailscale SSH, so it also needs an `ssh` rule in your tailnet policy:
+
+```json
+"ssh": [
+  {
+    "action": "accept",
+    "src": ["autogroup:member"],
+    "dst": ["tag:beachside"],
+    "users": ["autogroup:nonroot", "root"]
+  }
+]
+```
+
+The printed command adds the sandbox to herdr-core, the server behind the Herdr app, as a short-lived machine named after the sandbox:
+
+```sh
+hc machine add boxd@beachside-dev.<your-tailnet>.ts.net --temp --install --name dev
+```
+
+`hc machine add` prints the machine's name. It is the sandbox's name unless herdr-core refuses it (over 32 characters, or shaped like a terminal id such as `t14`), in which case `create` leaves out `--name` and herdr-core names it after the device, adding a number if that name is taken. The sandbox's spaces and agents then show up in the Herdr sidebar under that name, and `hc run --on dev …` starts terminals there. They keep running while your laptop sleeps or the app is closed. `--install` puts `hc` in the sandbox on the first connect: your own build when the OS and CPU match, otherwise that version's release.
+
+On the first connect, ssh asks you to accept the device's host key. `create` prints that key's fingerprint, read inside the sandbox over your provider rather than over the network, so compare the two and answer `yes` if they match. Recent OpenSSH asks `(yes/no/[fingerprint])`, and pasting the printed fingerprint there accepts the key only if it matches. `--json` lists the device's keys as `known_hosts` lines in `data.addons[].knownHosts`. Beachside makes any host key the sandbox's `/etc/ssh` lacks with `ssh-keygen` before Tailscale starts; in a sandbox without `ssh-keygen`, Tailscale makes its own and `create` prints no fingerprint. The fingerprint shows you reached the sandbox's keys, not which sandbox: the default boxd, E2B and Freestyle images ship host keys made when the image was built, so sandboxes from one image can show the same fingerprint.
+
+Don't pin a fingerprint or carry one over from another sandbox. Host keys change when a provider rebuilds its image, when a sandbox is restored, or when something in the sandbox makes new ones, so compare against what Beachside reads for this sandbox now. `beachside inspect dev` reads a running sandbox's keys again and says if they changed since `create`. If ssh then warns that the host identification changed, check the new fingerprint with `inspect` before you drop the old entry with `ssh-keygen -R <address>`.
+
+After `beachside rm dev` (or `gc`), Herdr still lists the machine, and ssh still has the host key you accepted. `rm` and `gc` print the `hc machine rm <name>` that forgets it, looking the name up with `hc machine ls` by its address, and the `ssh-keygen -R <address>` that drops the old key, so a new sandbox with the same name isn't refused as a changed host.
+
+On [Herdr TUI](https://herdr.dev/tui), run `herdr --remote ssh://<same user@address>` instead. It asks you to accept the same host key (compare the printed fingerprint) and to install its server in the sandbox.
+
 ## Status on terminal tabs
 
-Inside [Rex](https://www.superlogical.com/rex/docs/build/program-status), commands that create, change or wait on sandboxes (`create`, `run`, `exec`, `sh`, `rm`, `gc`, `cp`, `push`, `image build`, `snapshot create`, and others) show their progress on the terminal tab: a spinner while they work, then done or failed. `run` also says which step it is on: pushing files, running the command, or destroying the sandbox.
+Inside [Rex](https://www.superlogical.com/rex/docs/build/program-status) and the [Herdr app](https://herdr.dev), commands that create, change or wait on sandboxes (`create`, `run`, `exec`, `sh`, `rm`, `gc`, `cp`, `push`, `image build`, `snapshot create`, and others) show their progress on the terminal tab: a spinner while they work, then done or failed. `run` also says which step it is on: pushing files, running the command, or destroying the sandbox. `cp` and `push` into a sandbox show a progress bar while the files upload. When `run`, `exec` or `sh` finishes after more than 30 seconds, you also get a desktop notification.
 
-The CLI reports this with the Program Status Protocol (OSC 7501), written to stderr only when stderr is a terminal, so `--json` and piped output are unchanged. Set `BEACHSIDE_PROGRAM_STATUS=on` to report in other terminals that support the protocol, or `off` to turn it off in Rex.
+The CLI reports this with the Program Status Protocol (OSC 7501), written to stderr only when stderr is a terminal, so `--json` and piped output are unchanged. Set `BEACHSIDE_PROGRAM_STATUS=on` to report in other terminals that support the protocol, or `off` to turn it off in Rex and Herdr. Notifications use OSC 777. Set `BEACHSIDE_NOTIFY_AFTER` to a number of seconds to change when they appear, or to `off` to stop them.
 
 To run a Rex server inside a sandbox and open it from your Mac, see [Remote workspace with Rex](/docs/cli/rex/).
 
@@ -147,3 +193,7 @@ To run a Rex server inside a sandbox and open it from your Mac, see [Remote work
 Sandboxes cost money while they run. `run` and `rm` are the tools for keeping that bounded; `beachside ls` shows anything left behind.
 
 As a backstop for a job that is killed before it can clean up, `create --ttl <duration>` and `run --ttl <duration>` (like `30m` or `2h`) set how long the provider keeps that sandbox before removing it. Without `--ttl`, the profile's `lifecycle.lifetimeSeconds` applies, 15 minutes by default. Keep it longer than `--timeout` for long commands. A provider that cannot apply the value rejects it before creating anything.
+
+## Privacy
+
+**The Beachside SDK does not track your usage.** Only the CLI sends basic usage telemetry, enabled by default outside CI. You can turn it off with `beachside telemetry disable` or `BEACHSIDE_TELEMETRY=0`. See [Privacy](/docs/privacy/) for what is collected and the available controls.

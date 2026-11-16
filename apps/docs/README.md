@@ -14,11 +14,13 @@ bun run --cwd apps/docs dev
 
 `docs:check` builds public workspace packages, checks Astro content and TypeScript examples, validates Markdown routes and anchors, checks generated TypeScript and provider evidence, builds the static site and Pagefind index, checks output, and runs SDK quickstart flows against temporary fake provider processes. The fake is a simulation only.
 
-## Cloudflare Workers Static Assets
+## Cloudflare Worker and static assets
 
-`wrangler.jsonc` points at `./dist` and configures `404-page` fallback. There is no Worker entry point. To inspect routing locally after a build, use a Wrangler 4 installation and run `wrangler dev --config apps/docs/wrangler.jsonc` from the repository root (or run it in `apps/docs` with `--config wrangler.jsonc`). Unknown paths should return HTTP 404 with the generated `404.html`.
+`wrangler.jsonc` points at `./dist` and configures `404-page` fallback. A small Worker (`worker/index.ts`) sits in front of the assets: it answers `POST /api/beta-signup` and hands every other request to the `ASSETS` binding. The signup route accepts only requests from the site's origins, rate limits each client IP through the `SIGNUP_LIMITER` binding, and adds the email to the Resend 1.0 beta segment. It reads `RESEND_API_KEY` from the Cloudflare Secrets Store binding and answers 503 until that secret exists. Tests: `bun test apps/docs/worker`.
 
-The `beachside-docs` Worker serves `beachside.run` and `www.beachside.run`; both are bound as custom domains in `wrangler.jsonc`, so a deploy keeps them attached. Pages canonicalize to `https://beachside.run/`.
+To inspect routing locally after a build, use a Wrangler 4 installation and run `wrangler dev --config apps/docs/wrangler.jsonc` from the repository root (or run it in `apps/docs` with `--config wrangler.jsonc`). Unknown paths should return HTTP 404 with the generated `404.html`.
+
+The Worker keeps its original name, `sandbar-docs`. It serves `beachside.run`, `beachside.sh`, `sandbarsdk.dev` and their `www.` hosts; all are bound as custom domains in `wrangler.jsonc`, so a deploy keeps them attached. Pages canonicalize to `https://beachside.run/`.
 
 `.github/workflows/docs-deploy.yml` deploys on pushes to `main` that change `apps/docs/**`, `bun.lock` or the workflow itself, and can be run manually. It reruns `bun run docs:check` before `wrangler deploy`. It reads `CLOUDFLARE_API_TOKEN` (Workers Scripts edit and Workers Custom Domains/Zone edit for `beachside.run`) and `CLOUDFLARE_ACCOUNT_ID` from the protected `production` GitHub environment. Pull request checks only build and test; they receive no deployment credentials. Preview deployments, if introduced, should use `noindex` and must not publish an unmerged stack to the canonical domain. The canonical site is public: `robots.txt` allows all crawlers and lists the sitemap, and the dist check rejects `noindex` on any page.
 

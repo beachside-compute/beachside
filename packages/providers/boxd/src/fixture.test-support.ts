@@ -1,3 +1,4 @@
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { execFile } from "node:child_process";
 import { z } from "zod";
@@ -15,13 +16,14 @@ import {
   type ServerUnaryCall,
   type sendUnaryData,
 } from "@grpc/grpc-js";
-import { AccountNamespace, Disks, Machines, Orgs, Snapshots } from "@boxd-sh/sdk";
+import { AccountNamespace, Disks, Machines, Orgs, Regions, Snapshots } from "@boxd-sh/sdk";
 import { createNativeClient, type CallContext } from "./transport";
 
 type Transport = ConstructorParameters<typeof Machines>[0];
 
 const Request = z.object({
   vmId: z.string().default(""),
+  sourceVmId: z.string().default(""),
   vm: z.string().default(""),
   snapshot: z.string().default(""),
   enabled: z.boolean().default(false),
@@ -33,6 +35,15 @@ const Request = z.object({
   deleteAfterSecs: z.number().default(0),
   sizeBytes: z.number().default(0),
   data: z.instanceof(Uint8Array).default(() => new Uint8Array()),
+  labels: z.record(z.string(), z.string()).default({}),
+  entries: z.array(z.string()).default([]),
+  spec: z
+    .object({
+      isolated: z.boolean().default(false),
+      labels: z.record(z.string(), z.string()).default({}),
+      egress: z.array(z.string()).default([]),
+    })
+    .optional(),
   config: z
     .object({
       vcpu: z.number().default(0),
@@ -59,7 +70,9 @@ type MachineRecord = {
   deleteAtMs: number;
   botProtection: boolean;
   proxies: { name: string; port: number }[];
-  sourceInfo?: { kind: string; name: string; version: number; id: string };
+  egressAllow: string[];
+  labels: Record<string, string>;
+  sourceInfo?: { kind: string; name: string; version: number | null; id: string };
   /** Epoch seconds; boxd reports 0 for machines without a recorded creation time. */
   createdAt?: number;
 };
@@ -79,6 +92,8 @@ type SnapshotRecord = {
   createdAt: number;
   updatedAt: number;
   useCount: number;
+  /** The source's labels at save time, which a restore inherits. */
+  labels: Record<string, string>;
 };
 
 type DiskRecord = {
@@ -157,14 +172,18 @@ async function methods() {
     disks = new Disks(capture),
     account = new AccountNamespace(capture),
     orgs = new Orgs(capture),
+    regions = new Regions(capture),
     snapshots = new Snapshots(capture);
 
   await Promise.allSettled([
     account.get(),
     account.config(),
     orgs.list(),
+    regions.list(),
+    machines.setEgressAllow("id", []),
     machines.create({ image: "ubuntu:24.04" }),
     machines.create({ fromSnapshot: "snapshot" }),
+    machines.fork("id"),
     snapshots.create("id", "snapshot"),
     snapshots.get("snapshot"),
     snapshots.list(),
@@ -193,7 +212,7 @@ async function methods() {
 
 export async function boxdFixture() {
   const effects = { create: 0, destroy: 0, release: 0 };
-  const calls: Array<{ method: string; request: unknown }> = [];
+  const calls: Array<{ method: string; request: unknown; regional?: boolean }> = [];
   const machines = new Map<string, MachineRecord>();
   const disks = new Map<string, DiskRecord>();
   const snapshots = new Map<string, SnapshotRecord>();
@@ -231,6 +250,20 @@ export async function boxdFixture() {
   let wrongGetId = false;
   let failLifecycleRead = false;
   let downloadChunks: Uint8Array[] | undefined;
+  let egressFailure: "lose" | "reject" | undefined;
+  /** An older boxd ignores create-time timers and answers without the machine. */
+  let ignoreTimers = false;
+  const restoreSpecs: unknown[] = [];
+  const timer = (seconds: number) => (seconds && !ignoreTimers ? Date.now() + seconds * 1000 : 0);
+
+  const answered = (id: string) => {
+    const machine = machines.get(id);
+
+    return machine && !ignoreTimers ? { ...machine } : undefined;
+  };
+
+  let defaultEgress: string[] = [];
+  const dialed: string[] = [];
   const definition: Record<string, MethodDefinition<unknown, unknown>> = {};
   const implementation: UntypedServiceImplementation = {};
 
@@ -286,7 +319,12 @@ export async function boxdFixture() {
       implementation[name] = (call: ServerWritableStream<unknown, object>) => {
         const request = Request.parse(call.request);
         calls.push({ method: name, request: call.request });
-        const chunks = downloadChunks ?? [files.get(request.path) ?? new Uint8Array()];
+
+        // The local guest filesystem mode serves native transfers from the same disk as the helper.
+        const local =
+          localFilesystem && existsSync(request.path) ? readFileSync(request.path) : undefined;
+
+        const chunks = downloadChunks ?? [local ?? files.get(request.path) ?? new Uint8Array()];
         const totalSize = chunks.reduce((sum, bytes) => sum + bytes.length, 0);
 
         for (const [index, data] of chunks.entries())
@@ -298,7 +336,11 @@ export async function boxdFixture() {
         call: ServerUnaryCall<unknown, object>,
         callback: sendUnaryData<object>,
       ) => {
-        calls.push({ method: name, request: call.request });
+        calls.push({
+          method: name,
+          request: call.request,
+          regional: String(call.metadata.get("user-agent")[0] ?? "").includes("beachside-regional"),
+        });
         const req = Request.parse(call.request);
         const key = String(call.metadata.get("authorization")[0] ?? "");
         const alternate = key.includes("alternate");
@@ -339,9 +381,11 @@ export async function boxdFixture() {
               billingOrgId: org,
               billingOrg: org,
               isolated: req.isolated,
-              deleteAtMs: 0,
+              deleteAtMs: timer(req.deleteAfterSecs),
               botProtection: true,
               proxies: req.config?.network?.proxies ?? [],
+              egressAllow: [...defaultEgress],
+              labels: req.labels,
               createdAt: 1_800_000_000,
             });
 
@@ -364,8 +408,21 @@ export async function boxdFixture() {
             } else if (holdCreate) {
               holdCreate = false;
               releaseHeld = () =>
-                ok({ vmId: id, name: req.name, status: "running", image: req.imageRef });
-            } else ok({ vmId: id, name: req.name, status: "running", image: req.imageRef });
+                ok({
+                  vmId: id,
+                  name: req.name,
+                  status: "running",
+                  image: req.imageRef,
+                  machine: answered(id),
+                });
+            } else
+              ok({
+                vmId: id,
+                name: req.name,
+                status: "running",
+                image: req.imageRef,
+                machine: answered(id),
+              });
             break;
           }
 
@@ -398,8 +455,10 @@ export async function boxdFixture() {
               createdAt: Date.now(),
               updatedAt: 0,
               useCount: 0,
+              labels: {},
             };
 
+            record.labels = { ...machine.labels };
             record.capturing = record.version + 1;
             record.status = snapshotFailure === "fail" ? "failed" : "pending";
             record.pendingReads = snapshotPendingReads;
@@ -462,6 +521,43 @@ export async function boxdFixture() {
             break;
           }
 
+          case "ForkVm": {
+            const source = machines.get(req.sourceVmId);
+
+            if (!source || source.billingOrgId !== org) {
+              missing();
+              break;
+            }
+
+            effects.create++;
+            const id = crypto.randomUUID();
+            machines.set(id, {
+              ...structuredClone(source),
+              vmId: id,
+              name: req.name,
+              status: "running",
+              isolated: source.isolated || req.isolated,
+              // A fork copies its source's timer unless the request sets one.
+              deleteAtMs: req.deleteAfterSecs ? timer(req.deleteAfterSecs) : source.deleteAtMs,
+              // A fork inherits the source's egress allowlist; labels merge over its labels.
+              labels: { ...source.labels, ...req.labels },
+              sourceInfo: { kind: "fork", name: source.name, version: null, id: source.vmId },
+            });
+
+            if (loseCreate) {
+              loseCreate = false;
+              callback({ code: status.UNAVAILABLE, message: "lost after effect" });
+            } else
+              ok({
+                vmId: id,
+                name: req.name,
+                status: "running",
+                forkedFrom: source.name,
+                machine: answered(id),
+              });
+            break;
+          }
+
           case "CreateVmFromSnapshot": {
             const record = [...snapshots.values()].find(
               (value) =>
@@ -479,6 +575,16 @@ export async function boxdFixture() {
               break;
             }
 
+            // boxd takes isolation and labels in the spec when a restore sends one.
+            if (req.spec && (req.isolated || Object.keys(req.labels).length)) {
+              callback({
+                code: status.INVALID_ARGUMENT,
+                message: "put labels and isolated in spec",
+              });
+              break;
+            }
+
+            restoreSpecs.push(req.spec ?? null);
             effects.create++;
             record.useCount++;
             const id = crypto.randomUUID();
@@ -491,10 +597,14 @@ export async function boxdFixture() {
               memoryBytes: record.memoryBytes,
               billingOrgId: org,
               billingOrg: org,
-              isolated: req.isolated,
-              deleteAtMs: 0,
+              isolated: req.isolated || (req.spec?.isolated ?? false),
+              deleteAtMs: timer(req.deleteAfterSecs),
               botProtection: true,
               proxies: req.config?.network?.proxies ?? [],
+              // A restore starts with no allowlist unless its spec lists one; labels merge over the
+              // captured ones.
+              egressAllow: [...(req.spec?.egress ?? [])],
+              labels: { ...record.labels, ...req.labels, ...req.spec?.labels },
               sourceInfo: {
                 kind: "snapshot",
                 name: record.name,
@@ -504,7 +614,62 @@ export async function boxdFixture() {
               },
             });
             restoreLaterVersion = false;
-            ok({ vmId: id, name: req.name, status: "running" });
+            ok({ vmId: id, name: req.name, status: "running", machine: answered(id) });
+            break;
+          }
+
+          case "ListRegions":
+            ok({
+              regions: [
+                {
+                  id: "fra",
+                  name: "Frankfurt",
+                  zone: "boxd.sh",
+                  apiEndpoint: "https://boxd.sh:9443",
+                  home: true,
+                  orgState: "enabled",
+                },
+                {
+                  id: "nyc",
+                  name: "New York",
+                  zone: "nyc.boxd.sh",
+                  apiEndpoint: "https://nyc.boxd.sh:9443",
+                  home: false,
+                  orgState: "enabled",
+                },
+                {
+                  id: "sgp",
+                  name: "Singapore",
+                  zone: "sgp.boxd.sh",
+                  apiEndpoint: "https://sgp.boxd.sh:9443",
+                  home: false,
+                  orgState: "available",
+                },
+              ],
+              orgId: org,
+              thisRegion: "fra",
+            });
+            break;
+          case "SetVmEgressAllow": {
+            const machine = machines.get(req.vm);
+
+            if (!machine) {
+              missing();
+              break;
+            }
+
+            if (egressFailure === "reject") {
+              egressFailure = undefined;
+              callback({ code: status.INVALID_ARGUMENT, message: "bad entry" });
+              break;
+            }
+
+            machine.egressAllow = [...req.entries];
+
+            if (egressFailure === "lose") {
+              egressFailure = undefined;
+              callback({ code: status.UNAVAILABLE, message: "lost after effect" });
+            } else ok({ entries: req.entries });
             break;
           }
 
@@ -643,7 +808,8 @@ export async function boxdFixture() {
             ok();
             break;
           case "UploadFile":
-            files.set(req.path, req.data);
+            if (localFilesystem) writeFileSync(req.path, req.data);
+            else files.set(req.path, req.data);
             ok({ bytesWritten: uploadCount ?? req.data.length });
             break;
           case "ListDir":
@@ -673,6 +839,15 @@ export async function boxdFixture() {
       channel: new Client(`127.0.0.1:${port}`, credentials.createInsecure(), {
         "grpc.enable_retries": 0,
       }),
+      // Regional calls reach the same server, marked so tests can tell where they went.
+      connect: (target) => {
+        dialed.push(target);
+
+        return new Client(`127.0.0.1:${port}`, credentials.createInsecure(), {
+          "grpc.enable_retries": 0,
+          "grpc.primary_user_agent": "beachside-regional",
+        });
+      },
       exchange: async (_url, options) =>
         new Response(
           JSON.stringify(
@@ -752,6 +927,10 @@ export async function boxdFixture() {
     effects,
     machines,
     disks,
+    restoreSpecs,
+    ignoreCreateTimers() {
+      ignoreTimers = true;
+    },
     snapshots,
     snapshotPendingReads(value: number) {
       snapshotPendingReads = value;
@@ -775,7 +954,18 @@ export async function boxdFixture() {
       record.updatedAt = Date.now();
     },
     files,
+    dialed,
     observedStates,
+    /** The allowlist boxd gives a new machine, as an org default could. */
+    defaultEgress(value: string[]) {
+      defaultEgress = [...value];
+    },
+    loseNextEgressResponse() {
+      egressFailure = "lose";
+    },
+    rejectNextEgress() {
+      egressFailure = "reject";
+    },
     tokenResponse(value: Record<string, string | number | boolean | null>) {
       tokenResponse = { ...value };
     },
