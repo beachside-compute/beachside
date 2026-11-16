@@ -618,6 +618,11 @@ export type AdapterSetup = {
    * key without a variable in `credentials` can only be set in a profile.
    */
   readonly alternatives?: readonly (readonly string[])[];
+  /**
+   * Config a new profile starts with, such as a default image, so the first create works without
+   * extra flags. Hosts write these into profiles they create; a person can still change them.
+   */
+  readonly defaults?: Readonly<Record<string, Json>>;
   /** A page explaining this provider's setup. */
   readonly docs?: string;
 };
@@ -646,6 +651,7 @@ const AdapterSetupSchema = z.strictObject({
     )
     .optional(),
   alternatives: z.array(z.array(SetupKey).min(1).max(16)).min(2).max(16).optional(),
+  defaults: z.record(SetupKey, z.json()).optional(),
   docs: SetupUrl.optional(),
 });
 

@@ -56,6 +56,8 @@ export type Known = {
   recovery?: RecoveryReference;
   /** The command's captured result when a later step (cleanup, exit status) failed. */
   exec?: ExecSummary;
+  /** The flags or variables a command that never asks questions still needs, such as init's. */
+  missing?: string[];
 };
 
 export type Outcome = "rejected" | "unknown" | "partial";

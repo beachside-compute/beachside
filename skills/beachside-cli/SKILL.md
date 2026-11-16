@@ -5,7 +5,7 @@ description: Create, use and clean up cloud sandboxes from the shell with the `b
 
 # Use sandboxes with the beachside CLI
 
-`beachside` creates and manages sandboxes on any Beachside provider. It is built for agents: it never prompts for input, every command has a stable `--json` form, and exit codes clearly indicate what to do next.
+`beachside` creates and manages sandboxes on any Beachside provider. It is built for agents: it never prompts for input outside a terminal (and never with `--json`), every command has a stable `--json` form, and exit codes clearly indicate what to do next.
 
 `beachside skill` prints this guide as shipped with the installed CLI. If a command or flag here is rejected, the CLI is a different version: follow `beachside <command> --help` and `beachside schema` instead.
 
@@ -20,6 +20,7 @@ beachside profile ls --json  # the configured profiles, the default, and which o
 - If `beachside` is not on PATH, stop and tell the user; do not install anything yourself.
 - The provider comes from `--profile`, `BEACHSIDE_PROFILE`, `--provider`, `BEACHSIDE_PROVIDER`, then `default` in `~/.config/beachside/beachside.json`. Do not edit that file or credentials unless the user asks.
 - A missing adapter (exit 4, `ADAPTER_NOT_INSTALLED`; the user installs it with `beachside adapter add <provider>`), an installed adapter that fails to load (exit 4, `ADAPTER_LOAD_FAILED`), a missing credential (exit 2) or a key the provider rejects (exit 5, `UNAUTHENTICATED` or `FORBIDDEN`) is the user's to fix. Report the `hint` from the error; it links to where to get the value when the adapter gives one. `beachside profile show <name> --json` says where each setting comes from without revealing credentials.
+- When nothing is set up, tell the user to run `beachside init`, a guided setup in their terminal. Set up a provider yourself only when the user asks: `beachside init <provider> --api-key env:<VAR> [--set key=value]... --json` (one provider per call; `--try` also proves a sandbox works). It never asks questions with `--json`, exits 2 with `error.known.missing` when an answer is missing, and exits 5 without saving when the provider rejects the key. Never pass a key itself on the command line; use `env:NAME` or a password-manager reference.
 - Several providers can be set up side by side as profiles. Pass `--profile <name>` to use one other than the default; do not change the default (`profile use`) or remove profiles (`profile rm`) unless the user asks.
 
 **Sandboxes cost money.** Create only what the task needs and destroy it when done.

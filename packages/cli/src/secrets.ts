@@ -1,4 +1,6 @@
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { access, constants } from "node:fs/promises";
+import { delimiter, join } from "node:path";
 import type { Json } from "@beachside/adapter";
 import { z } from "zod";
 import type { Env } from "./config";
@@ -17,6 +19,52 @@ type SecretBackend = {
 };
 
 const BwsSecret = z.object({ value: z.string() });
+
+/** `keychain://<service>/<account>`: one generic password in the OS keychain. */
+const KeychainReference = /^keychain:\/\/([\w.@+-]{1,128})\/([\w.@+-]{1,128})$/;
+
+/** The OS keychain tool: macOS `security`, or Secret Service through `secret-tool` elsewhere. */
+function keychainBackend(platform: NodeJS.Platform): SecretBackend {
+  const parts = (reference: string) => {
+    const [, service, account] = KeychainReference.exec(reference)!;
+
+    return { service: service!, account: account! };
+  };
+
+  return platform === "darwin"
+    ? {
+        name: "macOS Keychain",
+        pattern: KeychainReference,
+        command: "security",
+        args: (reference) => {
+          const { service, account } = parts(reference);
+
+          return ["find-generic-password", "-s", service, "-a", account, "-w"];
+        },
+        value: (stdout) => stdout.replace(/\n$/, ""),
+        install: "macOS Keychain is read with `security`, which ships with macOS",
+        check: "check that the keychain is unlocked and the item exists (Keychain Access)",
+      }
+    : {
+        name: "Secret Service keyring",
+        pattern: KeychainReference,
+        command: "secret-tool",
+        args: (reference) => {
+          const { service, account } = parts(reference);
+
+          return ["lookup", "service", service, "account", account];
+        },
+        value: (stdout) => {
+          if (!stdout) throw new Error("no such item");
+
+          return stdout.replace(/\n$/, "");
+        },
+        install:
+          "install secret-tool (libsecret-tools on Debian and Ubuntu, libsecret on Fedora) and a keyring such as GNOME Keyring",
+        check:
+          "check that the keyring is unlocked and the item exists (`secret-tool lookup service <service> account <account>`)",
+      };
+}
 
 const backends: SecretBackend[] = [
   {
@@ -50,10 +98,119 @@ const backends: SecretBackend[] = [
     install: "install pass (https://www.passwordstore.org) and initialise your store",
     check: "check that `pass show <path>` works, including the GPG agent",
   },
+  keychainBackend(process.platform),
 ];
 
 function backendFor(value: string): SecretBackend | undefined {
   return backends.find((backend) => backend.pattern.test(value));
+}
+
+/** The `keychain://` reference init writes for one profile value. */
+export function keychainReference(profile: string, key: string): string {
+  return `keychain://beachside/${profile}.${key}`;
+}
+
+async function onPath(command: string, env: Env): Promise<boolean> {
+  for (const dir of (env.PATH ?? "").split(delimiter)) {
+    if (!dir) continue;
+
+    try {
+      await access(join(dir, command), constants.X_OK);
+
+      return true;
+    } catch {
+      // Not in this folder.
+    }
+  }
+
+  return false;
+}
+
+/** The OS keychain this machine can store new keys in, or null when there is none. */
+export async function keychainAvailable(
+  env: Env,
+  platform: NodeJS.Platform = process.platform,
+): Promise<string | null> {
+  if (platform !== "darwin" && platform !== "linux" && platform !== "freebsd") return null;
+  const backend = keychainBackend(platform);
+
+  return (await onPath(backend.command, env)) ? backend.name : null;
+}
+
+/** Whether a password manager this CLI can read (1Password `op`) is installed, for hints. */
+export async function passwordManagers(env: Env): Promise<string[]> {
+  return (await onPath("op", env)) ? ["1Password"] : [];
+}
+
+/** A value `security -i` can take inside double quotes without changing it. */
+const SafeForSecurity = /^[\x20-\x7e]*$/;
+
+/**
+ * Store one secret in the OS keychain under `reference`, replacing an earlier one. The value goes
+ * to the tool on stdin, never in its arguments, so other processes can't read it from `ps`.
+ */
+export async function storeInKeychain(
+  reference: string,
+  value: string,
+  env: Env,
+  signal: AbortSignal,
+  platform: NodeJS.Platform = process.platform,
+): Promise<void> {
+  const match = KeychainReference.exec(reference);
+
+  if (!match) throw new CliError("USAGE", `${reference} is not a keychain:// reference`);
+  const [, service, account] = match;
+  const backend = keychainBackend(platform);
+  let args: string[];
+  let input: string;
+
+  if (platform === "darwin") {
+    if (!SafeForSecurity.test(value) || /["\\]/.test(value))
+      throw new CliError(
+        "SECRET_UNAVAILABLE",
+        `This key has characters the macOS Keychain tool can't take safely (${reference})`,
+        "keep it in beachside.json or a password manager instead",
+      );
+    args = ["-i"];
+    input = `add-generic-password -U -s "${service}" -a "${account}" -l "beachside ${account}" -w "${value}"\n`;
+  } else {
+    args = ["store", `--label=beachside ${account}`, "service", service!, "account", account!];
+    input = value;
+  }
+
+  const result = await new Promise<RunResult>((done) => {
+    const child = spawn(backend.command, args, {
+      env: { ...env },
+      signal,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+
+    let stderr = "";
+
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr = `${stderr}${chunk.toString("utf8")}`.slice(-2000);
+    });
+    child.stdout.resume();
+    child.on("error", (cause) =>
+      done({ code: "code" in cause ? String(cause.code) : "FAILED", stdout: "", stderr }),
+    );
+    child.on("close", (code) => done({ code: code ?? "FAILED", stdout: "", stderr }));
+    child.stdin.end(input);
+  });
+
+  if (result.code === "ENOENT")
+    throw new CliError(
+      "SECRET_TOOL_MISSING",
+      `Cannot store keys in the keychain: \`${backend.command}\` is not installed`,
+      backend.install,
+    );
+
+  if (result.code !== 0)
+    throw new CliError(
+      "SECRET_UNAVAILABLE",
+      `Cannot store ${reference} in the ${backend.name}: ${result.stderr.trim() || `${backend.command} exited with ${result.code}`}`,
+      backend.check,
+    );
 }
 
 /** The password manager a reference reads from, such as 1Password; null for any other value. */
@@ -80,7 +237,7 @@ function run(command: string, args: string[], env: Env, signal: AbortSignal): Pr
 }
 
 /**
- * Reads password-manager references (`op://...`, `bws://...`, `pass://...`) through the manager's own CLI
+ * Reads password-manager references (`op://...`, `bws://...`, `pass://...`, `keychain://...`) through the manager's own CLI
  * when a profile connects, so secrets never need to be written into beachside.json. The CLI uses
  * its own sign-in. Each reference is read at most once per invocation and never stored.
  */

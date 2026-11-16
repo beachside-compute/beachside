@@ -5,6 +5,29 @@ description: Profiles, credentials, password managers, limits and where the beac
 
 The CLI works with environment variables alone. For anything more, it reads `~/.config/beachside/beachside.json` (or `$XDG_CONFIG_HOME/beachside/beachside.json`). Point it elsewhere with `--config` or `BEACHSIDE_CONFIG`.
 
+## Set up providers with init
+
+`beachside init` writes profiles for you. In a terminal it is a guided setup; everywhere else, including with `--json`, `--no-input`, `BEACHSIDE_NO_INPUT=1` or `CI` set, it is an ordinary command that never asks anything and takes every answer as a flag:
+
+```sh
+beachside init e2b --api-key env:E2B_API_KEY --default
+beachside init boxd --api-key env:BOXD_API_KEY --set org=org-123 --network internet
+printf %s "$DAYTONA_KEY" | beachside init daytona --api-key - --set target=us
+beachside init boxd --profile boxd-work --api-key op://Work/boxd/credential --set org=org-456
+```
+
+The flag form sets up one provider per call and installs its adapter if it is missing. The profile is named after the provider unless you pass `--profile`, which is how you keep two accounts on one provider.
+
+- **Keys.** `--api-key` (or `--credential <key>=<value>` for providers with other credentials, such as Modal's `tokenId`) takes `env:NAME`, an `op://`, `bws://`, `pass://` or `keychain://` reference, which is saved as written, or the key itself. A key itself is best piped in with `--api-key -`, so it stays out of your shell history. It is stored in your OS keychain when there is one (`--store keychain`, the default) and the profile keeps a `keychain://` reference; `--store config` keeps it in `beachside.json`, readable only by you. When you pass no key and the provider's variable is set, the profile uses `env:<that variable>`.
+- **Settings.** `--set <key>=<value>` sets a config value (JSON values such as `true` or `{"kind":"prepared","value":"daytona-small"}` are parsed), and `--network` sets the `network` setting. A required setting you don't pass is copied from its environment variable. A profile starts with the adapter's own sensible defaults, such as Daytona's `daytona-small` image, so the first `create` works without extra flags.
+- **Checks.** `init` connects and makes one listing read, as `doctor` does, and saves nothing if the provider rejects the key (exit 5). `--try` also creates a sandbox, runs one command and destroys it. `--no-check` skips the check, for setup without a network.
+- **Reruns.** Running `init` again with the same answers reports `unchanged`. If the profile exists with other settings, it exits 2 and names them; `--force` replaces it. `init` never deletes a profile.
+- **Default.** The first profile becomes the default; `--default` makes a later one the default.
+- **Missing answers.** A missing key or setting exits 2 and lists the flags it needs in `error.known.missing`, with links to where to get each value. It never waits for input.
+- **Other adapters.** `--module <package|path> --export <name> --profile <name>` sets up a third-party adapter from its own setup description.
+
+With `--json`, the result includes where each credential comes from (never a key), the settings, the check results and `command`, the command that makes the same profile again. The guided setup prints those commands at the end.
+
 ## Environment-only setup
 
 Set `BEACHSIDE_PROVIDER` (or pass `--provider`) and the provider's own variables:
@@ -22,7 +45,7 @@ Set `BEACHSIDE_PROVIDER` (or pass `--provider`) and the provider's own variables
 | `vercel`    | `VERCEL_TOKEN`, `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID`                                                           |
 | `modal`     | `MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET`, `MODAL_APP_NAME`, `MODAL_ENVIRONMENT`                                   |
 
-`beachside providers` shows which of these are missing once the adapter is installed, with a link to where you get each one when the adapter gives one. It reads them from the installed adapter, so it loads that package. Each adapter declares its own variables, so a third-party adapter that declares them works env-only too. `BOXD_ORG` is the ID (`org-…`) of the boxd org your API key belongs to; `boxd auth --json` lists your orgs with their IDs (the active one has `"active": true`). Daytona has no default image, so each Daytona `create` or `run` needs `--prepared <snapshot>` (such as `daytona-small`) or `--image`. `BOXD_REGION` (such as `nyc`) picks a boxd region other than your org's home one. Sandboxes reach the internet by default; set a provider's `*_NETWORK` variable to `blocked` (or put an allowlist in a profile's config) to restrict it.
+`beachside providers` shows which of these are missing once the adapter is installed, with a link to where you get each one when the adapter gives one. It reads them from the installed adapter, so it loads that package. Each adapter declares its own variables, so a third-party adapter that declares them works env-only too. `BOXD_ORG` is the ID (`org-…`) of the boxd org your API key belongs to; `boxd auth --json` lists your orgs with their IDs (the active one has `"active": true`). Daytona has no default image, so each env-only Daytona `create` or `run` needs `--prepared <snapshot>` (such as `daytona-small`) or `--image`; a profile made by `beachside init` already sets `daytona-small`. `BOXD_REGION` (such as `nyc`) picks a boxd region other than your org's home one. Sandboxes reach the internet by default; set a provider's `*_NETWORK` variable to `blocked` (or put an allowlist in a profile's config) to restrict it.
 
 ## Profiles
 
@@ -93,17 +116,19 @@ See [Set up a sandbox](/docs/cli/setup/) for steps, startup, env and failures. `
 
 ## Credentials
 
-A credential can be written three ways:
+A credential can be written four ways:
 
-- **Directly** in `beachside.json`. Keep the file private (`chmod 600`).
+- **Directly** in `beachside.json`. Keep the file private (`chmod 600`); files `init` and `profile` commands create are.
 - **`env:NAME`**, read from an environment variable when the profile is used.
+- **A `keychain://service/account` reference** to your OS keychain, which is where `beachside init` keeps new keys.
 - **A password-manager reference**, read through that manager's own CLI only when the profile connects. The value is never written anywhere.
 
-| Reference               | Read with                                    | Sign-in                                                            |
-| ----------------------- | -------------------------------------------- | ------------------------------------------------------------------ |
-| `op://vault/item/field` | `op read` (1Password CLI)                    | Desktop app integration, `op signin` or `OP_SERVICE_ACCOUNT_TOKEN` |
-| `bws://<secret-id>`     | `bws secret get` (Bitwarden Secrets Manager) | `BWS_ACCESS_TOKEN`                                                 |
-| `pass://path/to/entry`  | `pass show`, first line of the entry         | Your GPG agent                                                     |
+| Reference                    | Read with                                                                            | Sign-in                                                            |
+| ---------------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| `op://vault/item/field`      | `op read` (1Password CLI)                                                            | Desktop app integration, `op signin` or `OP_SERVICE_ACCOUNT_TOKEN` |
+| `bws://<secret-id>`          | `bws secret get` (Bitwarden Secrets Manager)                                         | `BWS_ACCESS_TOKEN`                                                 |
+| `pass://path/to/entry`       | `pass show`, first line of the entry                                                 | Your GPG agent                                                     |
+| `keychain://service/account` | `security find-generic-password` on macOS, `secret-tool lookup` (libsecret) on Linux | Your login keychain or keyring, unlocked                           |
 
 References also work in a provider's environment variable, for example `E2B_API_KEY=op://Dev/E2B/credential`. If the manager's CLI is not installed the command exits 4; if it can't read the secret it exits 5 and shows the manager's own message.
 

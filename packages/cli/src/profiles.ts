@@ -137,7 +137,7 @@ async function listProfiles(session: Session): Promise<number> {
     },
     rows.length
       ? renderRows(table)
-      : `no profiles in ${loaded.path}\nset BEACHSIDE_PROVIDER and the provider's credentials, or add a profile (see \`beachside providers\`)`,
+      : `no profiles in ${loaded.path}\nrun \`beachside init\` to set up a provider, or set BEACHSIDE_PROVIDER and the provider's credentials (see \`beachside providers\`)`,
   );
 
   return 0;

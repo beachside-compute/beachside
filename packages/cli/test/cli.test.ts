@@ -688,6 +688,7 @@ describe("beachside CLI against the fake provider", () => {
 
     expect(names).toEqual(
       expect.arrayContaining([
+        "init",
         "create",
         "ls",
         "inspect",

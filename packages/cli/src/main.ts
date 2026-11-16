@@ -49,6 +49,7 @@ const code = await main(process.argv.slice(2), {
   signal: controller.signal,
   stdin,
   stderrTerminal: process.stderr.isTTY === true,
+  stdinTerminal: process.stdin.isTTY === true,
   streams: {
     stdout: (text) => process.stdout.write(text),
     stderr: (text) => process.stderr.write(text),

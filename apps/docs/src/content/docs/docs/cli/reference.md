@@ -41,6 +41,40 @@ With `--json`, stdout holds exactly one document: `{ok:true,data}` or `{ok:false
 | 125  | exec/run: the CLI or provider failed; details in the error                                                                              |
 | 130  | interrupted by SIGINT (129 for SIGHUP, 143 for SIGTERM); an interrupted run still destroys its sandbox                                  |
 
+## init
+
+Set up providers: install the adapter, store the key, check it works and save a profile (guided in a terminal).
+
+```sh
+beachside init [<provider>] [--api-key <key|ref>] [--set k=v]... [--network <policy>] [--store keychain|config] [--default] [--try]
+```
+
+| Flag                         | Description                                                                                                         |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `--api-key <key\|ref>`       | The provider key: a value, - to read it from stdin, env:NAME, or an op://, bws://, pass:// or keychain:// reference |
+| `--credential <key=value>`   | Any other credential, with the same value forms (repeatable)                                                        |
+| `--set <key=value>`          | A config setting, such as target=us; JSON values are parsed (repeatable)                                            |
+| `--network <policy>`         | The profile's network setting, such as internet or blocked                                                          |
+| `--store <keychain\|config>` | Where a pasted or piped key goes: the OS keychain (default when there is one) or beachside.json (mode 0600)         |
+| `--default`                  | Make this profile the default                                                                                       |
+| `--try`                      | Also create a sandbox, run one command and destroy it                                                               |
+| `--force`                    | Replace a profile of the same name that differs                                                                     |
+| `--no-check`                 | Skip asking the provider whether it accepts the key (offline setup)                                                 |
+| `--no-input`                 | Never ask questions, even in a terminal (also BEACHSIDE_NO_INPUT=1 or CI)                                           |
+| `--module <package\|path>`   | Set up another adapter instead of an official provider; needs --profile                                             |
+| `--export <name>`            | The --module export that holds the adapter (default: default)                                                       |
+
+Examples:
+
+```sh
+beachside init
+beachside init e2b --api-key env:E2B_API_KEY --default
+beachside init boxd --api-key env:BOXD_API_KEY --set org=org-123 --network internet
+printf %s "$KEY" | beachside init daytona --api-key - --set target=us --store keychain
+beachside init boxd --profile boxd-work --api-key op://work/boxd/key --set org=org-456
+beachside init --module @acme/beachside-adapter --export acmeAdapter --profile acme --api-key env:ACME_KEY
+```
+
 ## telemetry
 
 Show or change basic CLI usage telemetry (on by default; SDK sends none).

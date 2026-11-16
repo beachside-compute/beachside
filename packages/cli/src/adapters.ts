@@ -136,8 +136,18 @@ async function ensureProject(dir: string): Promise<void> {
   );
 }
 
-/** Run npm in the adapters folder. Its output goes to stderr so stdout stays one document. */
-function npm(args: string[], dir: string, env: Env, out: Output, signal: AbortSignal) {
+/**
+ * Run npm in the adapters folder. Its output goes to stderr so stdout stays one document; `quiet`
+ * keeps it to the last lines of a failure, for the init wizard's own display.
+ */
+function npm(
+  args: string[],
+  dir: string,
+  env: Env,
+  out: Output,
+  signal: AbortSignal,
+  quiet = false,
+) {
   return new Promise<void>((done, fail) => {
     const child = spawn("npm", args, {
       cwd: dir,
@@ -149,7 +159,7 @@ function npm(args: string[], dir: string, env: Env, out: Output, signal: AbortSi
     let tail = "";
 
     const forward = (chunk: Buffer) => {
-      out.streams.stderr(chunk);
+      if (!quiet) out.streams.stderr(chunk);
       tail = `${tail}${chunk.toString("utf8")}`.slice(-2000);
     };
 
@@ -224,7 +234,7 @@ async function verify(dir: string, target: Target): Promise<string[]> {
   return found;
 }
 
-type AddResult = {
+export type AddResult = {
   package: string;
   provider: string | null;
   version: string;
@@ -233,10 +243,13 @@ type AddResult = {
   exports: string[];
 };
 
-async function addAdapters(session: Session, inputs: string[]): Promise<number> {
+/** Install adapters into the adapters folder in one npm run and check each one loads. */
+export async function installAdapters(
+  session: Session,
+  inputs: string[],
+  options: { quiet?: boolean } = {},
+): Promise<{ dir: string; results: AddResult[] }> {
   const { env, out, signal } = session.ctx;
-
-  if (!inputs.length) throw usage("Name the adapters to add, e.g. `beachside adapter add e2b`");
   const targets = inputs.map((input) => parseTarget(input, true));
   const dir = adaptersDir(env);
 
@@ -256,6 +269,7 @@ async function addAdapters(session: Session, inputs: string[]): Promise<number> 
       env,
       out,
       signal,
+      options.quiet,
     );
   }
 
@@ -266,7 +280,7 @@ async function addAdapters(session: Session, inputs: string[]): Promise<number> 
     const exports = await verify(dir, target);
     const previous = before[index] ?? null;
 
-    if (target.official && version !== manifest.version)
+    if (target.official && version !== manifest.version && !options.quiet)
       out.note(
         `warning: ${target.package}@${version} differs from this CLI (${manifest.version}); official adapters are released with the CLI`,
       );
@@ -281,7 +295,14 @@ async function addAdapters(session: Session, inputs: string[]): Promise<number> 
     });
   }
 
-  out.success(
+  return { dir, results };
+}
+
+async function addAdapters(session: Session, inputs: string[]): Promise<number> {
+  if (!inputs.length) throw usage("Name the adapters to add, e.g. `beachside adapter add e2b`");
+  const { dir, results } = await installAdapters(session, inputs);
+
+  session.ctx.out.success(
     { dir, adapters: results },
     [
       ...results.map(

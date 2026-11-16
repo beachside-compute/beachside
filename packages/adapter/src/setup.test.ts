@@ -33,3 +33,13 @@ test("setup rejects variable names and links a host could not use", () => {
   ).toThrow();
   expect(() => define({ credentials: {}, docs: "javascript:alert(1)" })).toThrow();
 });
+
+test("setup defaults are config a new profile starts with", () => {
+  const adapter = define({
+    credentials: { token: { env: "EXAMPLE_TOKEN" } },
+    defaults: { environment: { kind: "prepared", value: "small" } },
+  });
+
+  expect(adapter.setup?.defaults).toEqual({ environment: { kind: "prepared", value: "small" } });
+  expect(() => define({ credentials: {}, defaults: { "bad key": 1 } })).toThrow();
+});

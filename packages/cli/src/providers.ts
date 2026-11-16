@@ -32,27 +32,54 @@ export type OfficialProvider = {
   module: string;
   export: string;
   experimental: boolean;
+  /** What the provider is, in a few words, for choice lists such as `beachside init`'s. */
+  summary: string;
+  /**
+   * The variable holding the provider's key, so `init` can say what it found before the adapter
+   * (and with it the full setup) is installed.
+   */
+  keyEnv: string;
 };
 
-const official = (id: string, exported: string, experimental: boolean): OfficialProvider => ({
+const official = (
+  id: string,
+  exported: string,
+  experimental: boolean,
+  summary: string,
+  keyEnv: string,
+): OfficialProvider => ({
   id,
   module: `@beachside/${id}`,
   export: exported,
   experimental,
+  summary,
+  keyEnv,
 });
 
 /** Official providers, in the order the docs list them. */
 export const providers: readonly OfficialProvider[] = [
-  official("boxd", "boxdAdapter", false),
-  official("freestyle", "freestyleAdapter", false),
-  official("daytona", "daytonaAdapter", false),
-  official("e2b", "e2bAdapter", false),
-  official("vercel", "vercelAdapter", false),
-  official("boat", "boatAdapter", true),
-  official("runloop", "runloopAdapter", true),
-  official("archil", "archilAdapter", true),
-  official("exe-dev", "exeDevAdapter", true),
-  official("modal", "modalAdapter", true),
+  official("boxd", "boxdAdapter", false, "persistent VMs with memory snapshots", "BOXD_API_KEY"),
+  official(
+    "freestyle",
+    "freestyleAdapter",
+    false,
+    "VMs that fork and snapshot",
+    "FREESTYLE_API_KEY",
+  ),
+  official(
+    "daytona",
+    "daytonaAdapter",
+    false,
+    "sandboxes with snapshots and volumes",
+    "DAYTONA_API_KEY",
+  ),
+  official("e2b", "e2bAdapter", false, "fast microVM sandboxes", "E2B_API_KEY"),
+  official("vercel", "vercelAdapter", false, "Vercel Sandbox microVMs", "VERCEL_TOKEN"),
+  official("boat", "boatAdapter", true, "Boat sandboxes", "BOAT_API_KEY"),
+  official("runloop", "runloopAdapter", true, "Runloop devboxes", "RUNLOOP_API_KEY"),
+  official("archil", "archilAdapter", true, "Archil disks with sandboxes", "ARCHIL_API_KEY"),
+  official("exe-dev", "exeDevAdapter", true, "exe.dev VMs", "EXE_API_KEY"),
+  official("modal", "modalAdapter", true, "Modal sandboxes", "MODAL_TOKEN_ID"),
 ];
 
 export function descriptor(id: string): OfficialProvider | undefined {
@@ -276,7 +303,7 @@ export async function resolveProfile(
     "No provider selected",
     ready.length
       ? `credentials found for: ${ready.join(", ")}; set BEACHSIDE_PROVIDER or pass --provider`
-      : "set BEACHSIDE_PROVIDER and the provider's credentials (see `beachside providers`), or add a profile to beachside.json",
+      : "run `beachside init` to set up a provider, or set BEACHSIDE_PROVIDER and the provider's credentials (see `beachside providers`)",
   );
 }
 
