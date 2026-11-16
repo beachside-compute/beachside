@@ -26,6 +26,14 @@ The Worker keeps its original name, `sandbar-docs`. It serves `beachside.run`, `
 
 ## Content structure
 
+Brand images are served from `public/brand/` at `https://beachside.run/brand/`.
+`beachside/mark.png` is the transparent product sunset for email and other small
+placements; `mark.svg` is its vector source, extracted from the product social
+preview to match `src/components/Logo.astro`. The product social preview and the
+`beachside-compute/` company logos are copied from the repository's `brand/`
+directory. Keep these public URLs stable: sent emails may reference them long
+after a deployment. Use PNG for email and SVG for vector uses.
+
 The public docs focus on the SDK: getting started, agent prompts, everyday guides,
 provider setup and tested support, adapter authoring, and TypeScript reference.
 The landing page is maintained separately in `src/pages/index.astro`.
