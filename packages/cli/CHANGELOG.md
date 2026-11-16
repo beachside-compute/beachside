@@ -1,5 +1,23 @@
 # @beachside/cli
 
+## 0.16.0
+
+### Minor Changes
+
+- [#225](https://github.com/beachside-compute/beachside/pull/225) [`03a37c4`](https://github.com/beachside-compute/beachside/commit/03a37c4b7ed01184a463dd48c8eb5e09f0679f89) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - `create --with herdr` now targets herdr-core, the server behind the Herdr app. Its connect line (`data.addons[].connect`) is `hc machine add <user>@<address> --temp --install --name <sandbox>` (without `--name` when herdr-core would refuse the sandbox's name), which adds the sandbox to the Herdr sidebar as a short-lived machine, instead of the Herdr TUI command `herdr --remote ssh://<user>@<address>`, which still works with the same address. `rm` and `gc` print the `hc machine rm <name>` that forgets it, finding the name with `hc machine ls` by the machine's address, and the `ssh-keygen -R <address>` that drops the host key ssh saved. The add-on also makes any host key the sandbox's `/etc/ssh` lacks with `ssh-keygen` before Tailscale starts, then reads the keys Tailscale SSH serves: `create` prints the ED25519 fingerprint to check at ssh's first-connect prompt, and JSON lists the keys as `known_hosts` lines in `knownHosts`. Host keys can change after `create`, so `inspect` reads a running sandbox's keys again, saves any that changed and says so with the old and new fingerprints.
+
+  Program status (OSC 7501) is now on by default inside herdr-core terminals as well as Rex. Outside Rex it reports the root record, the only one the Herdr app shows, instead of a record with `id=beachside`.
+
+- [#226](https://github.com/beachside-compute/beachside/pull/226) [`4f6ad78`](https://github.com/beachside-compute/beachside/commit/4f6ad7836c2f10c3cbcf7c02adbb7428052e2702) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - `beachside init` sets up providers. In a terminal it is a guided setup: pick several providers at once, paste each key (hidden), answer the adapter's own questions, keep new keys in the OS keychain, check that every provider accepts its key, try a sandbox on each, and save one profile per provider with one default. Everywhere else, and with `--json`, `--no-input`, `BEACHSIDE_NO_INPUT=1` or `CI`, it never asks: `beachside init <provider> --api-key env:NAME --set key=value` does the same job, exits 2 with `error.known.missing` when an answer is missing, and saves nothing when the provider rejects the key. The guided setup prints those commands at the end.
+
+  Credentials can now be `keychain://service/account` references, read from the macOS Keychain or a Linux Secret Service keyring. Adapter setup gains `defaults`, config a new profile starts with; Daytona's starts on the `daytona-small` image.
+
+### Patch Changes
+
+- Updated dependencies [[`4f6ad78`](https://github.com/beachside-compute/beachside/commit/4f6ad7836c2f10c3cbcf7c02adbb7428052e2702)]:
+  - @beachside/adapter@0.16.0
+  - beachside@0.16.0
+
 ## 0.15.0
 
 ### Minor Changes
