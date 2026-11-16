@@ -436,7 +436,7 @@ test("the wizard asks for the key and settings, checks, tries a sandbox and save
   expect(asked).toHaveLength(4);
   // No keychain on this PATH, so the key is kept in beachside.json and the person is told.
   expect(said.some((line) => line.includes("No OS keychain found"))).toBe(true);
-  expect(said.some((line) => line.includes("https://fake.example/keys"))).toBe(true);
+  expect(said).toContain("Get your fk token at https://fake.example/keys");
   expect(said.join("\n")).not.toContain(token);
 
   expect((await config()).profiles.fk).toEqual({
