@@ -21,7 +21,7 @@ type SecretBackend = {
 const BwsSecret = z.object({ value: z.string() });
 
 /** `keychain://<service>/<account>`: one generic password in the OS keychain. */
-const KeychainReference = /^keychain:\/\/([\w.@+-]{1,128})\/([\w.@+-]{1,128})$/;
+const KeychainReference = /^keychain:\/\/([\w.@+-]{1,128})\/([\w.@+-]{1,160})$/;
 
 /** The OS keychain tool: macOS `security`, or Secret Service through `secret-tool` elsewhere. */
 function keychainBackend(platform: NodeJS.Platform): SecretBackend {
@@ -146,11 +146,6 @@ export async function keychainAvailable(
   return (await onPath(backend.command, env)) ? backend.name : null;
 }
 
-/** Whether a password manager this CLI can read (1Password `op`) is installed, for hints. */
-export async function passwordManagers(env: Env): Promise<string[]> {
-  return (await onPath("op", env)) ? ["1Password"] : [];
-}
-
 /** A value `security -i` can take inside double quotes without changing it. */
 const SafeForSecurity = /^[\x20-\x7e]*$/;
 
@@ -199,7 +194,8 @@ export async function storeInKeychain(
   if (result.code !== 0)
     throw new CliError(
       "SECRET_UNAVAILABLE",
-      `Cannot store ${reference} in the ${backend.name}: ${result.stderr.trim() || `${backend.command} exited with ${result.code}`}`,
+      // The tool's own output is left out: on macOS it may echo the command, key included.
+      `Cannot store ${reference} in the ${backend.name}: ${backend.command} exited with ${result.code}`,
       backend.check,
     );
 }

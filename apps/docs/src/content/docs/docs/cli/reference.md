@@ -46,7 +46,7 @@ With `--json`, stdout holds exactly one document: `{ok:true,data}` or `{ok:false
 Set up providers: install the adapter, store the key, check it works and save a profile (guided in a terminal).
 
 ```sh
-beachside init [<provider>] [--api-key <key|ref>] [--set k=v]... [--network <policy>] [--store keychain|config] [--default] [--try]
+beachside init [<provider>] [--profile <name>] [--api-key <key|ref>] [--set k=v]... [--network <policy>] [--store keychain|config] [--default] [--try]
 ```
 
 | Flag                         | Description                                                                                                         |

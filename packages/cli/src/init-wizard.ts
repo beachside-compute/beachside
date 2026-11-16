@@ -4,15 +4,21 @@ import type { ProfileConfig } from "./config";
 import {
   adapterInstalled,
   checkDraft,
+  checkFlagCombinations,
+  checkProfileName,
   chosenGroup,
   credentialKeys,
   equivalentCommand,
   givenValues,
   installMissing,
   isReference,
+  keepSameKeys,
   location,
   newKeychainId,
+  noKeychain,
   officialTarget,
+  providerId,
+  storeFlag,
   targetFromFlags,
   trySandbox,
   writeProfiles,
@@ -22,7 +28,7 @@ import {
   type Storage,
   type TryResult,
 } from "./init";
-import { describeError } from "./output";
+import { describeError, exitCodeFor } from "./output";
 import { updateConfig } from "./profiles";
 import { adapterSetup, providers, resolveProfile } from "./providers";
 import { keychainAvailable } from "./secrets";
@@ -97,18 +103,20 @@ async function askCredential(
       await prompt.confirm({ message: `Use ${entry.env} from your environment?`, initial: true })
     ) {
       draft.credentials[key] = `env:${entry.env}`;
+      delete draft.secrets[key];
 
       return;
     }
   }
 
-  const current = draft.previous?.credentials?.[key];
+  const current = draft.credentials[key];
 
   if (current !== undefined) {
     const where = isReference(current) ? current : "stored in beachside.json";
 
     if (await prompt.confirm({ message: `Keep the current ${label} (${where})?`, initial: true })) {
       draft.credentials[key] = current;
+      delete draft.secrets[key];
 
       return;
     }
@@ -123,6 +131,14 @@ async function askCredential(
       validate: required,
     })
   ).trim();
+
+  setCredential(draft, key, value);
+}
+
+/** Put one credential where it belongs, replacing whatever the draft held for it. */
+function setCredential(draft: Draft, key: string, value: string): void {
+  delete draft.credentials[key];
+  delete draft.secrets[key];
 
   if (isReference(value)) draft.credentials[key] = value;
   else draft.secrets[key] = value;
@@ -204,21 +220,31 @@ async function draftFor(
   given: Given,
   nameFlag: string | undefined,
   taken: Set<string>,
+  force: boolean,
 ): Promise<Draft | null> {
   const { env, cwd } = session.ctx;
   const loaded = await session.config();
   let name = nameFlag ?? target.id;
   const existing = loaded.value.profiles ?? {};
+  const other = existing[name] ? !sameAdapter(existing[name]!, target) : false;
 
-  if (existing[name] && !nameFlag) {
+  if (existing[name] && !force) {
+    const what = other
+      ? `a ${existing[name]!.provider ?? existing[name]!.module} profile`
+      : "keeps what you don't change";
+
     const choice = await prompt.select({
       message: `There is already a profile named ${name}`,
       options: [
-        { value: "replace", label: `Change ${name}`, hint: "keeps what you don't change" },
+        {
+          value: "replace",
+          label: other ? `Replace ${name} with a ${target.label} profile` : `Change ${name}`,
+          hint: what,
+        },
         { value: "new", label: "Add a second profile", hint: "another account or region" },
         { value: "skip", label: `Leave ${name} as it is` },
       ],
-      initial: "replace",
+      initial: other ? "new" : "replace",
     });
 
     if (choice === "skip") return null;
@@ -228,17 +254,24 @@ async function draftFor(
         await prompt.text({
           message: "Name for the new profile",
           initial: freeName(name, new Set([...Object.keys(existing), ...taken])),
-          validate: (value) =>
-            !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(value)
-              ? "Use letters, digits, dot, dash or underscore"
-              : existing[value] || taken.has(value)
-                ? "That name is taken"
-                : undefined,
+          validate: (value) => {
+            try {
+              checkProfileName(value.trim());
+            } catch {
+              return "Use letters, digits, dot, dash or underscore";
+            }
+
+            return existing[value.trim()] || taken.has(value.trim())
+              ? "That name is taken"
+              : undefined;
+          },
         })
       ).trim();
   }
 
   const previous: ProfileConfig | null = existing[name] ?? null;
+  // A profile for another adapter is replaced, not merged: its keys and settings don't apply.
+  const kept = previous && sameAdapter(previous, target) ? previous : null;
   const setup = await adapterSetup(location(target, loaded, session), cwd, env);
 
   const draft: Draft = {
@@ -246,16 +279,14 @@ async function draftFor(
     target,
     setup,
     // Changing a profile keeps what the questions below don't replace.
-    credentials: { ...previous?.credentials },
+    credentials: { ...kept?.credentials },
     secrets: {},
-    config: { ...setup?.defaults, ...previous?.config },
+    config: { ...setup?.defaults, ...kept?.config },
     previous,
     keychainId: newKeychainId(),
   };
 
-  for (const [key, value] of Object.entries(given.credentials))
-    if (isReference(value)) draft.credentials[key] = value;
-    else draft.secrets[key] = value;
+  for (const [key, value] of Object.entries(given.credentials)) setCredential(draft, key, value);
 
   Object.assign(draft.config, given.config);
 
@@ -300,6 +331,13 @@ async function draftFor(
   return draft;
 }
 
+/** Whether an existing profile is for the same adapter as the one being set up. */
+function sameAdapter(profile: ProfileConfig, target: InitTarget): boolean {
+  return target.official
+    ? profile.provider === target.official.id
+    : profile.module === target.module && (profile.export ?? "default") === target.export;
+}
+
 /** One line per provider: what was found for it before anything is installed or asked. */
 function found(
   provider: (typeof providers)[number],
@@ -334,8 +372,9 @@ async function pickTargets(prompt: Prompter, session: Session): Promise<InitTarg
     initial: providers
       .filter(
         (provider) =>
-          session.ctx.env[provider.keyEnv] &&
-          !configured.some(([, profile]) => profile.provider === provider.id),
+          session.ctx.env.BEACHSIDE_PROVIDER === provider.id ||
+          (session.ctx.env[provider.keyEnv] &&
+            !configured.some(([, profile]) => profile.provider === provider.id)),
       )
       .map((provider) => provider.id),
   });
@@ -363,13 +402,13 @@ async function checkAll(prompt: Prompter, session: Session): Promise<number> {
 
             const check = await checkCredentials(await session.connect(profile));
 
-            return {
-              name,
-              ok: check.status === "ok" || check.status === "unchecked",
-              reason: check.status === "ok" || check.status === "unchecked" ? "" : check.reason,
-            };
+            return check.status === "ok" || check.status === "unchecked"
+              ? { name, ok: true, reason: "", code: "" }
+              : { name, ok: false, reason: check.reason, code: check.code };
           } catch (cause) {
-            return { name, ok: false, reason: describeError(cause).message };
+            const report = describeError(cause);
+
+            return { name, ok: false, reason: report.message, code: report.code };
           }
         }),
       ),
@@ -387,7 +426,9 @@ async function checkAll(prompt: Prompter, session: Session): Promise<number> {
       : "Fix the profiles above, then run `beachside init` again",
   );
 
-  return results.every((result) => result.ok) ? 0 : 5;
+  const failed = results.find((result) => !result.ok);
+
+  return failed ? exitCodeFor(failed.code) : 0;
 }
 
 async function changeDefault(prompt: Prompter, session: Session): Promise<number> {
@@ -428,9 +469,18 @@ async function wizard(session: Session, flags: Flags, prompt: Prompter): Promise
   const loaded = await session.config();
   const existing = Object.keys(loaded.value.profiles ?? {});
 
+  // Flags are checked before the first question, so a mistake doesn't cost a run of answers.
+  checkFlagCombinations(flags);
+  const store = storeFlag(flags);
+
+  if (store === "keychain" && !(await keychainAvailable(env))) throw noKeychain();
+  const nameFlag = flags.string("profile");
+
+  if (nameFlag !== undefined) checkProfileName(nameFlag);
+
   prompt.intro("beachside init");
 
-  const named = targetFromFlags(session, flags, flags.positionals[0]);
+  const named = targetFromFlags(session, flags, providerId(session, flags));
 
   if (flags.positionals.length > 1)
     prompt.warn(
@@ -513,11 +563,13 @@ async function wizard(session: Session, flags: Flags, prompt: Prompter): Promise
       session,
       target,
       given,
-      named ? flags.string("profile") : undefined,
+      named ? nameFlag : undefined,
       taken,
+      flags.bool("force"),
     );
 
     if (draft) {
+      await keepSameKeys(session, draft);
       drafts.push(draft);
       taken.add(draft.name);
     }
@@ -532,20 +584,24 @@ async function wizard(session: Session, flags: Flags, prompt: Prompter): Promise
   const storage = await askStorage(prompt, session, flags, drafts);
   const defaultName = await askDefault(prompt, session, flags, drafts);
 
-  const checks = await prompt.spin(
-    "Checking keys",
-    () => Promise.all(drafts.map((draft) => checkDraft(session, draft))),
-    (results) =>
-      results
-        .map(
-          (result, index) => `${result.status === "ok" ? "✓" : "✗"} ${drafts[index]!.target.label}`,
-        )
-        .join("  "),
-  );
+  // --no-check saves every profile unchecked, as the flag form does.
+  const checks = flags.bool("no-check")
+    ? null
+    : await prompt.spin(
+        "Checking keys",
+        () => Promise.all(drafts.map((draft) => checkDraft(session, draft))),
+        (results) =>
+          results
+            .map(
+              (result, index) =>
+                `${result.status === "ok" ? "✓" : "✗"} ${drafts[index]!.target.label}`,
+            )
+            .join("  "),
+      );
 
-  const passed = drafts.filter((_, index) => checks[index]!.status === "ok");
+  const passed = checks ? drafts.filter((_, index) => checks[index]!.status === "ok") : drafts;
 
-  for (const [index, check] of checks.entries())
+  for (const [index, check] of (checks ?? []).entries())
     if (check.status === "failed") {
       prompt.error(`${drafts[index]!.name} was not saved: ${check.reason}`);
 
@@ -554,31 +610,35 @@ async function wizard(session: Session, flags: Flags, prompt: Prompter): Promise
 
   if (!passed.length) {
     prompt.outro("Nothing was saved; fix the keys above and run `beachside init` again");
+    const failure = (checks ?? []).find((check) => check.status === "failed");
 
-    return 5;
+    return failure?.status === "failed" ? exitCodeFor(failure.code) : 1;
   }
 
-  const tries = (await prompt.confirm({
-    message: `Try a sandbox on ${passed.length > 1 ? "each" : passed[0]!.target.label} now? It takes a few seconds and is deleted after.`,
-    initial: true,
-  }))
-    ? await prompt.spin(
-        "Creating test sandboxes",
-        () =>
-          Promise.all(
-            checks.flatMap((check) =>
-              check.status === "ok" ? [trySandbox(session, check.client)] : [],
+  const tries =
+    checks &&
+    (flags.bool("try") ||
+      (await prompt.confirm({
+        message: `Try a sandbox on ${passed.length > 1 ? "each" : passed[0]!.target.label} now? It takes a few seconds and is deleted after.`,
+        initial: true,
+      })))
+      ? await prompt.spin(
+          "Creating test sandboxes",
+          () =>
+            Promise.all(
+              checks.flatMap((check) =>
+                check.status === "ok" ? [trySandbox(session, check.client)] : [],
+              ),
             ),
-          ),
-        (results) =>
-          results
-            .map(
-              (result, index) =>
-                `${result.status === "ok" ? "✓" : "✗"} ${passed[index]!.target.label}${result.status === "ok" ? ` ${result.seconds}s` : ""}`,
-            )
-            .join("  "),
-      )
-    : null;
+          (results) =>
+            results
+              .map(
+                (result, index) =>
+                  `${result.status === "ok" ? "✓" : "✗"} ${passed[index]!.target.label}${result.status === "ok" ? ` ${result.seconds}s` : ""}`,
+              )
+              .join("  "),
+        )
+      : null;
 
   for (const [index, result] of (tries ?? []).entries())
     if (result.status === "failed")
@@ -632,9 +692,9 @@ async function askStorage(
   flags: Flags,
   drafts: Draft[],
 ): Promise<Storage> {
-  const chosen = flags.string("store");
+  const chosen = storeFlag(flags);
 
-  if (chosen === "keychain" || chosen === "config") return chosen;
+  if (chosen) return chosen;
 
   if (!drafts.some((draft) => Object.keys(draft.secrets).length)) return "config";
 

@@ -150,6 +150,11 @@ const managementExitCodes = new Map([
   ["SETUP_FAILED", 9],
 ]);
 
+/** The exit code a rejected failure with this code gets, such as 5 for UNAUTHENTICATED. */
+export function exitCodeFor(code: string): number {
+  return managementExitCodes.get(code) ?? 1;
+}
+
 /** Exit codes for commands other than exec and run. */
 export function managementExitCode(report: ErrorReport): number {
   if (report.outcome === "partial") return 8;

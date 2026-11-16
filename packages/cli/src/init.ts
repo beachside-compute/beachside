@@ -75,7 +75,7 @@ export type Storage = "keychain" | "config";
 
 const ProfileName = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
-function checkProfileName(name: string): string {
+export function checkProfileName(name: string): string {
   if (!ProfileName.test(name))
     throw usage(
       `Profile name ${name} is not usable`,
@@ -116,6 +116,32 @@ export function newKeychainId(): string {
 /** Where one new key is stored in the keychain. */
 function keychainRef(draft: Draft, key: string): string {
   return keychainReference(draft.name, key, draft.keychainId);
+}
+
+/**
+ * A key given again that is what the profile already stores keeps its current place, so rerunning
+ * the same command reports `unchanged` instead of storing the key a second time.
+ */
+export async function keepSameKeys(session: Session, draft: Draft): Promise<void> {
+  for (const [key, value] of Object.entries(draft.secrets)) {
+    const current = draft.previous?.credentials?.[key];
+
+    if (current === undefined) continue;
+    let same = current === value;
+
+    if (!same && ownKeychainReference(current))
+      try {
+        same =
+          (await session.secret(current, `profiles.${draft.name}.credentials.${key}`)) === value;
+      } catch {
+        // The old item can't be read; the new key is stored as a new one.
+      }
+
+    if (same) {
+      draft.credentials[key] = current;
+      delete draft.secrets[key];
+    }
+  }
 }
 
 /** The profile as it will be written, with new keys replaced by where they are stored. */
@@ -250,6 +276,8 @@ export async function checkDraft(session: Session, draft: Draft): Promise<CheckR
 
     return { status: "ok", check, client };
   } catch (cause) {
+    // Ctrl-C ends the run; it is not a failed check.
+    if (session.ctx.signal.aborted) throw cause;
     const report = describeError(cause);
 
     return { status: "failed", code: report.code, reason: report.message, hint: report.hint };
@@ -280,6 +308,7 @@ export async function trySandbox(
   try {
     box = await client.sandboxes.create({}, { signal });
   } catch (cause) {
+    if (signal.aborted) throw cause;
     const report = describeError(cause);
 
     return {
@@ -291,6 +320,7 @@ export async function trySandbox(
   }
 
   let failure: { code: string; reason: string } | null = null;
+  let interrupted = false;
 
   try {
     const result = await box.exec(
@@ -303,8 +333,11 @@ export async function trySandbox(
   } catch (cause) {
     const report = describeError(cause);
     failure = { code: report.code, reason: report.message };
+
+    if (signal.aborted) interrupted = true;
   }
 
+  // The test sandbox is destroyed even after Ctrl-C, then the interruption ends the run.
   try {
     await box.destroy();
   } catch (cause) {
@@ -317,6 +350,8 @@ export async function trySandbox(
       leftover: box.reference?.nativeId ?? null,
     };
   }
+
+  if (interrupted) throw new CliError("INTERRUPTED", "Interrupted; the test sandbox was destroyed");
 
   return failure
     ? { status: "failed", ...failure, leftover: null }
@@ -337,6 +372,9 @@ export async function writeProfiles(
   defaultName: string | null,
 ): Promise<void> {
   const { env, signal } = session.ctx;
+
+  // Ctrl-C at any earlier step, even one that caught it, saves nothing.
+  if (signal.aborted) throw new CliError("INTERRUPTED", "Interrupted; nothing was saved");
   const loaded = await session.config();
   const stored: string[] = [];
 
@@ -405,12 +443,17 @@ function configFlag(key: string, value: Json): string[] {
 
   if (key === "network" && text.success) return ["--network", quote(text.data)];
 
-  return ["--set", quote(`${key}=${text.success ? text.data : JSON.stringify(value)}`)];
+  // A string that would read back as JSON (true, 3, null) is written as a JSON string.
+  const plain =
+    text.success && JSON.stringify(configValue(text.data)) === JSON.stringify(text.data);
+
+  return ["--set", quote(`${key}=${plain ? text.data : JSON.stringify(value)}`)];
 }
 
 /**
  * The non-interactive command that makes this profile again. A key stored in beachside.json is
- * never printed: the command reads it from stdin (`--api-key -`).
+ * never printed: the command reads it from stdin (`--api-key -`), one line per `-` when there are
+ * several, in the order the flags are printed.
  */
 export function equivalentCommand(draft: Draft, storage: Storage, isDefault: boolean): string {
   const parts = ["beachside", "init"];
@@ -422,11 +465,21 @@ export function equivalentCommand(draft: Draft, storage: Storage, isDefault: boo
     parts.push("--profile", quote(draft.name));
 
   // A key kept from beachside.json is never printed either.
+  const values = new Map<string, string>();
+
   for (const [key, value] of Object.entries(draft.credentials))
-    parts.push(...credentialFlag(key, isReference(value) ? value : "-"));
+    values.set(key, isReference(value) ? value : "-");
 
   for (const key of Object.keys(draft.secrets))
-    parts.push(...credentialFlag(key, storage === "keychain" ? keychainRef(draft, key) : "-"));
+    values.set(key, storage === "keychain" ? keychainRef(draft, key) : "-");
+
+  // --api-key comes first, the order `init` reads several piped values in.
+  const ordered = [...values].sort(([a], [b]) => Number(b === "apiKey") - Number(a === "apiKey"));
+
+  for (const [key, value] of ordered) parts.push(...credentialFlag(key, value));
+
+  // Piped keys go back where they were: beachside.json.
+  if (ordered.some(([, value]) => value === "-")) parts.push("--store", "config");
 
   const defaults = draft.setup?.defaults ?? {};
 
@@ -549,7 +602,6 @@ export function targetFromFlags(
   return officialTarget(official);
 }
 
-/** Read one value from stdin for `--api-key -`, without a trailing newline. */
 const piped = new WeakMap<Session, Promise<string>>();
 
 /**
@@ -570,6 +622,7 @@ export function readPipedKey(session: Session, flags: Flags): void {
   }
 }
 
+/** Read stdin for `-` values, without a trailing newline. */
 async function readStdin(session: Session): Promise<string> {
   const parts: Uint8Array[] = [];
 
@@ -579,7 +632,7 @@ async function readStdin(session: Session): Promise<string> {
     .toString("utf8")
     .replace(/\r?\n$/, "");
 
-  if (!value) throw usage("--api-key - read nothing from stdin");
+  if (!value) throw usage("A credential given as - read nothing from stdin");
 
   return value;
 }
@@ -592,23 +645,41 @@ export async function givenValues(
   flags: Flags,
   setup: AdapterSetup | null,
 ): Promise<Given> {
-  const credentials = parsePairs(flags.strings("credential"), "credential");
+  const pairs = parsePairs(flags.strings("credential"), "credential");
+  const credentials: Record<string, string> = {};
   const apiKey = flags.string("api-key");
 
   if (apiKey !== undefined) {
     const keys = Object.keys(setup?.credentials ?? {});
-    const key = keys.includes("apiKey") || keys.length !== 1 ? "apiKey" : keys[0]!;
 
-    if (credentials[key] !== undefined)
-      throw usage(`--api-key and --credential ${key} both set ${key}`);
+    if (keys.length > 1 && !keys.includes("apiKey"))
+      throw usage(
+        "This adapter has no single API key",
+        `pass its credentials by name: ${keys.map((key) => `--credential ${key}=...`).join(" ")}`,
+      );
+
+    const key = keys.length === 1 ? keys[0]! : "apiKey";
+
+    if (pairs[key] !== undefined) throw usage(`--api-key and --credential ${key} both set ${key}`);
     credentials[key] = apiKey;
   }
 
-  const reading = Object.entries(credentials).filter(([, value]) => value === "-");
+  // --api-key first, then each --credential in order: the order several piped values are read in.
+  Object.assign(credentials, pairs);
+  const reading = Object.keys(credentials).filter((key) => credentials[key] === "-");
 
-  if (reading.length > 1) throw usage("Only one credential can be read from stdin (-)");
+  if (reading.length) {
+    const text = await (piped.get(session) ?? readStdin(session));
+    const lines = reading.length > 1 ? text.split(/\r?\n/) : [text];
 
-  for (const [key] of reading) credentials[key] = await (piped.get(session) ?? readStdin(session));
+    if (lines.length !== reading.length || lines.some((line) => !line))
+      throw usage(
+        `${reading.length} credentials are given as -, so stdin needs ${reading.length} lines, one value each`,
+        `the order is ${reading.map((key) => (key === "apiKey" ? "--api-key" : `--credential ${key}`)).join(", ")}`,
+      );
+
+    for (const [index, key] of reading.entries()) credentials[key] = lines[index]!;
+  }
 
   const config: Record<string, Json> = Object.fromEntries(
     Object.entries(parsePairs(flags.strings("set"), "set")).map(([key, value]) => [
@@ -782,22 +853,48 @@ export const initFlagSpecs = {
   },
 } as const;
 
-async function storageFor(session: Session, flags: Flags, needed: boolean): Promise<Storage> {
+/** The --store choice, checked. */
+export function storeFlag(flags: Flags): Storage | undefined {
   const chosen = flags.string("store");
 
-  if (chosen !== undefined && chosen !== "keychain" && chosen !== "config")
-    throw usage(`--store is keychain or config, got ${chosen}`);
+  if (chosen === undefined || chosen === "keychain" || chosen === "config") return chosen;
+
+  throw usage(`--store is keychain or config, got ${chosen}`);
+}
+
+export function noKeychain(): CliError {
+  return new CliError(
+    "SECRET_TOOL_MISSING",
+    "There is no OS keychain to store the key in",
+    "macOS has one built in; on Linux install secret-tool (libsecret) and a keyring, or pass --store config",
+  );
+}
+
+/** Flags that only make sense together, checked before any work. */
+export function checkFlagCombinations(flags: Flags): void {
+  if (flags.bool("try") && flags.bool("no-check"))
+    throw usage("--try needs the key check; drop --no-check");
+}
+
+/** The provider id the command names: the first argument, else --provider. */
+export function providerId(session: Session, flags: Flags): string | undefined {
+  const [id] = flags.positionals;
+  const flag = session.ctx.flags.provider;
+
+  if (id && flag && id !== flag)
+    throw usage(`init got two providers: ${id} and --provider ${flag}`);
+
+  return id ?? flag;
+}
+
+async function storageFor(session: Session, flags: Flags, needed: boolean): Promise<Storage> {
+  const chosen = storeFlag(flags);
 
   if (!needed) return chosen ?? "config";
 
   const keychain = await keychainAvailable(session.ctx.env);
 
-  if (chosen === "keychain" && !keychain)
-    throw new CliError(
-      "SECRET_TOOL_MISSING",
-      "There is no OS keychain to store the key in",
-      "macOS has one built in; on Linux install secret-tool (libsecret) and a keyring, or pass --store config",
-    );
+  if (chosen === "keychain" && !keychain) throw noKeychain();
 
   return chosen ?? (keychain ? "keychain" : "config");
 }
@@ -806,7 +903,10 @@ async function storageFor(session: Session, flags: Flags, needed: boolean): Prom
 export async function initFromFlags(session: Session, flags: Flags): Promise<number> {
   readPipedKey(session, flags);
   const { out, env } = session.ctx;
-  const [id, ...extra] = flags.positionals;
+  const extra = flags.positionals.slice(1);
+
+  checkFlagCombinations(flags);
+  storeFlag(flags);
 
   if (extra.length)
     throw usage(
@@ -814,7 +914,11 @@ export async function initFromFlags(session: Session, flags: Flags): Promise<num
       "repeat the command for each provider",
     );
 
-  const target = targetFromFlags(session, flags, id);
+  const target = targetFromFlags(
+    session,
+    flags,
+    providerId(session, flags) ?? (flags.has("module") ? undefined : env.BEACHSIDE_PROVIDER),
+  );
 
   if (!target)
     throw new CliError(
@@ -831,6 +935,8 @@ export async function initFromFlags(session: Session, flags: Flags): Promise<num
   const given = await givenValues(session, flags, setup);
   const previous = loaded.value.profiles?.[name] ?? null;
   const { draft, missing } = draftFromFlags(name, target, setup, given, previous, env);
+
+  await keepSameKeys(session, draft);
 
   if (missing.length)
     throw new CliError(
@@ -851,10 +957,7 @@ export async function initFromFlags(session: Session, flags: Flags): Promise<num
   const storage = await storageFor(session, flags, Object.keys(draft.secrets).length > 0);
   const next = profileFor(draft, storage);
 
-  const unchanged =
-    previous !== null &&
-    !Object.keys(draft.secrets).length &&
-    !changedSettings(previous, next).length;
+  const unchanged = previous !== null && !changedSettings(previous, next).length;
 
   if (previous && !unchanged && !flags.bool("force"))
     throw usage(
@@ -865,24 +968,12 @@ export async function initFromFlags(session: Session, flags: Flags): Promise<num
   const check = flags.bool("no-check") ? null : await checkDraft(session, draft);
 
   if (check?.status === "failed")
-    throw new CliError(
-      check.code === "FORBIDDEN"
-        ? "FORBIDDEN"
-        : check.code === "UNAUTHENTICATED"
-          ? "UNAUTHENTICATED"
-          : check.code,
-      `Profile ${name} was not saved: ${check.reason}`,
-      check.hint,
-    );
+    throw new CliError(check.code, `Profile ${name} was not saved: ${check.reason}`, check.hint);
 
   const tried =
     flags.bool("try") && check?.status === "ok" ? await trySandbox(session, check.client) : null;
 
-  if (flags.bool("try") && !check) throw usage("--try needs the key check; drop --no-check");
-
-  const makeDefault =
-    flags.bool("default") ||
-    (!loaded.value.default && !Object.keys(loaded.value.profiles ?? {}).length);
+  const makeDefault = flags.bool("default") || !loaded.value.default;
 
   const wasDefault = loaded.value.default === name;
 
@@ -936,7 +1027,8 @@ export async function initFromFlags(session: Session, flags: Flags): Promise<num
 export async function initCommand(session: Session, flags: Flags): Promise<number> {
   if (!interactive(session, flags)) return initFromFlags(session, flags);
 
-  // The prompt library is loaded only here, after deciding a person is at a terminal.
+  // The prompt library is loaded only here, after deciding a person is at a terminal. It is a
+  // devDependency on purpose: the build bundles it into dist, so installs don't fetch it.
   const { clackPrompter } = await import("./init-prompts");
 
   return runWizard(session, flags, clackPrompter(session.ctx.signal));

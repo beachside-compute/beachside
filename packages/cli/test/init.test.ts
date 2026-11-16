@@ -15,7 +15,7 @@ import { join } from "node:path";
 import type { Json } from "@beachside/adapter";
 import { startFakeProviderServer } from "@beachside-internal/provider-fake/server";
 import { Flags } from "../src/commands";
-import { equivalentCommand, type Draft } from "../src/init";
+import { equivalentCommand, givenValues, providerId, type Draft } from "../src/init";
 import { PromptCancelled, runWizard, type Choice, type Prompter } from "../src/init-wizard";
 import { Output } from "../src/output";
 import { Session } from "../src/session";
@@ -219,6 +219,35 @@ test("a rejected key is not saved; a piped key is stored in beachside.json at 06
   expect((await stat(configPath())).mode & 0o777).toBe(0o600);
 });
 
+test("rerunning with the same piped key, or the printed command, reports unchanged", async () => {
+  const first = await cli(
+    [...fake, "--api-key", "-", "--set", "region=north", "--store", "config", "--json"],
+    {},
+    `${token}\n`,
+  );
+
+  expect(first).toMatchObject({ code: 0 });
+  const { command } = JSON.parse(first.stdout).data;
+
+  const again = await cli(
+    [...fake, "--api-key", "-", "--set", "region=north", "--store", "config", "--json"],
+    {},
+    `${token}\n`,
+  );
+
+  expect(JSON.parse(again.stdout).data.result).toBe("unchanged");
+
+  // The repeat command runs as printed (no word in it needs shell quoting here).
+  const words = String(command).split(" ");
+
+  expect(words.slice(0, 2)).toEqual(["beachside", "init"]);
+
+  const replay = await cli([...words.slice(1), "--json"], {}, `${token}\n`);
+
+  expect(replay).toMatchObject({ code: 0 });
+  expect(JSON.parse(replay.stdout).data.result).toBe("unchanged");
+});
+
 test("rerunning is safe: unchanged is fine, a change needs --force", async () => {
   const first = await cli([...fake, "--set", "region=north"], { FAKE_TOKEN: token });
 
@@ -363,7 +392,22 @@ test.skipIf(process.platform === "darwin")(
       reference,
     });
 
-    // Replacing the key stores it under a new name and removes the old item only once saved.
+    // Piping the same key again keeps the item it is already in.
+    const again = await cli(
+      [...fake, "--api-key", "-", "--set", "region=north", "--json"],
+      env,
+      token,
+    );
+
+    expect(JSON.parse(again.stdout).data).toMatchObject({
+      result: "unchanged",
+      credentials: { token: reference },
+    });
+
+    // A different key (the item now holds an older one) is stored under a new name, and the old
+    // item is removed only once the profile is saved.
+    await writeFile(join(dir, "keyring", account), "an-older-key");
+
     const replaced = await cli(
       [...fake, "--api-key", "-", "--set", "region=north", "--force", "--json"],
       env,
@@ -622,7 +666,11 @@ test("the repeat command never prints a key kept in beachside.json", () => {
     setup: null,
     credentials: { apiKey: "plain-secret", other: "op://vault/item/field" },
     secrets: { extra: "pasted-secret" },
-    config: { org: "org-1", environment: { kind: "prepared", value: "x y" } },
+    config: {
+      org: "org-1",
+      flag: "true",
+      environment: { kind: "prepared", value: "x y" },
+    },
     previous: null,
     keychainId: "abcd1234",
   };
@@ -630,7 +678,131 @@ test("the repeat command never prints a key kept in beachside.json", () => {
   const command = equivalentCommand(draft, "config", true);
 
   expect(command).not.toContain("secret");
+  // Several piped keys are read one per line, --api-key first; a string that looks like JSON stays one.
   expect(command).toBe(
-    `beachside init --module @acme/adapter --export acme --profile work --api-key - --credential other=op://vault/item/field --credential extra=- --set org=org-1 --set 'environment={"kind":"prepared","value":"x y"}' --default`,
+    `beachside init --module @acme/adapter --export acme --profile work --api-key - --credential other=op://vault/item/field --credential extra=- --store config --set org=org-1 --set 'flag="true"' --set 'environment={"kind":"prepared","value":"x y"}' --default`,
   );
+});
+
+function stdinSession(text: string, flags: { provider?: string } = {}) {
+  return new Session({
+    env: baseEnv(),
+    cwd: dir,
+    out: new Output(false, { stdout: () => undefined, stderr: () => undefined }),
+    flags: { json: false, ...flags },
+    signal: new AbortController().signal,
+    stdin: async function* () {
+      yield new TextEncoder().encode(text);
+    },
+  });
+}
+
+const twoKeys = {
+  credentials: { tokenId: { env: "FAKE_ID" }, tokenSecret: { env: "FAKE_SECRET" } },
+};
+
+test("several credentials given as - are read from stdin one per line, in flag order", async () => {
+  const flags = new Flags({ credential: ["tokenSecret=-", "tokenId=-"] }, [], null);
+  const given = await givenValues(stdinSession("secret-1\nid-1\n"), flags, twoKeys);
+
+  expect(given.credentials).toEqual({ tokenSecret: "secret-1", tokenId: "id-1" });
+
+  await expect(givenValues(stdinSession("only-one\n"), flags, twoKeys)).rejects.toThrow(
+    "stdin needs 2 lines",
+  );
+});
+
+test("--api-key is refused for an adapter with several credentials and no apiKey", async () => {
+  const flags = new Flags({ "api-key": "k" }, [], null);
+
+  await expect(givenValues(stdinSession(""), flags, twoKeys)).rejects.toThrow("no single API key");
+});
+
+test("--provider names the provider; it can't disagree with the argument", () => {
+  expect(providerId(stdinSession("", { provider: "e2b" }), new Flags({}, [], null))).toBe("e2b");
+  expect(() =>
+    providerId(stdinSession("", { provider: "e2b" }), new Flags({}, ["boxd"], null)),
+  ).toThrow("two providers");
+});
+
+test("the wizard checks --profile and other flags before asking anything", async () => {
+  const { prompt, asked } = scripted([]);
+  const run = session();
+
+  await expect(runWizard(run, wizardFlags({ profile: "bad name" }), prompt)).rejects.toThrow(
+    "not usable",
+  );
+  await expect(
+    runWizard(run, wizardFlags({ try: true, "no-check": true }), prompt),
+  ).rejects.toThrow("--try needs the key check");
+  await expect(runWizard(run, wizardFlags({ store: "disk" }), prompt)).rejects.toThrow(
+    "--store is keychain or config",
+  );
+  await run.close();
+  expect(asked).toHaveLength(0);
+});
+
+test("--no-check in the wizard saves without asking the provider or offering a sandbox", async () => {
+  const { prompt, asked } = scripted([
+    [/Paste your fk token/, "not-checked"],
+    [/fk region/, "north"],
+    [/fk network/, ""],
+  ]);
+
+  const run = session();
+  const code = await runWizard(run, wizardFlags({ "no-check": true }), prompt);
+  await run.close();
+
+  expect(code).toBe(0);
+  expect(asked.some((message) => message.includes("Try a sandbox"))).toBe(false);
+  expect((await config()).profiles.fk.credentials).toEqual({ token: "not-checked" });
+});
+
+test("Ctrl-C while a test sandbox is being made saves nothing", async () => {
+  const controller = new AbortController();
+
+  const { prompt } = scripted([
+    [/Paste your fk token/, token],
+    [/fk region/, "north"],
+    [/fk network/, ""],
+  ]);
+
+  prompt.confirm = async () => {
+    controller.abort();
+
+    return true;
+  };
+
+  const run = new Session({ ...session().ctx, signal: controller.signal });
+  const code = await runWizard(run, wizardFlags(), prompt);
+  await run.close();
+
+  expect(code).toBe(130);
+  await expect(stat(configPath())).rejects.toThrow();
+});
+
+test("a profile name taken by another provider is replaced only after asking", async () => {
+  await mkdir(join(dir, "beachside"), { recursive: true });
+  await writeFile(
+    configPath(),
+    JSON.stringify({ profiles: { fk: { provider: "e2b", credentials: { apiKey: "env:E2B" } } } }),
+  );
+
+  const { prompt, asked } = scripted([
+    [/already a profile named fk/, "replace"],
+    [/Paste your fk token/, token],
+    [/fk region/, "north"],
+    [/fk network/, ""],
+    [/Try a sandbox/, false],
+  ]);
+
+  const run = session();
+  const code = await runWizard(run, wizardFlags(), prompt);
+  await run.close();
+
+  expect(code).toBe(0);
+  // Nothing of the e2b profile is merged in, and its key is not offered for reuse.
+  expect(asked.some((message) => message.includes("Keep the current"))).toBe(false);
+  expect((await config()).profiles.fk.credentials).toEqual({ token });
+  expect((await config()).profiles.fk.provider).toBeUndefined();
 });
