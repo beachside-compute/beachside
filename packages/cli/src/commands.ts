@@ -66,6 +66,7 @@ import {
   hasHerdr,
   hcMachines,
   parseAddons,
+  refreshHostKeys,
   removedAddonNotes,
   sandboxShell,
   setupShell,
@@ -1745,6 +1746,26 @@ function onePositional(flags: Flags, what: string): string {
   return flags.positionals[0]!;
 }
 
+/** Read a running herdr sandbox's host keys again; save and report any that changed. */
+async function refreshRecordedHostKeys(
+  session: Session,
+  record: SandboxRecord,
+  box: SandboxHandle<true>,
+): Promise<void> {
+  const result = await refreshHostKeys(sandboxShell(box), record.addons ?? [], session.ctx.signal);
+
+  for (const note of result.notes) session.ctx.out.note(note);
+
+  if (!result.changed) return;
+
+  record.addons = result.addons;
+
+  const store = await session.store();
+  const current = await store.get("sandbox", record.name);
+
+  if (current) await store.update("sandbox", record.name, record, current.version);
+}
+
 export async function inspectCommand(session: Session, flags: Flags): Promise<number> {
   const { record } = await recoverCreate(
     session,
@@ -1754,6 +1775,10 @@ export async function inspectCommand(session: Session, flags: Flags): Promise<nu
 
   const box = await session.reopen(record);
   const info = await box.inspect({ signal: session.ctx.signal });
+
+  // Host keys can change after create, so a running sandbox's are read again, never assumed.
+  if (info.state === "running" && hasHerdr(record.addons ?? []))
+    await refreshRecordedHostKeys(session, record, box);
 
   const lines = [
     `name      ${record.name}`,

@@ -9,6 +9,7 @@ import {
   hostKeyFingerprint,
   removedAddonNotes,
   parseAddons,
+  refreshHostKeys,
   setupAddons,
   tailnetKey,
   teardownAddons,
@@ -247,6 +248,9 @@ describe("setupAddons", () => {
 
     const target = "ubuntu@beachside-web.tail1.ts.net";
 
+    const knownHost =
+      "ssh: if ssh saved a host key for beachside-web.tail1.ts.net, drop it with `ssh-keygen -R beachside-web.tail1.ts.net`, so a new sandbox with this name is not refused as a changed host";
+
     // `web` was taken by another machine, so herdr-core called this one web-2.
     expect(
       removedAddonNotes(
@@ -257,17 +261,101 @@ describe("setupAddons", () => {
           { name: "web-2", target },
         ],
       ),
-    ).toEqual(["herdr: forget web in Herdr with `hc machine rm web-2`"]);
-    // Never added here: nothing to forget.
+    ).toEqual(["herdr: forget web in Herdr with `hc machine rm web-2`", knownHost]);
+    // Never added to herdr-core here, but ssh may still have saved its key.
     expect(
       removedAddonNotes("web", [ready], [{ name: "web", target: "me@web.example.com" }]),
-    ).toEqual([]);
+    ).toEqual([knownHost]);
     // No hc to ask: say how to find the name, never guess it.
     expect(removedAddonNotes("web", [ready], null)).toEqual([
       `herdr: if you added web to Herdr, forget it with \`hc machine rm <name>\`, using the name \`hc machine ls\` shows for ${target}`,
+      knownHost,
     ]);
     expect(removedAddonNotes("web", [{ ...ready, state: "failed" }], null)).toEqual([]);
     expect(removedAddonNotes("web", [], null)).toEqual([]);
+  });
+
+  describe("host keys read again", () => {
+    const dnsName = "beachside-web.tail1.ts.net";
+
+    const otherKey =
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGqHjMcA2FbLZb6O1mSXgN+VzBf4V0w4o9mQ8f5bS2Xe";
+
+    const ready: AddonRecord = {
+      name: "herdr",
+      hostname: "beachside-web",
+      state: "ready",
+      connect: `hc machine add ubuntu@${dnsName} --temp --install --name web`,
+      knownHosts: [`${dnsName} ${fixtureKey}`],
+    };
+
+    const signal = new AbortController().signal;
+
+    test("unchanged keys keep the record and say nothing", async () => {
+      const { shell } = scriptedShell([[/ssh_host_/, { stdout: `${fixtureKey} root@image\n` }]]);
+
+      expect(await refreshHostKeys(shell, [ready], signal)).toEqual({
+        addons: [ready],
+        notes: [],
+        changed: false,
+      });
+    });
+
+    test("a changed key replaces the recorded one and is reported with both fingerprints", async () => {
+      const { shell } = scriptedShell([[/ssh_host_/, { stdout: `${otherKey} root@image\n` }]]);
+
+      const result = await refreshHostKeys(shell, [ready], signal);
+
+      expect(result.changed).toBe(true);
+      expect(result.addons[0]?.knownHosts).toEqual([`${dnsName} ${otherKey}`]);
+      expect(addonLines(result.addons)[1]).toContain(hostKeyFingerprint(otherKey));
+      expect(result.notes).toEqual([
+        `herdr: ${dnsName}'s SSH host keys changed since they were recorded (ED25519 was ${fixtureFingerprint}, now ${hostKeyFingerprint(otherKey)}). If ssh refuses it as changed, compare the new fingerprint, then drop the old entry with \`ssh-keygen -R ${dnsName}\``,
+      ]);
+    });
+
+    test("keys that can no longer be read drop the old fingerprint rather than show it", async () => {
+      const { shell } = scriptedShell([[/ssh_host_/, { stdout: "" }]]);
+
+      const result = await refreshHostKeys(shell, [ready], signal);
+
+      expect(result.addons[0]?.knownHosts).toBeUndefined();
+      expect(addonLines(result.addons)).toHaveLength(1);
+      expect(result.notes[0]).toContain("now none readable");
+    });
+
+    test("a failed read keeps the record and says it was not checked", async () => {
+      const failing: Shell = async () => {
+        throw new Error("sandbox unreachable");
+      };
+
+      const { shell: nonzero } = scriptedShell([[/ssh_host_/, { exitCode: 1 }]]);
+
+      for (const shell of [failing, nonzero]) {
+        const result = await refreshHostKeys(shell, [ready], signal);
+
+        expect(result.changed).toBe(false);
+        expect(result.addons).toEqual([ready]);
+        expect(result.notes).toEqual([
+          `herdr: could not read ${dnsName}'s SSH host keys now; any fingerprint shown was recorded at create and may be out of date`,
+        ]);
+      }
+    });
+
+    test("other add-ons and unfinished setups are left alone without a read", async () => {
+      const { shell, calls } = scriptedShell([]);
+
+      const rex: AddonRecord = { name: "rex", hostname: "beachside-web-rex", state: "ready" };
+
+      const failed: AddonRecord = { ...ready, state: "failed" };
+
+      expect(await refreshHostKeys(shell, [rex, failed], signal)).toEqual({
+        addons: [rex, failed],
+        notes: [],
+        changed: false,
+      });
+      expect(calls).toEqual([]);
+    });
   });
 
   test("a failed step keeps what was ready and names the step", async () => {

@@ -42,6 +42,9 @@ export type AddonRecord = z.infer<typeof AddonRecord>;
 
 const keyVariable = "TAILSCALE_AUTH_KEY";
 
+/** Where herdr's userspace tailscaled keeps its state, socket and any host keys Beachside made. */
+const herdrState = `"$HOME/.local/state/beachside/tailscale"`;
+
 /** The requested add-ons, deduplicated and in a stable order. */
 export function parseAddons(values: string[]): AddonName[] {
   const names = new Set<AddonName>();
@@ -315,7 +318,7 @@ async function setupHerdr(
   signal: AbortSignal,
   out: Output,
 ): Promise<AddonRecord> {
-  const state = `"$HOME/.local/state/beachside/tailscale"`;
+  const state = herdrState;
   const socket = `--socket=${state}/tailscaled.sock`;
 
   out.note(`herdr: putting ${hostname} on your tailnet with Tailscale SSH`);
@@ -576,18 +579,100 @@ export function addonLines(addons: AddonRecord[]): string[] {
 
     if (addon.name === "rex") return [`${name}${addon.connect}  (in Rex: Add Remote Host…)`];
 
-    // ssh asks about the ED25519 key first, so that is the fingerprint to compare.
-    const ed25519 = addon.knownHosts?.find((entry) => entry.includes(" ssh-ed25519 "));
+    const fingerprint = ed25519Fingerprint(addon.knownHosts);
 
     return [
       `${name}${addon.connect}  (adds it to the Herdr app)`,
-      ...(ed25519
-        ? [
-            `${"".padEnd(10)}host key ${hostKeyFingerprint(ed25519)} (ED25519): check it when ssh asks`,
-          ]
+      ...(fingerprint
+        ? [`${"".padEnd(10)}host key ${fingerprint} (ED25519): check it when ssh asks`]
         : []),
     ];
   });
+}
+
+/** ssh asks about the ED25519 key first, so that is the fingerprint people compare. */
+function ed25519Fingerprint(knownHosts: string[] | undefined): string | undefined {
+  const entry = knownHosts?.find((line) => line.includes(" ssh-ed25519 "));
+
+  return entry ? hostKeyFingerprint(entry) : undefined;
+}
+
+/** The same keys, in any order. */
+function sameKeys(a: string[], b: string[]): boolean {
+  return a.length === b.length && [...a].sort().join("\n") === [...b].sort().join("\n");
+}
+
+/**
+ * herdr: read the host keys the sandbox serves now, over the provider. They are not fixed: a
+ * restore, a rebuilt image or a regenerated key changes them after `create` recorded them, so
+ * `inspect` reads them again rather than reprinting old ones. A changed key replaces the recorded
+ * one and is reported; a read that fails keeps the recorded keys and says they were not checked.
+ */
+export async function refreshHostKeys(
+  shell: Shell,
+  addons: AddonRecord[],
+  signal: AbortSignal,
+): Promise<{ addons: AddonRecord[]; notes: string[]; changed: boolean }> {
+  const notes: string[] = [];
+  let changed = false;
+
+  const refreshed: AddonRecord[] = [];
+
+  for (const addon of addons) {
+    const dnsName = addon.state === "ready" ? herdrTarget(addon)?.split("@")[1] : undefined;
+
+    if (addon.name !== "herdr" || !dnsName) {
+      refreshed.push(addon);
+      continue;
+    }
+
+    let read: ShellResult | undefined;
+
+    try {
+      read = await shell(
+        {
+          what: "Reading the SSH host keys",
+          script: hostKeysScript(herdrState),
+          read: true,
+          deadlineSeconds: 30,
+        },
+        signal,
+      );
+    } catch {
+      read = undefined;
+    }
+
+    if (!read || read.exitCode !== 0) {
+      notes.push(
+        `herdr: could not read ${dnsName}'s SSH host keys now; any fingerprint shown was recorded at create and may be out of date`,
+      );
+      refreshed.push(addon);
+      continue;
+    }
+
+    const recorded = addon.knownHosts ?? [];
+    const current = hostKeys(read.stdout).map((entry) => `${dnsName} ${entry}`);
+
+    if (sameKeys(recorded, current)) {
+      refreshed.push(addon);
+      continue;
+    }
+
+    changed = true;
+
+    const { knownHosts: _old, ...rest } = addon;
+
+    refreshed.push(current.length ? { ...rest, knownHosts: current } : rest);
+
+    const was = ed25519Fingerprint(recorded) ?? "none readable";
+    const now = ed25519Fingerprint(current) ?? "none readable";
+
+    notes.push(
+      `herdr: ${dnsName}'s SSH host keys changed since they were recorded (ED25519 was ${was}, now ${now}). If ssh refuses it as changed, compare the new fingerprint, then drop the old entry with \`ssh-keygen -R ${dnsName}\``,
+    );
+  }
+
+  return { addons: refreshed, notes, changed };
 }
 
 /** A machine herdr-core knows, as `hc machine ls --json` lists it. */
@@ -641,7 +726,8 @@ export function hasHerdr(addons: AddonRecord[]): boolean {
 /**
  * After `rm` or `gc`: herdr-core keeps a machine until it is told to forget it, and its name may
  * not be the sandbox's (a taken name gets a suffix), so name the ones whose target is this
- * sandbox's. `machines` null means `hc` could not be asked here.
+ * sandbox's. `machines` null means `hc` could not be asked here. ssh also keeps the host key it
+ * accepted, and a later sandbox with this name has its own key, so say how to drop that too.
  */
 export function removedAddonNotes(
   sandbox: string,
@@ -654,13 +740,23 @@ export function removedAddonNotes(
 
     if (!target) return [];
 
+    const dnsName = target.split("@")[1];
+
+    const knownHost = `ssh: if ssh saved a host key for ${dnsName}, drop it with \`ssh-keygen -R ${dnsName}\`, so a new sandbox with this name is not refused as a changed host`;
+
     if (!machines)
       return [
         `herdr: if you added ${sandbox} to Herdr, forget it with \`hc machine rm <name>\`, using the name \`hc machine ls\` shows for ${target}`,
+        knownHost,
       ];
 
-    return machines
-      .filter((machine) => machine.target === target)
-      .map((machine) => `herdr: forget ${sandbox} in Herdr with \`hc machine rm ${machine.name}\``);
+    return [
+      ...machines
+        .filter((machine) => machine.target === target)
+        .map(
+          (machine) => `herdr: forget ${sandbox} in Herdr with \`hc machine rm ${machine.name}\``,
+        ),
+      knownHost,
+    ];
   });
 }
