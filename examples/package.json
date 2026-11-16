@@ -6,12 +6,17 @@
   "scripts": {
     "hello": "bun --env-file=.env.local agent-hello-world/main.ts",
     "edit": "bun --env-file=.env.local agent-edit-file/main.ts",
+    "box": "bun --env-file=.env.local opencode-box/main.ts",
     "check": "tsc -p tsconfig.json",
     "test": "bun test"
   },
   "dependencies": {
     "beachside": "workspace:*",
+    "@beachside/boxd": "workspace:*",
     "@beachside/daytona": "workspace:*",
-    "@beachside/e2b": "workspace:*"
+    "@beachside/e2b": "workspace:*",
+    "@beachside/freestyle": "workspace:*",
+    "@beachside/runloop": "workspace:*",
+    "@beachside/vercel": "workspace:*"
   }
 }
