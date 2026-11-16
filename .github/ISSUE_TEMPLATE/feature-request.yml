@@ -1,0 +1,41 @@
+name: Feature request or feedback
+description: Suggest an improvement or share feedback about Beachside.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: Search existing issues first. Remove secrets and private data from examples.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - CLI
+        - SDK
+        - Both CLI and SDK
+        - Documentation
+        - Other / unsure
+    validations:
+      required: true
+  - type: input
+    id: provider
+    attributes:
+      label: Provider(s) (optional)
+      description: Name any relevant providers, or enter "none" or "unknown".
+  - type: textarea
+    id: use-case
+    attributes:
+      label: What would you like to improve?
+      description: Describe your use case and what is missing, confusing, or getting in the way.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome (optional)
+      description: What would make this better? A proposed workflow, command, or code example is welcome, but a solution is not required for feedback.
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or additional context (optional)
+      description: Mention any workarounds, alternatives, or related issues.
