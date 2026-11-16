@@ -13,7 +13,7 @@ export default defineConfig({
     launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH },
   },
   webServer: {
-    command: "bun run build && bun run preview --host 127.0.0.1 --port 48973 --ignore-lock",
+    command: "bun run site:build && bun run preview --host 127.0.0.1 --port 48973 --ignore-lock",
     url: "http://127.0.0.1:48973/docs/",
     reuseExistingServer: false,
     // Exercise the production defaults without deployment-provided settings.
