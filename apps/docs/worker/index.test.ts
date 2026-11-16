@@ -19,6 +19,8 @@ type SignupBody = {
   consent?: string;
 };
 
+const isReddit = (url: string) => new URL(url).host === "ads-api.reddit.com";
+
 const redditToken: Env["REDDIT_CONVERSIONS_TOKEN"] = { get: async () => "reddit_test" };
 
 const attributed: SignupBody = {
@@ -54,8 +56,7 @@ function stubResend(
 
       if (url.endsWith("/contacts")) return new Response(contactBody, { status: contactStatus });
 
-      if (url.includes("ads-api.reddit.com"))
-        return new Response(redditBody, { status: redditStatus });
+      if (isReddit(url)) return new Response(redditBody, { status: redditStatus });
 
       return new Response("{}", { status: 202 });
     },
@@ -233,7 +234,7 @@ describe("beta signup worker", () => {
 
     expect(response.status).toBe(200);
 
-    const reddit = calls.find((call) => call.url.includes("ads-api.reddit.com"));
+    const reddit = calls.find((call) => isReddit(call.url));
 
     expect(reddit?.url).toBe(
       "https://ads-api.reddit.com/api/v3/pixels/p2_16reu4htfhrxg/conversion_events",
@@ -269,7 +270,7 @@ describe("beta signup worker", () => {
       REDDIT_TEST_ID: "t2_test",
     });
 
-    const reddit = calls.find((call) => call.url.includes("ads-api.reddit.com"));
+    const reddit = calls.find((call) => isReddit(call.url));
 
     expect(JSON.parse(reddit?.body ?? "{}").data.test_id).toBe("t2_test");
   });
@@ -277,8 +278,7 @@ describe("beta signup worker", () => {
   test("skips Reddit without a token, after a declined banner, and for a repeat signup", async () => {
     const env = { ASSETS: assets, RESEND_API_KEY: testKey, REDDIT_CONVERSIONS_TOKEN: redditToken };
 
-    const reddit = (calls: { url: string }[]) =>
-      calls.filter((call) => call.url.includes("ads-api.reddit.com"));
+    const reddit = (calls: { url: string }[]) => calls.filter((call) => isReddit(call.url));
 
     let calls = stubResend(200);
 
@@ -309,9 +309,7 @@ describe("beta signup worker", () => {
 
     expect(response.status).toBe(200);
 
-    const event = JSON.parse(
-      calls.find((call) => call.url.includes("ads-api.reddit.com"))?.body ?? "{}",
-    ).data.events[0];
+    const event = JSON.parse(calls.find((call) => isReddit(call.url))?.body ?? "{}").data.events[0];
 
     expect(event.event_source_url).toBeUndefined();
     expect(event.click_id).toBeUndefined();
@@ -327,7 +325,7 @@ describe("beta signup worker", () => {
 
     globalThis.fetch = Object.assign(
       async (input: RequestInfo | URL) => {
-        if (String(input).includes("ads-api.reddit.com")) throw new TypeError("network down");
+        if (isReddit(String(input))) throw new TypeError("network down");
 
         return new Response("{}", { status: 200 });
       },
