@@ -190,6 +190,7 @@ test("anonymous configuration forwards no host model or sandbox credentials", ()
     expect(configured.ANTHROPIC_API_KEY).toBeUndefined();
     process.env.OPENCODE_API_KEY_ENV = "ANTHROPIC_API_KEY";
     expect(agentEnvironment().ANTHROPIC_API_KEY).toBe("unselected-secret");
+
     for (const name of [
       "DAYTONA_API_KEY",
       "E2B_API_KEY",
@@ -202,6 +203,7 @@ test("anonymous configuration forwards no host model or sandbox credentials", ()
       process.env[name] = "provider-secret";
       expect(() => agentEnvironment()).toThrow("never a sandbox credential");
     }
+
     expect(OPENCODE_VERSION).toBe("1.18.35");
   } finally {
     process.env = saved;
