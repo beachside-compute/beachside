@@ -58,7 +58,10 @@ export function modelKey() {
 
   if (!name) return null;
 
-  if (!/^[A-Z][A-Z0-9_]*_API_KEY$/.test(name) || /^(DAYTONA|E2B)_/.test(name)) {
+  if (
+    !/^[A-Z][A-Z0-9_]*_API_KEY$/.test(name) ||
+    /^(DAYTONA|E2B|BOXD|FREESTYLE|VERCEL|RUNLOOP)_/.test(name)
+  ) {
     throw new Error("OPENCODE_API_KEY_ENV must name a model API key, never a sandbox credential");
   }
 

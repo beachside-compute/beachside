@@ -97,7 +97,7 @@ test("install pins the OpenCode 2 registry tarball and checks its digest", async
   expect(version).toBe(OPENCODE2_VERSION);
   expect(script).toContain("registry.npmjs.org/@opencode/cli-$target/-/cli-$target-$1.tgz");
   expect(script).toContain("sha256sum --check");
-  expect(calls[0]).toMatchObject({ deadlineSeconds: 360, maxOutputBytes: 16_384 });
+  expect(calls[0]).toMatchObject({ deadlineSeconds: 300, maxOutputBytes: 16_384 });
 });
 
 test("project files are tracked and unignored files plus .git, skipping deleted files", async () => {

@@ -55,7 +55,7 @@ dir="$HOME/.beachside-opencode-box"
 mkdir -p "$dir"
 archive="$dir/cli.tgz"
 trap 'rm -f "$archive"' 0
-curl --fail --location --silent --show-error --connect-timeout 10 --max-time 300 \\
+curl --fail --location --silent --show-error --connect-timeout 10 --max-time 240 \\
   --output "$archive" "https://registry.npmjs.org/@opencode/cli-$target/-/cli-$target-$1.tgz"
 printf '%s  %s\\n' "$digest" "$archive" | sha256sum --check --status
 tar -xzf "$archive" -C "$dir" --strip-components=2 package/bin/opencode
@@ -63,7 +63,7 @@ mv "$dir/opencode" "$dir/opencode2"
 "$dir/opencode2" --version`,
         OPENCODE2_VERSION,
       ),
-      deadlineSeconds: 360,
+      deadlineSeconds: 300,
       maxOutputBytes: 16_384,
     },
     { signal },
