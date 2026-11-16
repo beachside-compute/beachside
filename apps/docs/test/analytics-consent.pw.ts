@@ -305,8 +305,13 @@ test("a beta signup is a conversion only after acceptance, and never sends the e
   page,
 }) => {
   const { captured } = await observe(page);
-  await page.route("**/api/beta-signup", (route) => route.fulfill({ json: { ok: true } }));
-  await page.goto("/beta/");
+  const posted: { conversionId?: string; clickId?: string; consent?: string; page?: string }[] = [];
+  await page.route("**/api/beta-signup", (route) => {
+    posted.push(route.request().postDataJSON());
+
+    return route.fulfill({ json: { ok: true } });
+  });
+  await page.goto("/beta/?utm_source=reddit&rdt_cid=click123");
   await bar(page).getByRole("button", { name: "Accept", exact: true }).click();
   await expect.poll(() => captured.some((event) => event.event === "$pageview")).toBe(true);
   await page.locator("#email-hero").fill("person@example.com");
@@ -316,5 +321,13 @@ test("a beta signup is a conversion only after acceptance, and never sends the e
 
   const queued = await redditQueue(page);
 
-  expect(queued).toContainEqual(["track", "SignUp"]);
+  const signup = queued?.find((call) => Array.isArray(call) && call[1] === "SignUp");
+
+  // The pixel and the server's Conversions API event share one conversion ID, so Reddit counts it once.
+  expect(signup).toEqual(["track", "SignUp", { conversionId: posted[0]?.conversionId }]);
+  expect(posted[0]).toMatchObject({
+    clickId: "click123",
+    consent: "accepted",
+    page: expect.stringContaining("rdt_cid=click123"),
+  });
 });

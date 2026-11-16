@@ -74,16 +74,28 @@ function startRedditPixel(): void {
   rdt("track", "PageVisit");
 }
 
-/** Record a conversion: a PostHog event, plus a Reddit Pixel event on ad pages. Does nothing without consent. */
+/**
+ * Record a conversion: a PostHog event, plus a Reddit Pixel event on ad pages. Does nothing without consent.
+ * A conversionId shared with the server's Conversions API event lets Reddit count the conversion once.
+ */
 export function trackConversion(
   event: string,
   redditEvent: "SignUp" | "Lead",
   properties: Record<string, string> = {},
+  conversionId?: string,
 ): void {
   if (!allowed) return;
   client?.capture(event, properties);
 
-  if (pixelLoaded) window.rdt?.("track", redditEvent);
+  if (!pixelLoaded) return;
+
+  if (conversionId) window.rdt?.("track", redditEvent, { conversionId });
+  else window.rdt?.("track", redditEvent);
+}
+
+/** The Reddit Pixel's first-party visitor ID, set only after the visitor accepted the banner. */
+export function redditUuid(): string | undefined {
+  return /(?:^|;\s*)_rdt_uuid=([^;]+)/.exec(document.cookie)?.[1];
 }
 
 // A named PostHog event for a click worth reporting on its own (not an ad conversion).

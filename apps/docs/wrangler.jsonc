@@ -33,5 +33,12 @@
       "store_id": "99199f9998154a83a35e2ab06d40a8d3",
       "secret_name": "RESEND_API_KEY",
     },
+    // Reddit Conversions API access token (Events Manager > Conversions API). Without it, signups are not
+    // reported to Reddit; everything else works.
+    {
+      "binding": "REDDIT_CONVERSIONS_TOKEN",
+      "store_id": "99199f9998154a83a35e2ab06d40a8d3",
+      "secret_name": "REDDIT_CONVERSIONS_TOKEN",
+    },
   ],
 }

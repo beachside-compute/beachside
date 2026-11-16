@@ -548,7 +548,7 @@ Star on GitHub</a>
 </footer>
 </div>
 <script>
-  import { trackClicks, trackConversion } from "../lib/analytics";
+  import { readConsent, redditUuid, trackClicks, trackConversion } from "../lib/analytics";
 
   // The site worker (apps/docs/worker) saves signups to Resend; it answers { ok, message? }.
   const signupEndpoint = "/api/beta-signup";
@@ -637,10 +637,23 @@ Star on GitHub</a>
       try {
         const website = form.querySelector<HTMLInputElement>("input[name=website]")?.value ?? "";
 
+        // The worker reports the signup to Reddit's Conversions API with this ID, and the pixel sends the same one,
+        // so Reddit counts it once. The click ID and page address carry the ad attribution and UTMs.
+        const conversionId = crypto.randomUUID();
+
         const response = await fetch(signupEndpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email, source, website }),
+          body: JSON.stringify({
+            email,
+            source,
+            website,
+            conversionId,
+            clickId: query.get("rdt_cid") ?? undefined,
+            redditUuid: redditUuid(),
+            page: location.href,
+            consent: readConsent(),
+          }),
         });
 
         const reply = await parseReply(response);
@@ -649,7 +662,7 @@ Star on GitHub</a>
           fields.hidden = true;
           status.textContent = `Your spot in the 1.0 beta is saved for ${email}.`;
           status.dataset.state = "done";
-          trackConversion("beta_signup", "SignUp", { source });
+          trackConversion("beta_signup", "SignUp", { source }, conversionId);
         } else {
           status.textContent = reply.message;
           status.dataset.state = "error";
