@@ -8,7 +8,8 @@ import {
   basicAuth,
   configureGit,
   installOpenCode2,
-  OPENCODE2_VERSION,
+  OPENCODE2,
+  OPENCODE2_INSTALLER,
   previewProxy,
   projectFiles,
   pullProject,
@@ -79,7 +80,7 @@ async function repo() {
   return root;
 }
 
-test("install pins the OpenCode 2 registry tarball and checks its digest", async () => {
+test("install runs OpenCode's v2 installer without touching shell profiles", async () => {
   const calls: (ExecInput | readonly string[])[] = [];
 
   await installOpenCode2(
@@ -93,10 +94,11 @@ test("install pins the OpenCode 2 registry tarball and checks its digest", async
     signal,
   );
 
-  const [script, , version] = argv(calls[0]!).slice(2);
-  expect(version).toBe(OPENCODE2_VERSION);
-  expect(script).toContain("registry.npmjs.org/@opencode/cli-$target/-/cli-$target-$1.tgz");
-  expect(script).toContain("sha256sum --check");
+  const [script, , url] = argv(calls[0]!).slice(2);
+  expect(url).toBe(OPENCODE2_INSTALLER);
+  expect(url).toBe("https://opencode.ai/v2/install");
+  expect(script).toContain('bash "$dir/install" --no-modify-path');
+  expect(script).toContain(`${OPENCODE2} --version`);
   expect(calls[0]).toMatchObject({ deadlineSeconds: 300, maxOutputBytes: 16_384 });
 });
 

@@ -8,10 +8,7 @@ import { modelKey } from "../shared/opencode";
 import { reportFailure } from "../shared/provider";
 import { connectBox, isProvider, PORT, PROVIDERS, type Provider } from "./providers";
 
-export const OPENCODE2_VERSION = "2.2.3";
-
-// Installed outside the project so `pull` never copies it back.
-export const OPENCODE2 = "$HOME/.beachside-opencode-box/opencode2";
+export const OPENCODE2 = "$HOME/.opencode/bin/opencode";
 
 const LOG = "$HOME/.beachside-opencode-box/serve.log";
 
@@ -32,42 +29,36 @@ function sh(script: string, ...args: string[]) {
   return { kind: "argv" as const, argv: ["/bin/sh", "-c", script, "opencode-box", ...args] };
 }
 
-// OpenCode 2 ships as per-platform npm tarballs; download one directly so the image needs
-// no Node or npm. The digests are the SHA-256 of each registry tarball.
+// OpenCode's own v2 installer puts the latest release in ~/.opencode/bin, outside the project,
+// so `pull` never copies it back. Unpinned on purpose: the box tracks the client you run locally.
+export const OPENCODE2_INSTALLER = "https://opencode.ai/v2/install";
+
 export async function installOpenCode2(box: BoxCommands, signal: AbortSignal) {
-  await box.exec(
+  const output = await box.exec(
     {
       command: sh(
         `set -eu
-[ "$(uname -s)" = Linux ] || { echo "OpenCode 2 needs a Linux sandbox" >&2; exit 1; }
-case "$(uname -m)" in
-  x86_64)
-    target=linux-x64-baseline
-    digest=6c4600333f617d59c10a41eb57ebe6f03b58fa0031c021af2bf2df14ff72ce1c
-    ;;
-  aarch64|arm64)
-    target=linux-arm64
-    digest=c83e14de3994ee4c4bf6826b48b6e774e51727e8629e2b60047a1c9d0e3278d6
-    ;;
-  *) echo "OpenCode 2 needs Linux x64 or arm64" >&2; exit 1 ;;
-esac
+command -v bash >/dev/null || { echo "The OpenCode installer needs bash in the image" >&2; exit 1; }
 dir="$HOME/.beachside-opencode-box"
 mkdir -p "$dir"
-archive="$dir/cli.tgz"
-trap 'rm -f "$archive"' 0
-curl --fail --location --silent --show-error --connect-timeout 10 --max-time 240 \\
-  --output "$archive" "https://registry.npmjs.org/@opencode/cli-$target/-/cli-$target-$1.tgz"
-printf '%s  %s\\n' "$digest" "$archive" | sha256sum --check --status
-tar -xzf "$archive" -C "$dir" --strip-components=2 package/bin/opencode
-mv "$dir/opencode" "$dir/opencode2"
-"$dir/opencode2" --version`,
-        OPENCODE2_VERSION,
+curl --fail --location --silent --show-error --connect-timeout 10 --max-time 60 \\
+  --output "$dir/install" "$1"
+# The installer's download progress would fill the output limit; keep it for failures.
+bash "$dir/install" --no-modify-path >"$dir/install.log" 2>&1 || {
+  tail -n 20 "$dir/install.log" >&2
+  exit 1
+}
+${OPENCODE2} --version`,
+        OPENCODE2_INSTALLER,
       ),
+      // Freestyle's older guest agents refuse commands with deadlines over five minutes.
       deadlineSeconds: 300,
       maxOutputBytes: 16_384,
     },
     { signal },
   );
+
+  return output.stdoutText().trim();
 }
 
 /** Files `up` sends and `pull` returns: tracked and untracked-but-not-ignored files, plus `.git`. */
@@ -428,8 +419,8 @@ async function up(args: string[], name: string, signal: AbortSignal) {
 
       if (!reference) throw new Error("The provider did not confirm the sandbox identity");
 
-      console.error(`Created sandbox ${box.id}; installing OpenCode ${OPENCODE2_VERSION}`);
-      await installOpenCode2(box, signal);
+      console.error(`Created sandbox ${box.id}; installing the latest OpenCode 2`);
+      console.error(`Installed OpenCode ${await installOpenCode2(box, signal)}`);
       console.error(`Uploading ${files.length} paths from ${root}`);
       await uploadProject(box, root, files, signal);
 
