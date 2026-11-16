@@ -550,6 +550,26 @@ export function targetFromFlags(
 }
 
 /** Read one value from stdin for `--api-key -`, without a trailing newline. */
+const piped = new WeakMap<Session, Promise<string>>();
+
+/**
+ * Start reading stdin when a flag asks for `-`, before anything else runs, so the key is taken
+ * while the pipe is fresh; the value is used once the adapter's setup says where it goes.
+ */
+export function readPipedKey(session: Session, flags: Flags): void {
+  const values = [
+    flags.string("api-key"),
+    ...flags.strings("credential").map((pair) => pair.slice(pair.indexOf("=") + 1)),
+  ];
+
+  if (values.includes("-") && !piped.has(session)) {
+    const reading = readStdin(session);
+    // The read is awaited later; an early failure is reported then, not as an unhandled rejection.
+    reading.catch(() => undefined);
+    piped.set(session, reading);
+  }
+}
+
 async function readStdin(session: Session): Promise<string> {
   const parts: Uint8Array[] = [];
 
@@ -588,7 +608,7 @@ export async function givenValues(
 
   if (reading.length > 1) throw usage("Only one credential can be read from stdin (-)");
 
-  for (const [key] of reading) credentials[key] = await readStdin(session);
+  for (const [key] of reading) credentials[key] = await (piped.get(session) ?? readStdin(session));
 
   const config: Record<string, Json> = Object.fromEntries(
     Object.entries(parsePairs(flags.strings("set"), "set")).map(([key, value]) => [
@@ -784,6 +804,7 @@ async function storageFor(session: Session, flags: Flags, needed: boolean): Prom
 
 /** `beachside init <provider>` without questions: flags and the environment supply every answer. */
 export async function initFromFlags(session: Session, flags: Flags): Promise<number> {
+  readPipedKey(session, flags);
   const { out, env } = session.ctx;
   const [id, ...extra] = flags.positionals;
 
