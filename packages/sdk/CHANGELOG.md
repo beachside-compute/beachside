@@ -1,5 +1,12 @@
 # beachside
 
+## 0.16.0
+
+### Patch Changes
+
+- Updated dependencies [[`4f6ad78`](https://github.com/beachside-compute/beachside/commit/4f6ad7836c2f10c3cbcf7c02adbb7428052e2702)]:
+  - @beachside/adapter@0.16.0
+
 ## 0.15.0
 
 ### Minor Changes
