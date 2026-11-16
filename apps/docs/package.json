@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "site:check": "astro check && bun scripts/check-skills.mjs && bun scripts/check-links.mjs && bun run build",
     "dev": "astro dev",
     "check": "astro check && bun scripts/check-observability-snippets.mjs && bun scripts/check-skills.mjs && tsc -p examples/tsconfig.json && bun scripts/check-links.mjs && bun run typescript:check && bun run cli:check",
     "build": "bun run provider:check && astro build && bun scripts/check-dist.mjs",

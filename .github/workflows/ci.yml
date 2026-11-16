@@ -10,7 +10,35 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
+  scope:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      full: ${{ steps.scope.outputs.full }}
+      docs: ${{ steps.scope.outputs.docs }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: bash .github/scripts/ci-scope.sh
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      - run: bun run format:check
   build:
+    needs: scope
+    if: needs.scope.outputs.full == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
@@ -52,13 +80,8 @@ jobs:
               echo 'packed=false' >> "$GITHUB_OUTPUT"
             fi
           fi
-      - parallel:
-          - name: Lint
-            run: bun run lint
-          - name: Check formatting
-            run: bun run format:check
-          - name: Build shared packages once, in dependency order
-            run: bun run build:packages
+      - name: Build shared packages once, in dependency order
+        run: bun run build:packages
       - run: bun run check:built
       - name: Archive fresh outputs for this commit and run
         run: |
@@ -118,7 +141,8 @@ jobs:
           - name: Local OpenTelemetry, Sentry and Datadog fixtures
             run: bun run observability:check
   docs:
-    needs: build
+    needs: [scope, build]
+    if: always() && needs.scope.result == 'success' && needs.scope.outputs.docs == 'true' && (needs.build.result == 'success' || needs.build.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -131,16 +155,27 @@ jobs:
           node-version: 22
       - run: bun install --frozen-lockfile
       - uses: actions/download-artifact@v4
+        if: needs.scope.outputs.full == 'true'
         with:
           name: built-${{ github.sha }}
           path: ${{ runner.temp }}
       - name: Restore this run's build outputs
+        if: needs.scope.outputs.full == 'true'
         run: tar -xzf "$RUNNER_TEMP/beachside-build.tar.gz"
       - name: Documentation checks, generated references, site and examples
+        if: needs.scope.outputs.full == 'true'
         run: bun run docs:check:built
+      - name: Documentation site checks
+        if: needs.scope.outputs.full == 'false'
+        run: bun run --cwd apps/docs site:check
+      - name: Install Chromium
+        run: bunx playwright install --with-deps chromium
+        working-directory: apps/docs
+      - name: Documentation browser tests
+        run: bun run --cwd apps/docs analytics:test
   verify:
     if: always()
-    needs: [build, offline, packed, docs]
+    needs: [scope, quality, build, offline, packed, docs]
     runs-on: ubuntu-latest
     timeout-minutes: 1
     steps:
@@ -149,12 +184,17 @@ jobs:
           RESULTS: ${{ toJSON(needs) }}
         run: |
           echo "$RESULTS" | jq -e '
-            .build.result == "success" and
-            .offline.result == "success" and
-            .docs.result == "success" and
-            (if .build.outputs.packed == "false" then
-              .packed.result == "skipped"
-            else
-              .build.outputs.packed == "true" and .packed.result == "success"
-            end)
+            .scope.result == "success" and
+            .quality.result == "success" and
+            (if .scope.outputs.docs == "true" then .docs.result == "success"
+             elif .scope.outputs.docs == "false" then .docs.result == "skipped"
+             else false end) and
+            (if .scope.outputs.full == "false" then
+              .build.result == "skipped" and .offline.result == "skipped" and .packed.result == "skipped"
+            elif .scope.outputs.full == "true" then
+              .build.result == "success" and .offline.result == "success" and
+              (if .build.outputs.packed == "false" then .packed.result == "skipped"
+               elif .build.outputs.packed == "true" then .packed.result == "success"
+               else false end)
+            else false end)
           '
