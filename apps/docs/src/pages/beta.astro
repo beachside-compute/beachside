@@ -528,10 +528,22 @@ Star on GitHub</a>
 </div>
 </section>
 
-<footer style="max-width: 1180px; margin: 0 auto; padding: 28px 24px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--muted)">
-<span>© {year} Beachside Compute · Apache-2.0 · <a href="/" style="color: inherit">beachside.run</a> · <a href="https://github.com/beachside-compute/beachside" style="color: inherit">GitHub</a> · <a href="https://x.com/pandemicsyn" style="color: inherit">X</a></span>
-<span>Product names and trademarks are the property of their respective owners. <a href="/docs/privacy/" style="color: inherit">Privacy</a></span>
+<footer class="beta-footer">
+<div class="beta-footer-row">
+<p class="beta-footer-copyright">© {year} Beachside Compute <span>Apache-2.0</span></p>
+<nav class="beta-footer-links" aria-label="Footer">
+<a href="/">beachside.run</a>
+<a href="https://github.com/beachside-compute/beachside">GitHub</a>
+<a href="https://x.com/pandemicsyn">X</a>
+</nav>
+</div>
+<div class="beta-footer-row beta-footer-secondary">
+<p class="beta-footer-notice">Product names and trademarks are the property of their respective owners.</p>
+<div class="beta-footer-links">
+<a href="/docs/privacy/">Privacy</a>
 <AnalyticsConsent ads />
+</div>
+</div>
 </footer>
 </div>
 <script>
@@ -717,6 +729,20 @@ body { margin: 0; background: var(--bg); }
 .beta-nav { display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 500; }
 .beta .beta-nav a { padding: 8px 12px; color: var(--muted); text-decoration: none; }
 .beta .beta-nav a.beta-nav-cta { padding: 10px 18px; border-radius: 999px; background: var(--ink); color: var(--bg); font-weight: 600; }
+.beta-footer { max-width: 1180px; margin: 0 auto; padding: 32px 24px; color: var(--muted); font-size: 13px; }
+.beta-footer-row { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 12px 32px; }
+.beta-footer-copyright { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0; }
+.beta-footer-copyright span { white-space: nowrap; }
+.beta-footer-links { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 20px; }
+.beta .beta-footer a { color: inherit; text-decoration: none; }
+.beta-footer a:hover, .beta-footer a:focus-visible { text-decoration: underline; text-underline-offset: 0.2em; }
+.beta-footer a:focus-visible { outline: 2px solid var(--pink-ink); outline-offset: 4px; }
+.beta-footer-secondary { margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--line); }
+.beta-footer-notice { flex: 1 1 32rem; margin: 0; }
+.beta-footer .analytics-preferences { margin: 0; }
+.beta-footer .analytics-preferences button { color: inherit; font: inherit; text-decoration: none; }
+.beta-footer .analytics-preferences button:hover, .beta-footer .analytics-preferences button:focus-visible { text-decoration: underline; }
+@media (max-width: 640px) { .beta-footer-row { flex-direction: column; align-items: flex-start; } .beta-footer-notice { flex: auto; max-width: 48ch; } }
 @media (max-width: 420px) { .beta .beta-nav a.beta-nav-cta { padding: 8px 14px; font-size: 14px; white-space: nowrap; } }
 .term-tabs { display: flex; gap: 4px; padding: 3px; border-radius: 999px; background: rgba(255,255,255,0.07); }
 .term-tabs button { min-height: 30px; padding: 2px 14px; border: 0; border-radius: 999px; background: transparent; color: #8189AE; font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; cursor: pointer; }
