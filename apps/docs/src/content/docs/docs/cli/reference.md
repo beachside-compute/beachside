@@ -51,6 +51,7 @@ beachside init [<provider>] [--profile <name>] [--api-key <key|ref>] [--set k=v]
 
 | Flag                         | Description                                                                                                         |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `--profile <name>`           | The profile to write (default: the provider id; needed with --module)                                               |
 | `--api-key <key\|ref>`       | The provider key: a value, - to read it from stdin, env:NAME, or an op://, bws://, pass:// or keychain:// reference |
 | `--credential <key=value>`   | Any other credential, with the same value forms (repeatable)                                                        |
 | `--set <key=value>`          | A config setting, such as target=us; JSON values are parsed (repeatable)                                            |

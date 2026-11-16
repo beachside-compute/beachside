@@ -15,7 +15,16 @@ import { join } from "node:path";
 import type { Json } from "@beachside/adapter";
 import { startFakeProviderServer } from "@beachside-internal/provider-fake/server";
 import { Flags } from "../src/commands";
-import { equivalentCommand, givenValues, providerId, type Draft } from "../src/init";
+import {
+  equivalentCommand,
+  givenValues,
+  newKeychainId,
+  officialTarget,
+  providerId,
+  writeProfiles,
+  type Draft,
+} from "../src/init";
+import { descriptor } from "../src/providers";
 import { PromptCancelled, runWizard, type Choice, type Prompter } from "../src/init-wizard";
 import { Output } from "../src/output";
 import { Session } from "../src/session";
@@ -334,7 +343,8 @@ test("--try creates a sandbox, runs a command and destroys it", async () => {
 });
 
 /** A fake secret-tool that keeps items in a folder, to prove keys go to it on stdin. */
-async function fakeSecretTool(): Promise<string> {
+/** A secret-tool that keeps items as files; `slowStore` makes a store hang after writing. */
+async function fakeSecretTool(slowStore = false): Promise<string> {
   const bin = join(dir, "bin");
   const store = join(dir, "keyring");
   await mkdir(bin, { recursive: true });
@@ -344,7 +354,7 @@ async function fakeSecretTool(): Promise<string> {
     `#!/bin/sh
 set -e
 case "$1" in
-  store) shift; while [ "$1" != "account" ]; do shift; done; cat > "${store}/$2" ;;
+  store) shift; while [ "$1" != "account" ]; do shift; done; cat > "${store}/$2"${slowStore ? "; sleep 5" : ""} ;;
   lookup) shift; while [ "$1" != "account" ]; do shift; done; cat "${store}/$2" ;;
   clear) shift; while [ "$1" != "account" ]; do shift; done; rm "${store}/$2" ;;
   *) exit 1 ;;
@@ -719,10 +729,8 @@ test("--api-key is refused for an adapter with several credentials and no apiKey
 });
 
 test("--provider names the provider; it can't disagree with the argument", () => {
-  expect(providerId(stdinSession("", { provider: "e2b" }), new Flags({}, [], null))).toBe("e2b");
-  expect(() =>
-    providerId(stdinSession("", { provider: "e2b" }), new Flags({}, ["boxd"], null)),
-  ).toThrow("two providers");
+  expect(providerId(new Flags({ provider: "e2b" }, [], null))).toBe("e2b");
+  expect(() => providerId(new Flags({ provider: "e2b" }, ["boxd"], null))).toThrow("two providers");
 });
 
 test("the wizard checks --profile and other flags before asking anything", async () => {
@@ -805,4 +813,73 @@ test("a profile name taken by another provider is replaced only after asking", a
   expect(asked.some((message) => message.includes("Keep the current"))).toBe(false);
   expect((await config()).profiles.fk.credentials).toEqual({ token });
   expect((await config()).profiles.fk.provider).toBeUndefined();
+});
+
+test.skipIf(process.platform === "darwin")(
+  "Ctrl-C while a key is being stored leaves no keychain item and no profile",
+  async () => {
+    const bin = await fakeSecretTool(true);
+    const controller = new AbortController();
+
+    const run = new Session({
+      ...session({ PATH: `${bin}:${process.env.PATH ?? ""}` }).ctx,
+      signal: controller.signal,
+    });
+
+    const draft: Draft = {
+      name: "fk",
+      target: officialTarget(descriptor("e2b")!),
+      setup: null,
+      credentials: {},
+      secrets: { apiKey: "pasted" },
+      config: {},
+      previous: null,
+      keychainId: newKeychainId(),
+    };
+
+    setTimeout(() => controller.abort(), 300);
+    await expect(writeProfiles(run, [draft], "keychain", "fk")).rejects.toThrow();
+    await run.close();
+
+    expect(await readdir(join(dir, "keyring"))).toEqual([]);
+    await expect(stat(configPath())).rejects.toThrow();
+  },
+);
+
+test("replacing a profile for another adapter drops its setup steps and keys", async () => {
+  await mkdir(join(dir, "beachside"), { recursive: true });
+  await writeFile(
+    configPath(),
+    JSON.stringify({
+      profiles: {
+        fk: { provider: "e2b", credentials: { token: token }, setup: ["node"] },
+      },
+    }),
+  );
+
+  const result = await cli(
+    [...fake, "--api-key", "-", "--set", "region=north", "--store", "config", "--force", "--json"],
+    {},
+    `${token}\n`,
+  );
+
+  expect(result).toMatchObject({ code: 0 });
+  expect(JSON.parse(result.stdout).data.result).toBe("updated");
+
+  const profile = (await config()).profiles.fk;
+
+  expect(profile.setup).toBeUndefined();
+  expect(profile.provider).toBeUndefined();
+  expect(profile.credentials).toEqual({ token });
+});
+
+test("the guided setup refuses a key given as -, since stdin is the keyboard", async () => {
+  const { prompt, asked } = scripted([]);
+  const run = session();
+
+  await expect(runWizard(run, wizardFlags({ "api-key": "-" }), prompt)).rejects.toThrow(
+    "read from a pipe",
+  );
+  await run.close();
+  expect(asked).toHaveLength(0);
 });

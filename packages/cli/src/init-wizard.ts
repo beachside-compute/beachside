@@ -18,17 +18,19 @@ import {
   noKeychain,
   officialTarget,
   providerId,
+  sameAdapter,
   storeFlag,
   targetFromFlags,
   trySandbox,
   writeProfiles,
+  type CheckResult,
   type Draft,
   type Given,
   type InitTarget,
   type Storage,
   type TryResult,
 } from "./init";
-import { describeError, exitCodeFor } from "./output";
+import { describeError, exitCodeFor, usage } from "./output";
 import { updateConfig } from "./profiles";
 import { adapterSetup, providers, resolveProfile } from "./providers";
 import { keychainAvailable } from "./secrets";
@@ -331,13 +333,6 @@ async function draftFor(
   return draft;
 }
 
-/** Whether an existing profile is for the same adapter as the one being set up. */
-function sameAdapter(profile: ProfileConfig, target: InitTarget): boolean {
-  return target.official
-    ? profile.provider === target.official.id
-    : profile.module === target.module && (profile.export ?? "default") === target.export;
-}
-
 /** One line per provider: what was found for it before anything is installed or asked. */
 function found(
   provider: (typeof providers)[number],
@@ -480,7 +475,17 @@ async function wizard(session: Session, flags: Flags, prompt: Prompter): Promise
 
   prompt.intro("beachside init");
 
-  const named = targetFromFlags(session, flags, providerId(session, flags));
+  const named = targetFromFlags(session, flags, providerId(flags));
+
+  // `-` reads a piped key, but in a terminal stdin is the keyboard the questions use.
+  if (
+    flags.string("api-key") === "-" ||
+    flags.strings("credential").some((pair) => pair.endsWith("=-"))
+  )
+    throw usage(
+      "A credential given as - is read from a pipe, not in the guided setup",
+      "leave it out to paste it when asked, or pipe the key into the command with --no-input",
+    );
 
   if (flags.positionals.length > 1)
     prompt.warn(
@@ -624,12 +629,7 @@ async function wizard(session: Session, flags: Flags, prompt: Prompter): Promise
       })))
       ? await prompt.spin(
           "Creating test sandboxes",
-          () =>
-            Promise.all(
-              checks.flatMap((check) =>
-                check.status === "ok" ? [trySandbox(session, check.client)] : [],
-              ),
-            ),
+          () => tryEach(session, checks),
           (results) =>
             results
               .map(
@@ -664,7 +664,7 @@ async function wizard(session: Session, flags: Flags, prompt: Prompter): Promise
 
   prompt.note(
     passed
-      .map((draft) => equivalentCommand(draft, storage, draft.name === savedDefault))
+      .map((draft) => equivalentCommand(draft, storage, draft.name === finalDefault))
       .join("\n"),
     "To repeat this without questions",
   );
@@ -684,6 +684,22 @@ async function wizard(session: Session, flags: Flags, prompt: Prompter): Promise
   const failed = (tries ?? []).some((result: TryResult) => result.status === "failed");
 
   return passed.length < drafts.length || failed ? 1 : 0;
+}
+
+/**
+ * Try a sandbox on every checked provider. Each one finishes, destroying its sandbox, before an
+ * interruption ends the run, so Ctrl-C never leaves a test sandbox behind unreported.
+ */
+async function tryEach(session: Session, checks: CheckResult[]): Promise<TryResult[]> {
+  const settled = await Promise.allSettled(
+    checks.flatMap((check) => (check.status === "ok" ? [trySandbox(session, check.client)] : [])),
+  );
+
+  const failed = settled.find((result) => result.status === "rejected");
+
+  if (failed) throw failed.reason;
+
+  return settled.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
 }
 
 async function askStorage(

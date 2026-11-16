@@ -118,13 +118,25 @@ function keychainRef(draft: Draft, key: string): string {
   return keychainReference(draft.name, key, draft.keychainId);
 }
 
+/** Whether an existing profile is for the same adapter as the one being set up. */
+export function sameAdapter(profile: ProfileConfig, target: InitTarget): boolean {
+  return target.official
+    ? profile.provider === target.official.id
+    : profile.module === target.module && (profile.export ?? "default") === target.export;
+}
+
+/** The profile a draft builds on: the one it replaces, unless that is for another adapter. */
+function kept(draft: Draft): ProfileConfig | null {
+  return draft.previous && sameAdapter(draft.previous, draft.target) ? draft.previous : null;
+}
+
 /**
  * A key given again that is what the profile already stores keeps its current place, so rerunning
  * the same command reports `unchanged` instead of storing the key a second time.
  */
 export async function keepSameKeys(session: Session, draft: Draft): Promise<void> {
   for (const [key, value] of Object.entries(draft.secrets)) {
-    const current = draft.previous?.credentials?.[key];
+    const current = kept(draft)?.credentials?.[key];
 
     if (current === undefined) continue;
     let same = current === value;
@@ -163,8 +175,10 @@ export function profileFor(draft: Draft, storage: Storage): ProfileConfig {
 
   if (Object.keys(credentials).length) profile.credentials = credentials;
 
-  // Default setups the person listed stay with the profile.
-  if (draft.previous?.setup?.length) profile.setup = draft.previous.setup;
+  // Default setups the person listed stay with the profile, unless it changes adapter.
+  const setups = kept(draft)?.setup;
+
+  if (setups?.length) profile.setup = setups;
 
   return profile;
 }
@@ -377,9 +391,11 @@ export async function writeProfiles(
   if (signal.aborted) throw new CliError("INTERRUPTED", "Interrupted; nothing was saved");
   const loaded = await session.config();
   const stored: string[] = [];
+  // Cleanup runs after Ctrl-C too, so it has its own signal; the run's one is already aborted.
+  const cleanup = () => AbortSignal.timeout(30_000);
 
   const rollBack = async () => {
-    for (const reference of stored) await removeFromKeychain(reference, env, signal);
+    for (const reference of stored) await removeFromKeychain(reference, env, cleanup());
   };
 
   try {
@@ -387,9 +403,12 @@ export async function writeProfiles(
       for (const draft of drafts)
         for (const [key, value] of Object.entries(draft.secrets)) {
           const reference = keychainRef(draft, key);
-          await storeInKeychain(reference, value, env, signal);
+          // Tracked before the store, so an item a stopped store already made is removed too.
           stored.push(reference);
+          await storeInKeychain(reference, value, env, signal);
         }
+
+    if (signal.aborted) throw new CliError("INTERRUPTED", "Interrupted; nothing was saved");
 
     // A file that will hold a key itself becomes readable only by you, even if it wasn't.
     const plain = drafts.some(
@@ -421,7 +440,7 @@ export async function writeProfiles(
     const now = new Set(Object.values(profileFor(draft, storage).credentials ?? {}));
 
     for (const old of Object.values(draft.previous?.credentials ?? {}))
-      if (ownKeychainReference(old) && !now.has(old)) await removeFromKeychain(old, env, signal);
+      if (ownKeychainReference(old) && !now.has(old)) await removeFromKeychain(old, env, cleanup());
   }
 }
 
@@ -798,6 +817,11 @@ export function draftFromFlags(
 }
 
 export const initFlagSpecs = {
+  profile: {
+    type: "string",
+    value: "name",
+    description: "The profile to write (default: the provider id; needed with --module)",
+  },
   "api-key": {
     type: "string",
     value: "key|ref",
@@ -877,9 +901,9 @@ export function checkFlagCombinations(flags: Flags): void {
 }
 
 /** The provider id the command names: the first argument, else --provider. */
-export function providerId(session: Session, flags: Flags): string | undefined {
+export function providerId(flags: Flags): string | undefined {
   const [id] = flags.positionals;
-  const flag = session.ctx.flags.provider;
+  const flag = flags.string("provider");
 
   if (id && flag && id !== flag)
     throw usage(`init got two providers: ${id} and --provider ${flag}`);
@@ -917,7 +941,7 @@ export async function initFromFlags(session: Session, flags: Flags): Promise<num
   const target = targetFromFlags(
     session,
     flags,
-    providerId(session, flags) ?? (flags.has("module") ? undefined : env.BEACHSIDE_PROVIDER),
+    providerId(flags) ?? (flags.has("module") ? undefined : env.BEACHSIDE_PROVIDER),
   );
 
   if (!target)
