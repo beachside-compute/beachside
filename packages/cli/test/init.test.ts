@@ -838,7 +838,7 @@ test.skipIf(process.platform === "darwin")(
     };
 
     setTimeout(() => controller.abort(), 300);
-    await expect(writeProfiles(run, [draft], "keychain", "fk")).rejects.toThrow();
+    await expect(writeProfiles(run, [draft], "keychain", "fk")).rejects.toThrow("Interrupted");
     await run.close();
 
     expect(await readdir(join(dir, "keyring"))).toEqual([]);

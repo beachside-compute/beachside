@@ -184,6 +184,9 @@ export async function storeInKeychain(
 
   const result = await keychainTool(backend.command, args, input, env, signal);
 
+  // A store stopped by Ctrl-C is an interruption, not a keychain failure.
+  if (signal.aborted) throw new CliError("INTERRUPTED", "Interrupted; nothing was saved");
+
   if (result.code === "ENOENT")
     throw new CliError(
       "SECRET_TOOL_MISSING",
