@@ -22,7 +22,7 @@ const tailnet = "tail1234.ts.net";
 
 // Providers where `--with rex` and `--with herdr` were run live (Rex: see /docs/cli/rex/), in the site's provider order.
 const providers = [
-  { id: "boxd", label: "boxd", env: "BOXD_API_KEY=... BOXD_ORG=...", user: "root" },
+  { id: "boxd", label: "boxd", env: "BOXD_API_KEY=... BOXD_ORG=...", user: "boxd" },
   { id: "freestyle", label: "Freestyle", env: "FREESTYLE_API_KEY=...", user: "ubuntu" },
   { id: "e2b", label: "E2B", env: "E2B_API_KEY=...", user: "user" },
 ];
@@ -47,14 +47,15 @@ function session(server: "rex" | "herdr", provider: (typeof providers)[number]):
       { out: `rex       https://beachside-rex.${tailnet}  (in Rex: Add Remote Host…)` },
     ];
 
-  const remote = `herdr --remote ssh://${provider.user}@beachside-dev.${tailnet}`;
+  const remote = `hc machine add ${provider.user}@beachside-dev.${tailnet} --temp --install --name dev`;
 
   return [
     ...setup,
     { cmd: "beachside create --name dev --ttl 2h --with herdr" },
     { note: "herdr: putting beachside-dev on your tailnet with Tailscale SSH" },
     { out: "dev" },
-    { out: `herdr     ${remote}` },
+    { out: `herdr     ${remote}  (adds it to the Herdr app)` },
+    { out: "          host key SHA256:… (ED25519): check it when ssh asks" },
     { cmd: remote },
   ];
 }
@@ -181,8 +182,8 @@ const year = new Date().getFullYear();
             </p>
             <p class="lede only-herdr">
               One <code>beachside</code> command starts a cloud sandbox and puts it on your tailnet with Tailscale SSH.
-              Attach with <code>herdr --remote</code>, and your agents keep working when your laptop sleeps, with
-              no public port.
+              Add it to the Herdr app with <code>hc machine add</code>, and your agents keep working when your laptop
+              sleeps, with no public port.
             </p>
 
             <div class="cta-stack">
@@ -320,19 +321,21 @@ const year = new Date().getFullYear();
             <li class="step">
               <span class="step-n">3</span>
               <h3 class="only-rex">Create it and open it in Rex</h3>
-              <h3 class="only-herdr">Create it and attach Herdr</h3>
+              <h3 class="only-herdr">Create it and add it to Herdr</h3>
               <p class="only-rex">
                 Rex is installed and on your tailnet in about a minute. In Rex, choose <em>Add Remote Host…</em> and paste the
                 address it prints.
               </p>
               <p class="only-herdr">
-                The sandbox joins your tailnet with Tailscale SSH. Run the command it prints. On the first connect, Herdr asks you to
-                accept the host key and installs its server.
+                The sandbox joins your tailnet with Tailscale SSH. Run the command it prints: it adds the sandbox to the Herdr app
+                as a machine named after it and copies your <code>hc</code> there, so its agents show up in your sidebar. When ssh
+                asks about the host key, compare it with the fingerprint that <code>beachside create</code> printed. On Herdr TUI, run
+                <code>herdr --remote ssh://…</code> with the same address instead.
               </p>
               <pre class="step-code only-rex"><code><span class="prompt">$ </span>beachside create --name rex --ttl 2h --with rex
 <span class="out">https://beachside-rex.&lt;your-tailnet&gt;.ts.net</span></code></pre>
               <pre class="step-code only-herdr"><code><span class="prompt">$ </span>beachside create --name dev --ttl 2h --with herdr
-<span class="prompt">$ </span>herdr --remote ssh://<span data-provider-user>root</span>@beachside-dev.&lt;your-tailnet&gt;.ts.net</code></pre>
+<span class="prompt">$ </span>hc machine add <span data-provider-user>boxd</span>@beachside-dev.&lt;your-tailnet&gt;.ts.net --temp --install --name dev</code></pre>
               <a class="step-link only-rex" href="/docs/cli/rex/">What <code>--with rex</code> does →</a>
               <a class="step-link only-herdr" href="/docs/cli/#servers-in-a-sandbox">What <code>--with herdr</code> does →</a>
             </li>
@@ -364,7 +367,7 @@ const year = new Date().getFullYear();
 <span class="prompt">$ </span>beachside rm rex</span><span class="only-herdr"><span class="prompt">$ </span>beachside create --name dev --ttl 4h --with herdr \
     --setup-cmd 'sudo apt-get install -y ripgrep'
 <span class="prompt">$ </span>beachside push dev
-<span class="prompt">$ </span>beachside rm dev</span></code></pre>
+<span class="prompt">$ </span>beachside rm dev   <span class="out"># prints the hc machine rm and ssh-keygen -R that forget it</span></span></code></pre>
         </div>
       </section>
 

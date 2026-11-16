@@ -142,10 +142,10 @@ beachside create --name web --with rex
 beachside create --name dev --with herdr
 ```
 
-| Server  | What you get                                                                                                       |
-| ------- | ------------------------------------------------------------------------------------------------------------------ |
-| `rex`   | A [Rex](https://www.superlogical.com/rex/docs) server on Rex's own Tailscale. Add its `https://` address in Rex.   |
-| `herdr` | A Tailscale SSH device for [herdr](https://herdr.dev). Run the printed `herdr --remote ssh://…` command to attach. |
+| Server  | What you get                                                                                                                  |
+| ------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `rex`   | A [Rex](https://www.superlogical.com/rex/docs) server on Rex's own Tailscale. Add its `https://` address in Rex.              |
+| `herdr` | A Tailscale SSH device for [Herdr](https://herdr.dev). Run the printed `hc machine add …` command to add it to the Herdr app. |
 
 `create` prints how to connect when it finishes, and `inspect` shows it again. `--with` implies `--network internet`, because the sandbox downloads the server and reaches Tailscale. The tailnet setup is the same for both: see [Set up Tailscale once](/docs/cli/rex/#set-up-tailscale-once). Devices are named `beachside-<sandbox>`, and `rm` logs each device out of your tailnet before the sandbox goes, so it doesn't linger offline. If setup fails after the sandbox exists, `create` exits 8 and keeps the sandbox, so you can look inside or remove it.
 
@@ -162,13 +162,27 @@ herdr connects over Tailscale SSH, so it also needs an `ssh` rule in your tailne
 ]
 ```
 
-On the first connect, herdr asks you to accept the device's SSH host key and to install its server in the sandbox.
+The printed command adds the sandbox to herdr-core, the server behind the Herdr app, as a short-lived machine named after the sandbox:
+
+```sh
+hc machine add boxd@beachside-dev.<your-tailnet>.ts.net --temp --install --name dev
+```
+
+`hc machine add` prints the machine's name. It is the sandbox's name unless herdr-core refuses it (over 32 characters, or shaped like a terminal id such as `t14`), in which case `create` leaves out `--name` and herdr-core names it after the device, adding a number if that name is taken. The sandbox's spaces and agents then show up in the Herdr sidebar under that name, and `hc run --on dev …` starts terminals there. They keep running while your laptop sleeps or the app is closed. `--install` puts `hc` in the sandbox on the first connect: your own build when the OS and CPU match, otherwise that version's release.
+
+On the first connect, ssh asks you to accept the device's host key. `create` prints that key's fingerprint, read inside the sandbox over your provider rather than over the network, so compare the two and answer `yes` if they match. Recent OpenSSH asks `(yes/no/[fingerprint])`, and pasting the printed fingerprint there accepts the key only if it matches. `--json` lists the device's keys as `known_hosts` lines in `data.addons[].knownHosts`. Beachside makes any host key the sandbox's `/etc/ssh` lacks with `ssh-keygen` before Tailscale starts; in a sandbox without `ssh-keygen`, Tailscale makes its own and `create` prints no fingerprint. The fingerprint shows you reached the sandbox's keys, not which sandbox: the default boxd, E2B and Freestyle images ship host keys made when the image was built, so sandboxes from one image can show the same fingerprint.
+
+Don't pin a fingerprint or carry one over from another sandbox. Host keys change when a provider rebuilds its image, when a sandbox is restored, or when something in the sandbox makes new ones, so compare against what Beachside reads for this sandbox now. `beachside inspect dev` reads a running sandbox's keys again and says if they changed since `create`. If ssh then warns that the host identification changed, check the new fingerprint with `inspect` before you drop the old entry with `ssh-keygen -R <address>`.
+
+After `beachside rm dev` (or `gc`), Herdr still lists the machine, and ssh still has the host key you accepted. `rm` and `gc` print the `hc machine rm <name>` that forgets it, looking the name up with `hc machine ls` by its address, and the `ssh-keygen -R <address>` that drops the old key, so a new sandbox with the same name isn't refused as a changed host.
+
+On [Herdr TUI](https://herdr.dev/tui), run `herdr --remote ssh://<same user@address>` instead. It asks you to accept the same host key (compare the printed fingerprint) and to install its server in the sandbox.
 
 ## Status on terminal tabs
 
-Inside [Rex](https://www.superlogical.com/rex/docs/build/program-status), commands that create, change or wait on sandboxes (`create`, `run`, `exec`, `sh`, `rm`, `gc`, `cp`, `push`, `image build`, `snapshot create`, and others) show their progress on the terminal tab: a spinner while they work, then done or failed. `run` also says which step it is on: pushing files, running the command, or destroying the sandbox. `cp` and `push` into a sandbox show a progress bar while the files upload. When `run`, `exec` or `sh` finishes after more than 30 seconds, you also get a desktop notification.
+Inside [Rex](https://www.superlogical.com/rex/docs/build/program-status) and the [Herdr app](https://herdr.dev), commands that create, change or wait on sandboxes (`create`, `run`, `exec`, `sh`, `rm`, `gc`, `cp`, `push`, `image build`, `snapshot create`, and others) show their progress on the terminal tab: a spinner while they work, then done or failed. `run` also says which step it is on: pushing files, running the command, or destroying the sandbox. `cp` and `push` into a sandbox show a progress bar while the files upload. When `run`, `exec` or `sh` finishes after more than 30 seconds, you also get a desktop notification.
 
-The CLI reports this with the Program Status Protocol (OSC 7501), written to stderr only when stderr is a terminal, so `--json` and piped output are unchanged. Set `BEACHSIDE_PROGRAM_STATUS=on` to report in other terminals that support the protocol, or `off` to turn it off in Rex. Notifications use OSC 777. Set `BEACHSIDE_NOTIFY_AFTER` to a number of seconds to change when they appear, or to `off` to stop them.
+The CLI reports this with the Program Status Protocol (OSC 7501), written to stderr only when stderr is a terminal, so `--json` and piped output are unchanged. Set `BEACHSIDE_PROGRAM_STATUS=on` to report in other terminals that support the protocol, or `off` to turn it off in Rex and Herdr. Notifications use OSC 777. Set `BEACHSIDE_NOTIFY_AFTER` to a number of seconds to change when they appear, or to `off` to stop them.
 
 To run a Rex server inside a sandbox and open it from your Mac, see [Remote workspace with Rex](/docs/cli/rex/).
 

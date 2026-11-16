@@ -17,7 +17,7 @@ const fonts =
 type Line = { prompt: string; text: string; color: string };
 
 const providers = {
-  boxd: { env: "BOXD_API_KEY=… BOXD_ORG=…", user: "root" },
+  boxd: { env: "BOXD_API_KEY=… BOXD_ORG=…", user: "boxd" },
   freestyle: { env: "FREESTYLE_API_KEY=…", user: "ubuntu" },
 } satisfies Record<string, { env: string; user: string }>;
 
@@ -45,13 +45,15 @@ function lines(server: "rex" | "herdr", provider: keyof typeof providers): Line[
       note("     in Rex: Add Remote Host…"),
     ];
 
-  const remote = `herdr --remote ssh://${providers[provider].user}@beachside-agents.tail1234.ts.net`;
+  const remote = `hc machine add ${providers[provider].user}@beachside-agents.tail1234.ts.net --temp --install --name agents`;
 
   return [
     ...setup,
     cmd("beachside create --name agents --ttl 8h --with herdr"),
     note("herdr: putting beachside-agents on your tailnet with Tailscale SSH"),
-    out(`herdr  ${remote}`),
+    out("agents"),
+    out(`herdr     ${remote}  (adds it to the Herdr app)`),
+    note("          host key SHA256:… (ED25519): check it when ssh asks"),
     cmd(remote),
   ];
 }
@@ -261,9 +263,10 @@ const year = new Date().getFullYear();
 <pre style="margin: 0; max-width: 92%; padding: 14px 16px; border-radius: 16px 16px 16px 4px; background: #17203D; color: #EAF2FF; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; line-height: 1.8; white-space: pre-wrap; overflow-wrap: anywhere"><span style="color: #FF86B7">$ </span>beachside create --name tests --ttl 4h --with herdr --json
 <span style="color: #8189AE">&#123; "name": "tests", "provider": "freestyle", "state": "running",</span>
 <span style="color: #8189AE">  "addons": [&#123; "name": "herdr", "state": "ready", … &#125;] &#125;</span>
+<span style="color: #FF86B7">$ </span>hc machine add ubuntu@beachside-tests.tail1234.ts.net --temp --install --name tests
 <span style="color: #FF86B7">$ </span>beachside push tests
 <span style="color: #6FE6D6">/home/ubuntu/work</span></pre>
-<p style="margin: 0; max-width: 85%; padding: 12px 16px; border-radius: 16px 16px 16px 4px; background: #17203D; color: #EAF2FF">Done. The tests are running in <strong>tests</strong> on Freestyle. It shows up in Herdr as beachside-tests, and it removes itself in 4 hours.</p>
+<p style="margin: 0; max-width: 85%; padding: 12px 16px; border-radius: 16px 16px 16px 4px; background: #17203D; color: #EAF2FF">Done. The tests are running in <strong>tests</strong> on Freestyle. It shows up in your Herdr sidebar as tests, and it removes itself in 4 hours.</p>
 </div>
 </div>
 </div>

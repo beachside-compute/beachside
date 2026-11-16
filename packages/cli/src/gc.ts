@@ -2,6 +2,7 @@ import { BeachsideError, type SandboxListEntry } from "beachside";
 import {
   coverageNote,
   forget,
+  noteForgetHerdr,
   remoteSandboxes,
   renderTable,
   storesSandbox,
@@ -127,7 +128,11 @@ export async function gcCommand(session: Session, flags: Flags): Promise<number>
         result = "gone";
       }
 
-      if (entry) await forget(store, entry);
+      if (entry) {
+        await forget(store, entry);
+        await noteForgetHerdr(session, entry.record.name, entry.record.addons ?? []);
+      }
+
       removed.push({ ...base, result, retainedResources });
 
       if (retainedResources.length)

@@ -63,7 +63,11 @@ import {
 import { resolveEnvReferences } from "./config";
 import {
   addonLines,
+  hasHerdr,
+  hcMachines,
   parseAddons,
+  refreshHostKeys,
+  removedAddonNotes,
   sandboxShell,
   setupShell,
   setupAddons,
@@ -1427,6 +1431,18 @@ function requireAddons(record: SandboxRecord, names: AddonName[]): void {
     );
 }
 
+/** After a sandbox with a ready herdr add-on goes: how to forget it in this computer's herdr-core. */
+export async function noteForgetHerdr(
+  session: Session,
+  sandbox: string,
+  addons: AddonRecord[],
+): Promise<void> {
+  if (!hasHerdr(addons)) return;
+
+  for (const note of removedAddonNotes(sandbox, addons, await hcMachines(session.ctx.env)))
+    session.ctx.out.note(note);
+}
+
 /** Run `--with` setup, saving each add-on's state as it goes. */
 async function installAddons(
   session: Session,
@@ -1730,6 +1746,26 @@ function onePositional(flags: Flags, what: string): string {
   return flags.positionals[0]!;
 }
 
+/** Read a running herdr sandbox's host keys again; save and report any that changed. */
+async function refreshRecordedHostKeys(
+  session: Session,
+  record: SandboxRecord,
+  box: SandboxHandle<true>,
+): Promise<void> {
+  const result = await refreshHostKeys(sandboxShell(box), record.addons ?? [], session.ctx.signal);
+
+  for (const note of result.notes) session.ctx.out.note(note);
+
+  if (!result.changed) return;
+
+  record.addons = result.addons;
+
+  const store = await session.store();
+  const current = await store.get("sandbox", record.name);
+
+  if (current) await store.update("sandbox", record.name, record, current.version);
+}
+
 export async function inspectCommand(session: Session, flags: Flags): Promise<number> {
   const { record } = await recoverCreate(
     session,
@@ -1739,6 +1775,10 @@ export async function inspectCommand(session: Session, flags: Flags): Promise<nu
 
   const box = await session.reopen(record);
   const info = await box.inspect({ signal: session.ctx.signal });
+
+  // Host keys can change after create, so a running sandbox's are read again, never assumed.
+  if (info.state === "running" && hasHerdr(record.addons ?? []))
+    await refreshRecordedHostKeys(session, record, box);
 
   const lines = [
     `name      ${record.name}`,
@@ -1905,6 +1945,14 @@ async function removeOne(
   const { record } = target;
   const refused = refusal(record);
 
+  const removed = async (
+    item: Extract<RemoveResult, { kind: "removed" }>["item"],
+  ): Promise<RemoveResult> => {
+    await noteForgetHerdr(session, record.name, record.addons ?? []);
+
+    return { kind: "removed", item };
+  };
+
   if (refused && !force) {
     // --all only touches what this CLI owns; a named sandbox that cannot be removed is an error.
     if (all)
@@ -1918,10 +1966,7 @@ async function removeOne(
   if (!record.reference) {
     await forget(store, target);
 
-    return {
-      kind: "removed",
-      item: { name: record.name, result: "forgotten", retainedResources: [] },
-    };
+    return removed({ name: record.name, result: "forgotten", retainedResources: [] });
   }
 
   let box: SandboxHandle<true>;
@@ -1932,7 +1977,7 @@ async function removeOne(
     if (!(cause instanceof BeachsideError) || cause.code !== "NOT_FOUND") throw cause;
     await forget(store, target);
 
-    return { kind: "removed", item: { name: record.name, result: "gone", retainedResources: [] } };
+    return removed({ name: record.name, result: "gone", retainedResources: [] });
   }
 
   if (record.addons?.length)
@@ -1940,14 +1985,11 @@ async function removeOne(
   const destroyed = await box.destroy({ signal: session.ctx.signal });
   await forget(store, target);
 
-  return {
-    kind: "removed",
-    item: {
-      name: record.name,
-      result: "destroyed",
-      retainedResources: destroyed.retainedResources,
-    },
-  };
+  return removed({
+    name: record.name,
+    result: "destroyed",
+    retainedResources: destroyed.retainedResources,
+  });
 }
 
 export async function rmCommand(session: Session, flags: Flags): Promise<number> {

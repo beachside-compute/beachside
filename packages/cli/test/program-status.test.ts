@@ -11,7 +11,7 @@ const token = "local-test-token-12345";
 const esc = String.fromCharCode(27);
 
 const report = new RegExp(
-  `${esc}\\]7501;state=([a-z]+):id=beachside:app=beachside(?::progress=(\\d+))?:msg=([^${esc}]*)${esc}\\\\`,
+  `${esc}\\]7501;state=([a-z]+)(?::id=beachside)?:app=beachside(?::progress=(\\d+))?:msg=([^${esc}]*)${esc}\\\\`,
   "g",
 );
 
@@ -41,9 +41,14 @@ function reports(stderr: string): Report[] {
 }
 
 describe("program status sequences", () => {
-  test("encode one base64 line with the beachside record id", () => {
+  test("encode one base64 line, as the root record or one with an id", () => {
+    const msg = Buffer.from("beachside exec web").toString("base64");
+
     expect(sequence("working", "beachside exec web")).toBe(
-      `\x1b]7501;state=working:id=beachside:app=beachside:msg=${Buffer.from("beachside exec web").toString("base64")}\x1b\\`,
+      `\x1b]7501;state=working:app=beachside:msg=${msg}\x1b\\`,
+    );
+    expect(sequence("working", "beachside exec web", 40, "beachside")).toBe(
+      `\x1b]7501;state=working:id=beachside:app=beachside:progress=40:msg=${msg}\x1b\\`,
     );
   });
 
@@ -91,7 +96,7 @@ describe("program status sequences", () => {
     expect(seen).toEqual([0, 1, 50, 99]);
   });
 
-  test("report inside Rex or when forced, and only to a terminal", () => {
+  test("report inside Rex, inside herdr-core or when forced, and only to a terminal", () => {
     const written: string[] = [];
     const write = (text: string) => written.push(text);
 
@@ -102,11 +107,26 @@ describe("program status sequences", () => {
     );
     programStatus({ REX_SESSION: "s1" }, false, write).report("working", "c");
     programStatus({ BEACHSIDE_PROGRAM_STATUS: "on" }, false, write).report("working", "d");
+    programStatus({ HC_TERMINAL_ID: "t3", BEACHSIDE_PROGRAM_STATUS: "off" }, true, write).report(
+      "working",
+      "g",
+    );
     expect(written).toEqual([]);
 
     programStatus({ REX_SESSION: "s1" }, true, write).report("working", "e");
     programStatus({ BEACHSIDE_PROGRAM_STATUS: "ON" }, true, write).report("done", "f");
-    expect(written.map((text) => reports(text)[0]!.msg)).toEqual(["e", "f"]);
+    programStatus({ HC_TERMINAL_ID: "t3" }, true, write).report("working", "h");
+    expect(written.map((text) => reports(text)[0]!.msg)).toEqual(["e", "f", "h"]);
+  });
+
+  test("Rex gets the beachside record; herdr-core, which shows only the root, gets the root", () => {
+    const written: string[] = [];
+    const write = (text: string) => written.push(text);
+
+    programStatus({ REX_SESSION: "s1" }, true, write).report("working", "rex");
+    programStatus({ HC_TERMINAL_ID: "t3" }, true, write).report("working", "herdr");
+    programStatus({ BEACHSIDE_PROGRAM_STATUS: "on" }, true, write).report("working", "other");
+    expect(written.map((text) => text.includes(":id=beachside:"))).toEqual([true, false, false]);
   });
 });
 
