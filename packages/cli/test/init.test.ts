@@ -24,13 +24,15 @@ const token = "init-test-token-12345";
 
 const main = join(import.meta.dir, "..", "src", "main.ts");
 
-const fixture = join(import.meta.dir, "fake-adapter.ts");
+const fixture = join(import.meta.dir, "init-adapter.ts");
 
 let root: string;
 
 let server: Awaited<ReturnType<typeof startFakeProviderServer>>;
 
 let dir: string;
+
+let saved = { url: process.env.BEACHSIDE_FAKE_URL, token: process.env.BEACHSIDE_FAKE_TOKEN };
 
 beforeAll(async () => {
   root = await realpath(await mkdtemp(join(tmpdir(), "beachside-init-")));
@@ -42,11 +44,19 @@ beforeAll(async () => {
     testMode: true,
   });
   // The wizard tests load the fixture in this process.
+  saved = { url: process.env.BEACHSIDE_FAKE_URL, token: process.env.BEACHSIDE_FAKE_TOKEN };
   process.env.BEACHSIDE_FAKE_URL = server.url.toString();
   process.env.BEACHSIDE_FAKE_TOKEN = token;
 });
 
 afterAll(async () => {
+  // Other test files in this process point the fixture at their own fake server.
+  if (saved.url === undefined) delete process.env.BEACHSIDE_FAKE_URL;
+  else process.env.BEACHSIDE_FAKE_URL = saved.url;
+
+  if (saved.token === undefined) delete process.env.BEACHSIDE_FAKE_TOKEN;
+  else process.env.BEACHSIDE_FAKE_TOKEN = saved.token;
+
   await server.stop(true);
   await rm(root, { recursive: true, force: true });
 });
@@ -121,7 +131,7 @@ const fake = ["init", "--module", fixture, "--export", "initable", "--profile", 
 test("the flag form writes a profile from flags and the environment, without printing the key", async () => {
   const result = await cli([...fake, "--set", "region=north", "--json"], { FAKE_TOKEN: token });
 
-  expect(result.code).toBe(0);
+  expect(result).toMatchObject({ code: 0 });
   expect(result.stdout).not.toContain(token);
 
   const { data } = JSON.parse(result.stdout);
@@ -187,7 +197,7 @@ test("a rejected key is not saved; a piped key is stored in beachside.json at 06
     "not-the-token\n",
   );
 
-  expect(wrong.code).toBe(5);
+  expect(wrong).toMatchObject({ code: 5 });
   expect(JSON.parse(wrong.stdout).error.message).toContain("Profile fk was not saved");
   await expect(stat(configPath())).rejects.toThrow();
 
@@ -279,7 +289,7 @@ test("--try creates a sandbox, runs a command and destroys it", async () => {
     FAKE_TOKEN: token,
   });
 
-  expect(result.code).toBe(0);
+  expect(result).toMatchObject({ code: 0 });
   expect(JSON.parse(result.stdout).data.try).toMatchObject({ status: "ok" });
 
   const response = await fetch(new URL("/_test/state", server.url), {
@@ -329,7 +339,7 @@ test.skipIf(process.platform === "darwin")(
       token,
     );
 
-    expect(result.code).toBe(0);
+    expect(result).toMatchObject({ code: 0 });
 
     const reference = JSON.parse(result.stdout).data.credentials.token;
 
@@ -391,7 +401,7 @@ test("a key kept in an existing beachside.json makes the file readable only by y
     token,
   );
 
-  expect(result.code).toBe(0);
+  expect(result).toMatchObject({ code: 0 });
   expect((await stat(configPath())).mode & 0o777).toBe(0o600);
 });
 
