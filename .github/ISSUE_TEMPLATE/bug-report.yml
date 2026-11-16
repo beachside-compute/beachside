@@ -1,0 +1,68 @@
+name: Bug report
+description: Report a problem with the Beachside CLI, SDK, or both.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Search existing issues first. Remove secrets, credentials, and private data from examples and logs.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected component
+      options:
+        - CLI
+        - SDK
+        - Both CLI and SDK
+        - Other / unsure
+    validations:
+      required: true
+  - type: input
+    id: provider
+    attributes:
+      label: Provider(s)
+      description: Name the affected provider(s), or enter "none" or "unknown".
+      placeholder: e.g. Daytona, E2B, or a custom adapter
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Versions and environment
+      description: Include CLI/SDK and adapter package versions, OS, and runtime. Add relevant region, image, or hosted/self-hosted configuration; omit secrets.
+      placeholder: |
+        Beachside CLI / SDK version(s):
+        Adapter package / version:
+        OS:
+        Node.js / Bun version:
+        Relevant configuration:
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: What happened, and what did you expect?
+      description: Describe the actual behavior and the expected result.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include a minimal CLI command or SDK code sample and any setup needed. If you cannot reproduce reliably, describe what led to the problem.
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant error output (optional)
+      description: Paste errors or logs with secrets and private data removed. No code fences needed.
+      render: text
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context (optional)
+      description: If known, mention how often this happens and the last version that worked.
