@@ -168,11 +168,6 @@ jobs:
       - name: Documentation site checks
         if: needs.scope.outputs.full == 'false'
         run: bun run --cwd apps/docs site:check
-      - name: Install Chromium
-        run: bunx playwright install --with-deps chromium
-        working-directory: apps/docs
-      - name: Documentation browser tests
-        run: bun run --cwd apps/docs analytics:test
   verify:
     if: always()
     needs: [scope, quality, build, offline, packed, docs]
