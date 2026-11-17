@@ -165,11 +165,18 @@ if (mode === "publish") {
 }
 
 function trustEntries(name) {
-  // stdin and stderr stay attached so npm can ask for a one-time password.
-  const result = npm(["trust", "list", name, "--json"], { stdio: ["inherit", "pipe", "inherit"] });
+  const list = () => npm(["trust", "list", name, "--json"]);
+  let result = list();
+
+  // npm only asks for 2FA in a terminal, and --json output is piped here, so on EOTP run the
+  // same list interactively to authenticate (choose to skip 2FA for 5 minutes), then retry.
+  if (result.status !== 0 && /EOTP/.test(result.stderr)) {
+    interactive(["trust", "list", name]);
+    result = list();
+  }
 
   if (result.error || result.status !== 0)
-    throw new Error(`npm trust list ${name} failed (${result.status ?? result.error})`);
+    throw new Error(`npm trust list ${name} failed: ${result.stderr || result.error}`);
 
   // npm prints one JSON object per trust entry, back to back.
   const text = result.stdout.trim();
