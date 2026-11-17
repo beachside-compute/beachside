@@ -97,7 +97,10 @@ try {
 
     manifest.version = "0.1.0";
     manifest.private = false;
-    manifest.repository = { type: "git", url: "git+https://github.com/pandemicsyn/beachside.git" };
+    manifest.repository = {
+      type: "git",
+      url: "git+https://github.com/beachside-compute/beachside.git",
+    };
     writeFileSync(file, JSON.stringify(manifest, null, 2) + "\n");
     writeFileSync(
       join(temporary, path, "CHANGELOG.md"),
