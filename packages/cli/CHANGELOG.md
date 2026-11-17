@@ -1,5 +1,13 @@
 # @beachside/cli
 
+## 0.16.1
+
+### Patch Changes
+
+- Updated dependencies [[`eb6a6ac`](https://github.com/beachside-compute/beachside/commit/eb6a6acf64a24a3e9a0d8a820f76926c801a03ea)]:
+  - beachside@0.16.1
+  - @beachside/adapter@0.16.1
+
 ## 0.16.0
 
 ### Minor Changes

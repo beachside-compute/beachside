@@ -1,5 +1,13 @@
 # beachside
 
+## 0.16.1
+
+### Patch Changes
+
+- [#236](https://github.com/beachside-compute/beachside/pull/236) [`eb6a6ac`](https://github.com/beachside-compute/beachside/commit/eb6a6acf64a24a3e9a0d8a820f76926c801a03ea) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Point package repository and issue links at github.com/beachside-compute/beachside, so npm trusted publishing and provenance accept releases from the moved repository.
+- Updated dependencies []:
+  - @beachside/adapter@0.16.1
+
 ## 0.16.0
 
 ### Patch Changes
