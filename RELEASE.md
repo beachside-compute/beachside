@@ -40,8 +40,8 @@ Placeholders hold `latest` until the first stable release; a prerelease on `next
 npm checks a trusted publish against the GitHub owner and repository it was configured with, and npm provenance checks each package's `repository.url` against the repository that ran the workflow. Moving the repository breaks both: publish fails with `E404 Not Found - PUT https://registry.npmjs.org/@beachside%2fadapter`. To recover:
 
 1. Update `repository` in `scripts/npm-bootstrap.mjs`, the `repository` and `bugs` URLs in every public `package.json`, and the URL checked by `scripts/release.mjs`, then merge with a patch changeset. A tag cut before the move still carries the old URLs, so release the next version rather than rerunning that tag.
-2. For each package, find the old trust entry with `npm trust list <package>` and remove it with `npm trust revoke <package> --id=<id>`.
-3. Run `bun run release:bootstrap trust` to configure the new repository, then merge the version PR.
+2. `npm login`, then run `bun run release:bootstrap retrust`. For each package it lists the trust entries, revokes any that do not match this repository, workflow and environment, and creates the new one; a package that already matches is skipped, so a rerun after a failure is safe. npm asks for 2FA along the way. By hand, the same is `npm trust list <package>`, `npm trust revoke <package> --id=<id>` and `bun run release:bootstrap trust <package>`.
+3. Merge the version PR.
 
 ## Reproducible local qualification
 

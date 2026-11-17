@@ -115,8 +115,8 @@ function report(rows) {
 
 const mode = process.argv[2] ?? "plan";
 
-if (!["plan", "publish", "trust"].includes(mode))
-  throw new Error(`Unknown bootstrap mode: ${mode}; use plan, publish or trust`);
+if (!["plan", "publish", "trust", "retrust"].includes(mode))
+  throw new Error(`Unknown bootstrap mode: ${mode}; use plan, publish, trust or retrust`);
 
 if (mode === "plan") {
   const directory = join(tmpdir(), `beachside-npm-bootstrap-${process.pid}`);
@@ -164,7 +164,26 @@ if (mode === "publish") {
   console.log("Placeholders published. Next: bun run release:bootstrap trust");
 }
 
-if (mode === "trust") {
+function trustEntries(name) {
+  // stdin and stderr stay attached so npm can ask for a one-time password.
+  const result = npm(["trust", "list", name, "--json"], { stdio: ["inherit", "pipe", "inherit"] });
+
+  if (result.error || result.status !== 0)
+    throw new Error(`npm trust list ${name} failed (${result.status ?? result.error})`);
+
+  // npm prints one JSON object per trust entry, back to back.
+  const text = result.stdout.trim();
+
+  return text ? JSON.parse(`[${text.replace(/}\s*{/g, "},{")}]`) : [];
+}
+
+function matches(entry) {
+  return (
+    entry.repository === repository && entry.file === workflow && entry.environment === environment
+  );
+}
+
+if (mode === "trust" || mode === "retrust") {
   requireNpm();
   whoami();
 
@@ -182,6 +201,22 @@ if (mode === "trust") {
 
   for (const [index, { manifest }] of selected.entries()) {
     if (index > 0) await new Promise((done) => setTimeout(done, 2000));
+
+    if (mode === "retrust") {
+      // A package holds one trust entry, so a moved repository needs the old one revoked first.
+      const entries = trustEntries(manifest.name);
+
+      if (entries.some(matches)) {
+        console.log(`${manifest.name} already trusts ${repository}; skipping`);
+        continue;
+      }
+
+      for (const entry of entries) {
+        console.log(`${manifest.name}: revoking ${entry.repository ?? entry.type} (${entry.id})`);
+        interactive(["trust", "revoke", manifest.name, `--id=${entry.id}`]);
+      }
+    }
+
     interactive([
       "trust",
       "github",
