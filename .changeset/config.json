@@ -3,7 +3,7 @@
   "changelog": [
     "@changesets/changelog-github",
     {
-      "repo": "pandemicsyn/beachside"
+      "repo": "beachside-compute/beachside"
     }
   ],
   "commit": false,

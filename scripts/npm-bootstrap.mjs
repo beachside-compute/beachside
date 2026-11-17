@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 
-const repository = "pandemicsyn/beachside";
+const repository = "beachside-compute/beachside";
 
 const workflow = "release-npm.yml";
 

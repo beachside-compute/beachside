@@ -29,12 +29,12 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/pandemicsyn/beachside.git",
+    "url": "git+https://github.com/beachside-compute/beachside.git",
     "directory": "packages/providers/exe-dev"
   },
   "description": "Experimental exe.dev sandbox provider adapter for Beachside.",
   "bugs": {
-    "url": "https://github.com/pandemicsyn/beachside/issues"
+    "url": "https://github.com/beachside-compute/beachside/issues"
   },
   "publishConfig": {
     "access": "public"

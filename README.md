@@ -56,7 +56,7 @@ await client.close();
 
 Switching providers only changes the `adapter`, `credentials` and `config` you pass to `connect`. Your create, exec, files and destroy calls stay the same. See [Getting started](https://beachside.run/docs/direct-quickstart/) for every provider.
 
-Using a coding agent? `npx skills add pandemicsyn/beachside --skill beachside -g` teaches it the SDK.
+Using a coding agent? `npx skills add beachside-compute/beachside --skill beachside -g` teaches it the SDK.
 
 ## CLI
 

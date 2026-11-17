@@ -20,7 +20,7 @@ Manual runs check out the ref they run on. Qualify a branch with `gh workflow ru
 
 - Confirm ownership and availability of every public npm package name. The selected public names are `@beachside/adapter`, `beachside`, `@beachside/daytona`, `@beachside/e2b`, `@beachside/boxd`, `@beachside/boat` (experimental), `@beachside/runloop` (experimental), `@beachside/freestyle` (experimental), `@beachside/archil` (experimental), `@beachside/exe-dev` (experimental), `@beachside/modal` (experimental), `@beachside/vercel`, and `@beachside/cli`. Confirm npm ownership of each name before publication; registry E404 does not prove ownership. The ten selected packages have `private: false`, Apache-2.0 licensing and exact repository metadata. Keep internal SPI, fake-provider and app workspaces private. Update `scripts/release-packages.json` and the fixed group in `.changeset/config.json` together if the distributable graph changes.
 - Create a protected GitHub `npm` environment with required reviewers and restrict it to approved release tags. Enable Actions to write contents for version preparation; branch protection and the required independent review still apply to the version PR.
-- Configure an npm trusted publisher for **each** public package: GitHub owner `pandemicsyn`, repository `beachside`, workflow filename `release-npm.yml`, environment `npm`, with direct `npm publish` allowed. GitHub-hosted runners, npm CLI 11.5.1+ and Node 22.14+ are required. OIDC requires `id-token: write`; this workflow supplies it. No account credentials are stored in this repository.
+- Configure an npm trusted publisher for **each** public package: GitHub owner `beachside-compute`, repository `beachside`, workflow filename `release-npm.yml`, environment `npm`, with direct `npm publish` allowed. GitHub-hosted runners, npm CLI 11.5.1+ and Node 22.14+ are required. OIDC requires `id-token: write`; this workflow supplies it. No account credentials are stored in this repository.
 - Verify npm organization/scope rights and GitHub environment settings separately. This setup task does not publish packages or create a release.
 
 ### npm bootstrap
@@ -34,6 +34,14 @@ Manual runs check out the ref they run on. Qualify a branch with `gh workflow ru
 5. Create the protected GitHub `npm` environment described above before the first real release. A workflow referencing a missing environment creates it without protection.
 
 Placeholders hold `latest` until the first stable release; a prerelease on `next` leaves `latest` on `0.0.0`. Later packages added to the release group follow the same steps before the version PR that first releases them is merged. The publish job checks this first: if any package is not on npm yet it stops before publishing anything. After bootstrapping, rerun the failed publish job.
+
+### After moving the repository
+
+npm checks a trusted publish against the GitHub owner and repository it was configured with, and npm provenance checks each package's `repository.url` against the repository that ran the workflow. Moving the repository breaks both: publish fails with `E404 Not Found - PUT https://registry.npmjs.org/@beachside%2fadapter`. To recover:
+
+1. Update `repository` in `scripts/npm-bootstrap.mjs`, the `repository` and `bugs` URLs in every public `package.json`, and the URL checked by `scripts/release.mjs`, then merge with a patch changeset. A tag cut before the move still carries the old URLs, so release the next version rather than rerunning that tag.
+2. For each package, find the old trust entry with `npm trust list <package>` and remove it with `npm trust revoke <package> --id=<id>`.
+3. Run `bun run release:bootstrap trust` to configure the new repository, then merge the version PR.
 
 ## Reproducible local qualification
 
