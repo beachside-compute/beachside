@@ -464,23 +464,21 @@ test.skipIf(process.platform === "darwin")(
   },
 );
 
-test.skipIf(process.platform === "darwin")(
-  "a pasted key goes to beachside.json by default, even when a keychain is available",
-  async () => {
-    const bin = await fakeSecretTool();
-    const env = { PATH: `${bin}:${process.env.PATH ?? ""}` };
+test("a pasted key goes to beachside.json by default, even when a keychain is available", async () => {
+  // macOS always has `security`; elsewhere a fake secret-tool makes a keychain available.
+  const bin = await fakeSecretTool();
+  const env = { PATH: `${bin}:${process.env.PATH ?? ""}` };
 
-    const result = await cli(
-      [...fake, "--api-key", "-", "--set", "region=north", "--json"],
-      env,
-      token,
-    );
+  const result = await cli(
+    [...fake, "--api-key", "-", "--set", "region=north", "--json"],
+    env,
+    token,
+  );
 
-    expect(result).toMatchObject({ code: 0 });
-    expect((await config()).profiles.fk.credentials.token).toBe(token);
-    expect(await readdir(join(dir, "keyring")).catch(() => [])).toEqual([]);
-  },
-);
+  expect(result).toMatchObject({ code: 0 });
+  expect((await config()).profiles.fk.credentials.token).toBe(token);
+  expect(await readdir(join(dir, "keyring")).catch(() => [])).toEqual([]);
+});
 
 test("a key kept in an existing beachside.json makes the file readable only by you", async () => {
   await mkdir(join(dir, "beachside"), { recursive: true });
