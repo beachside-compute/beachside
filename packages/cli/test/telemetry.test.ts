@@ -1,8 +1,9 @@
-import { afterAll, beforeEach, expect, test } from "bun:test";
+import { afterAll, beforeEach, expect, mock, test } from "bun:test";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { main } from "../src/cli";
+import { PromptCancelled } from "../src/init-wizard";
 import type { Env } from "../src/config";
 import {
   CommandEvent,
@@ -45,6 +46,7 @@ async function invoke(
   args: string[],
   overrides: Readonly<Record<string, string | undefined>> = {},
   terminal = false,
+  stdinTerminal = false,
 ) {
   const events: { id: string; event: Event }[] = [];
   let stdout = "";
@@ -55,6 +57,7 @@ async function invoke(
     cwd: home,
     signal: new AbortController().signal,
     stderrTerminal: terminal,
+    stdinTerminal,
     stdin: async function* () {},
     streams: {
       stdout: (text) => {
@@ -162,6 +165,37 @@ test("init is tracked with whether it ran guided or from flags, never its values
   });
   expect(JSON.stringify(result.events)).not.toContain("secret-value-123");
   expect(JSON.stringify(result.events)).not.toContain("nope");
+});
+
+test("init at a terminal is tracked as the guided setup", async () => {
+  // A scripted prompter stands in for the terminal UI and cancels at the first question.
+  const asks = new Set(["select", "multiselect", "text", "password", "confirm"]);
+
+  void mock.module("../src/init-prompts", () => ({
+    clackPrompter: () =>
+      new Proxy(
+        {},
+        {
+          get: (_, name) =>
+            asks.has(String(name))
+              ? async () => {
+                  throw new PromptCancelled();
+                }
+              : () => {},
+        },
+      ),
+  }));
+
+  const result = await invoke(["init"], {}, true, true);
+
+  expect(result.code).toBe(130);
+  expect(result.events).toHaveLength(1);
+  expect(result.events[0]!.event).toMatchObject({
+    command: "init",
+    action: "guided",
+    result: "failure",
+    terminal: true,
+  });
 });
 
 test("failures contain only fixed codes, never credential or argument content", async () => {
