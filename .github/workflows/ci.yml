@@ -70,7 +70,7 @@ jobs:
             git diff --no-renames --name-only "$BASE" HEAD > "$RUNNER_TEMP/changed-files"
             # The release rehearsal tests the release tooling, so it runs only when that changes.
             if grep -Eq \
-              -e '^scripts/(release|release-fixture|check-installers|npm-bootstrap)\.mjs$' \
+              -e '^scripts/(release|release-fixture|check-installers|npm-bootstrap|refresh-workspace-lock|assert-pending-changesets)\.mjs$' \
               -e '^scripts/release-packages\.json$' \
               -e '^\.changeset/(config|pre)\.json$' \
               -e '^\.github/workflows/(ci|release-npm|version-prepare)\.yml$' \
