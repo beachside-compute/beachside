@@ -56,7 +56,7 @@ beachside init [<provider>] [--profile <name>] [--api-key <key|ref>] [--set k=v]
 | `--credential <key=value>`   | Any other credential, with the same value forms (repeatable)                                                        |
 | `--set <key=value>`          | A config setting, such as target=us; JSON values are parsed (repeatable)                                            |
 | `--network <policy>`         | The profile's network setting, such as internet or blocked                                                          |
-| `--store <keychain\|config>` | Where a pasted or piped key goes: the OS keychain (default when there is one) or beachside.json (mode 0600)         |
+| `--store <keychain\|config>` | Where a pasted or piped key goes: beachside.json (mode 0600, the default) or the OS keychain                        |
 | `--default`                  | Make this profile the default                                                                                       |
 | `--try`                      | Also create a sandbox, run one command and destroy it                                                               |
 | `--force`                    | Replace a profile of the same name that differs                                                                     |

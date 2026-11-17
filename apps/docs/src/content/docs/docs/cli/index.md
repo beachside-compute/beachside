@@ -14,7 +14,7 @@ npm install -g @beachside/cli
 beachside init
 ```
 
-`init` asks which providers you want, installs their adapters, asks for each provider's key and settings (with a link to where you get the key), keeps new keys in your OS keychain, checks that each provider accepts its key, offers to try a sandbox on each one, and saves one profile per provider in `beachside.json`. It ends by printing the command that repeats the setup without questions, so you can put it in a dotfiles script or hand it to an agent. Nothing is saved until the end, and Ctrl-C leaves your config as it was. Running it again lets you add providers, change one, pick the default or check them all. See [Set up providers with init](/docs/cli/configuration/#set-up-providers-with-init).
+`init` asks which providers you want, installs their adapters, asks for each provider's key and settings (with a link to where you get the key), keeps new keys in `beachside.json`, readable only by you (`--store keychain` uses your OS keychain instead), checks that each provider accepts its key, offers to try a sandbox on each one, and saves one profile per provider in `beachside.json`. It ends by printing the command that repeats the setup without questions, so you can put it in a dotfiles script or hand it to an agent. Nothing is saved until the end, and Ctrl-C leaves your config as it was. Running it again lets you add providers, change one, pick the default or check them all. See [Set up providers with init](/docs/cli/configuration/#set-up-providers-with-init).
 
 To install an adapter yourself, use `beachside adapter add`. Adapters live in their own folder so a project you happen to be in can't supply one:
 
