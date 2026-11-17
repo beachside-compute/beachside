@@ -849,7 +849,7 @@ export const initFlagSpecs = {
     type: "string",
     value: "keychain|config",
     description:
-      "Where a pasted or piped key goes: the OS keychain (default when there is one) or beachside.json (mode 0600)",
+      "Where a pasted or piped key goes: beachside.json (mode 0600, the default) or the OS keychain",
   },
   default: { type: "boolean", description: "Make this profile the default" },
   try: {
@@ -916,11 +916,10 @@ async function storageFor(session: Session, flags: Flags, needed: boolean): Prom
 
   if (!needed) return chosen ?? "config";
 
-  const keychain = await keychainAvailable(session.ctx.env);
+  // beachside.json (mode 0600) is the default everywhere; the OS keychain is opt-in.
+  if (chosen === "keychain" && !(await keychainAvailable(session.ctx.env))) throw noKeychain();
 
-  if (chosen === "keychain" && !keychain) throw noKeychain();
-
-  return chosen ?? (keychain ? "keychain" : "config");
+  return chosen ?? "config";
 }
 
 /** `beachside init <provider>` without questions: flags and the environment supply every answer. */

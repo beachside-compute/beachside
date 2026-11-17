@@ -586,7 +586,7 @@ async function wizard(session: Session, flags: Flags, prompt: Prompter): Promise
     return 0;
   }
 
-  const storage = await askStorage(prompt, session, flags, drafts);
+  const storage = askStorage(prompt, flags, drafts);
   const defaultName = await askDefault(prompt, session, flags, drafts);
 
   // --no-check saves every profile unchecked, as the flag form does.
@@ -702,40 +702,18 @@ async function tryEach(session: Session, checks: CheckResult[]): Promise<TryResu
   return settled.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
 }
 
-async function askStorage(
-  prompt: Prompter,
-  session: Session,
-  flags: Flags,
-  drafts: Draft[],
-): Promise<Storage> {
+/** New keys go in beachside.json (mode 0600) unless --store keychain asks for the OS keychain. */
+function askStorage(prompt: Prompter, flags: Flags, drafts: Draft[]): Storage {
   const chosen = storeFlag(flags);
 
   if (chosen) return chosen;
 
-  if (!drafts.some((draft) => Object.keys(draft.secrets).length)) return "config";
+  if (drafts.some((draft) => Object.keys(draft.secrets).length))
+    prompt.info(
+      "New keys go in beachside.json (readable only by you); pass --store keychain to keep them in the OS keychain",
+    );
 
-  const keychain = await keychainAvailable(session.ctx.env);
-
-  if (!keychain) {
-    prompt.info("No OS keychain found, so new keys go in beachside.json (readable only by you)");
-
-    return "config";
-  }
-
-  const picked = await prompt.select({
-    message: "Where should beachside keep the new keys?",
-    options: [
-      { value: "keychain", label: keychain, hint: "nothing in plain text" },
-      {
-        value: "config",
-        label: "beachside.json",
-        hint: "plain text, readable only by you (mode 0600)",
-      },
-    ],
-    initial: "keychain",
-  });
-
-  return picked === "config" ? "config" : "keychain";
+  return "config";
 }
 
 async function askDefault(
