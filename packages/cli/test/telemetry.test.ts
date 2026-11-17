@@ -149,6 +149,21 @@ test("help, version, schema, completion and telemetry commands are never tracked
   expect(await readdir(home)).toEqual([]);
 });
 
+test("init is tracked with whether it ran guided or from flags, never its values", async () => {
+  const result = await invoke(["init", "nope", "--api-key", "secret-value-123", "--no-input"]);
+
+  expect(result.code).not.toBe(0);
+  expect(result.events).toHaveLength(1);
+  expect(result.events[0]!.event).toMatchObject({
+    command: "init",
+    action: "flags",
+    result: "failure",
+    error_code: "USAGE",
+  });
+  expect(JSON.stringify(result.events)).not.toContain("secret-value-123");
+  expect(JSON.stringify(result.events)).not.toContain("nope");
+});
+
 test("failures contain only fixed codes, never credential or argument content", async () => {
   const result = await invoke([
     "exec",

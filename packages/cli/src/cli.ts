@@ -31,7 +31,7 @@ import { snapshotCommand } from "./snapshots";
 import { skillCommand } from "./skill";
 import { adapterCommand } from "./adapters";
 import { profileCommand } from "./profiles";
-import { initCommand, initFlagSpecs } from "./init";
+import { initCommand, initFlagSpecs, interactive } from "./init";
 import { gcCommand } from "./gc";
 import { complete, completionCommand, formatCompletion } from "./completion";
 import { configJsonSchema, type Env } from "./config";
@@ -1087,13 +1087,17 @@ export async function main(argv: readonly string[], io: Io): Promise<number> {
         const allowedActions = Object.entries(actions).find(([name]) => name === command.name)?.[1];
 
         const action =
-          first && allowedActions?.includes(first)
-            ? first
-            : command.name === "setup" &&
-                first === "cache" &&
-                ["ls", "rm", "prune"].includes(flags.positionals[1] ?? "")
-              ? `cache ${flags.positionals[1]}`
-              : undefined;
+          command.name === "init"
+            ? interactive(session, flags)
+              ? "guided"
+              : "flags"
+            : first && allowedActions?.includes(first)
+              ? first
+              : command.name === "setup" &&
+                  first === "cache" &&
+                  ["ls", "rm", "prune"].includes(flags.positionals[1] ?? "")
+                ? `cache ${flags.positionals[1]}`
+                : undefined;
 
         const event = eventProperties({
           command: command.name,
