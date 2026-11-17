@@ -12,6 +12,12 @@ const title = "Beachside | Always-on cloud agents you own";
 const description =
   "Launch a Rex or Herdr workspace in a sandbox on boxd, Freestyle or another provider with one open source CLI command. Sign up for the Beachside 1.0 beta.";
 
+// Link preview for X and Open Graph. Crawlers need an absolute URL; the source is brand/beachside/src/.
+const image = "https://beachside.run/brand/beachside/beta-social-1200x630.png";
+
+const imageAlt =
+  "Beachside: Always-on cloud agents you own. Launch Rex or Herdr in the sandbox provider of your choice. Join waitlist at beachside.run/beta.";
+
 const fonts =
   "https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;800&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap";
 
@@ -85,6 +91,18 @@ const year = new Date().getFullYear();
 <meta property="og:description" content={description} />
 <meta property="og:url" content="https://beachside.run/beta/" />
 <meta property="og:type" content="website" />
+<meta property="og:site_name" content="Beachside" />
+<meta property="og:image" content={image} />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:type" content="image/png" />
+<meta property="og:image:alt" content={imageAlt} />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:site" content="@pandemicsyn" />
+<meta name="twitter:title" content="Always-on cloud agents you own" />
+<meta name="twitter:description" content={description} />
+<meta name="twitter:image" content={image} />
+<meta name="twitter:image:alt" content={imageAlt} />
 <title>{title}</title>
 <script is:inline>
   // Same theme choice as the rest of the site, before paint.
