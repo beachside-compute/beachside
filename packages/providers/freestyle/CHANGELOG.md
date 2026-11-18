@@ -1,5 +1,12 @@
 # @beachside/freestyle
 
+## 0.17.1
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @beachside/adapter@0.17.1
+
 ## 0.17.0
 
 ### Patch Changes

@@ -1,5 +1,14 @@
 # @beachside/cli
 
+## 0.17.1
+
+### Patch Changes
+
+- [#242](https://github.com/beachside-compute/beachside/pull/242) [`e7e09ea`](https://github.com/beachside-compute/beachside/commit/e7e09ea9bc5367539584de25adf84a2f17e232c7) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - The command `beachside init` prints to repeat a setup no longer adds `--store config`, which is now the default.
+- Updated dependencies []:
+  - @beachside/adapter@0.17.1
+  - beachside@0.17.1
+
 ## 0.17.0
 
 ### Minor Changes
