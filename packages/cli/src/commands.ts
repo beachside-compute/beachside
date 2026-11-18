@@ -1,3 +1,4 @@
+import { registerRexHost } from "./rex-local";
 import { createReadStream } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { basename, join, posix, resolve } from "node:path";
@@ -1472,6 +1473,14 @@ async function installAddons(
     out,
     save,
   );
+
+  for (const addon of result.addons) {
+    if (addon.name === "rex" && addon.state === "ready" && addon.connect) {
+      // A later add-on failure skips create's success output; keep Rex reachable.
+      if (result.failure) out.note(`rex: ${addon.connect}`);
+      await registerRexHost(addon.hostname, addon.connect, session.ctx.env, signal, out);
+    }
+  }
 
   if (result.failure) throw result.failure;
 }
