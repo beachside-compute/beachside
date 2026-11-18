@@ -7,7 +7,7 @@ description: Declare only native guarantees that the adapter can actually enforc
 | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Create     | Verify image/account/region and network isolation before one native submission. Correlate the returned sandbox to the attempt.                                    |
 | Destroy    | Attempt native compute cleanup; report `computeStopped: true` only after confirmation.                                                                            |
-| Scope      | Authenticate authority and include every routing partition that changes native resource identity. Check it on every read and mutation.                            |
+| Scope      | Include the native service or tenant authority and all identity-relevant routing. Authenticate reads and mutations with the current credential.                   |
 | Exec       | Declare `argv` and/or `shell` accurately. Preserve binary stdout/stderr and apply the combined output bound. Disable hidden retries.                              |
 | Files      | Enforce byte bounds. Offer `overwrite: false` only with native atomic no-clobber semantics.                                                                       |
 | Inventory  | Paginate and verify listed resource ownership, including detail reads when list payloads omit scope. Listed sandbox references must match what `reopen` verifies. |

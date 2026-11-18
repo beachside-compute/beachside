@@ -32,6 +32,7 @@ Keep every row. Native status is `supported`, `unsupported`, `conditional`, or `
 | ---------------- | ------------- | ------------------------------------------------- | ------------------------------------- |
 | `lifecycle`      | unknown       | Not researched                                    |                                       |
 | `exec`           | unknown       | Not researched                                    |                                       |
+| `ssh`            | unknown       | Not researched                                    |                                       |
 | `files`          | unknown       | Not researched                                    |                                       |
 | `snapshots`      | unknown       | Not researched                                    |                                       |
 | `volumes`        | unknown       | Not researched                                    |                                       |
