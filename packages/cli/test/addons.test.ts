@@ -676,8 +676,15 @@ describe("create --with", () => {
       await writeFile(
         executable,
         `#!${process.execPath}
+import { appendFileSync } from "node:fs";
 await Bun.stdin.text();
-await Bun.write(process.env.REX_TEST_CALLS, JSON.stringify(process.argv.slice(2)));
+const args = process.argv.slice(2);
+appendFileSync(process.env.REX_TEST_CALLS, JSON.stringify(args) + "\\n");
+if (args[1] === "--json") {
+  console.log(JSON.stringify({ hosts: [] }));
+  process.exit(0);
+}
+if (process.env.REX_TEST_EXIT !== "0") console.error("Error: fixture refused the host\\nsecond line");
 process.exit(Number(process.env.REX_TEST_EXIT));
 `,
         { mode: 0o755 },
@@ -711,12 +718,13 @@ process.exit(Number(process.env.REX_TEST_EXIT));
 
       expect(rex.state).toBe("ready");
       expect(rex.connect).toBe("https://127.0.0.1:1");
-      expect(JSON.parse(await readFile(calls, "utf8"))).toEqual([
-        "hosts",
-        "add",
-        rex.hostname,
-        rex.connect,
-      ]);
+
+      const invoked = (await readFile(calls, "utf8"))
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+
+      expect(invoked).toContainEqual(["hosts", "add", rex.hostname, rex.connect]);
       expect(result.code).toBe(partial ? 8 : 0);
       expect(result.stdout + result.stderr).toContain(rex.connect);
 
@@ -724,11 +732,15 @@ process.exit(Number(process.env.REX_TEST_EXIT));
         expect(
           inspected.json.data.addons.find((addon: AddonRecord) => addon.name === "herdr").state,
         ).toBe("failed");
-        expect(result.stderr).toContain("automatic host registration failed");
+        expect(result.stderr).toContain(
+          `could not save ${rex.hostname} for the rex CLI (fixture refused the host)`,
+        );
+        expect(result.stderr).not.toContain("second line");
         expect(result.stderr).toContain("fixture herdr setup failed");
       } else {
         expect(result.stdout).toContain(rex.connect);
-        expect(result.stderr).toContain(`registered ${rex.hostname}`);
+        expect(result.stderr).toContain(`saved ${rex.hostname} for the rex CLI`);
+        expect(result.stderr).toContain("Add Remote Host…");
       }
     });
   }

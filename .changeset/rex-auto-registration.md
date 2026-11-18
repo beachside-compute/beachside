@@ -2,4 +2,4 @@
 "@beachside/cli": minor
 ---
 
-Automatically register provisioned Rex instances with the user's Rex home when a supported local CLI is available, while always displaying the connection address.
+`create --with rex` saves the instance as a `rex hosts` label (`rex -S beachside-<name>`) when a local Rex CLI is available, and `rm` removes it again. The Rex app still needs Add Remote Host…, and the connection address is always printed.

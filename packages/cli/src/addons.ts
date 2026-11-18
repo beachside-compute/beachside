@@ -577,7 +577,7 @@ export function addonLines(addons: AddonRecord[]): string[] {
         `${name}setup ${addon.state === "failed" ? "failed" : "unfinished"} (${addon.hostname})`,
       ];
 
-    if (addon.name === "rex") return [`${name}${addon.connect}`];
+    if (addon.name === "rex") return [`${name}${addon.connect}  (in Rex: Add Remote Host…)`];
 
     const fingerprint = ed25519Fingerprint(addon.knownHosts);
 

@@ -1,4 +1,3 @@
-import { registerRexHost } from "./rex-local";
 import { createReadStream } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { basename, join, posix, resolve } from "node:path";
@@ -87,6 +86,7 @@ import {
   resolveAdapterModule,
   type ResolvedProfile,
 } from "./providers";
+import { registerRexHost, unregisterRexHost } from "./rex-local";
 import type { Session } from "./session";
 import { restoreSnapshot, snapshotSource } from "./snapshots";
 import {
@@ -1958,6 +1958,17 @@ async function removeOne(
     item: Extract<RemoveResult, { kind: "removed" }>["item"],
   ): Promise<RemoveResult> => {
     await noteForgetHerdr(session, record.name, record.addons ?? []);
+
+    for (const addon of record.addons ?? []) {
+      if (addon.name === "rex" && addon.connect)
+        await unregisterRexHost(
+          addon.hostname,
+          addon.connect,
+          session.ctx.env,
+          session.ctx.signal,
+          session.ctx.out,
+        );
+    }
 
     return { kind: "removed", item };
   };
