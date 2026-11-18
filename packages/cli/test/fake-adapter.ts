@@ -605,3 +605,71 @@ export const refusing = defineAdapter({
     throw new AdapterError("UNAUTHENTICATED", "The fake provider refused the key");
   },
 });
+
+/** Simulated add-on commands: no installers, tailnet login, or remote processes run. */
+export const rexAddons = bindAdapter(
+  defineAdapter({
+    name: "fake",
+    displayName: "Fake test provider with Rex add-on replies",
+    config: z.strictObject({}),
+    credentials: z.strictObject({}),
+    async connect({ host }) {
+      const { processes: _processes, ...session } = await definition.connect({
+        config: {},
+        credentials: {},
+        host,
+      });
+
+      const create = session.create;
+
+      if (!("submit" in create)) throw new Error("The add-on fixture requires recoverable create");
+
+      const prepare = create.prepare;
+
+      if (!prepare) throw new Error("The add-on fixture requires create preparation");
+
+      return {
+        ...session,
+        // Provisioning is simulated: advertise internet to the CLI while retaining the
+        // fake provider's blocked network for its stored resource.
+        supports: { ...session.supports, network: ["internet"] },
+        create: {
+          ...create,
+          async prepare(input, ctx) {
+            const prepared = await prepare({ ...input, networkPolicy: "blocked" }, ctx);
+
+            return { ...prepared, networkPolicy: input.networkPolicy };
+          },
+          submit(input, ctx) {
+            return create.submit({ ...input, networkPolicy: "blocked" }, ctx);
+          },
+        },
+        exec: Object.assign(
+          async (input: ExecInput) => {
+            const script =
+              input.command.kind === "shell" ? input.command.script : input.command.argv.join(" ");
+
+            const failed = script.includes("https://tailscale.com/install.sh");
+            let stdout = "";
+
+            // The SDK setup engine queries HOME before running inline setup steps.
+            if (script.includes('printf %s "$HOME"')) stdout = "/tmp/fake-addon-home";
+
+            if (script.includes("rex server logs"))
+              stdout = "tailnet https listener ready url=https://127.0.0.1:1\n";
+
+            return {
+              exitCode: failed ? 3 : 0,
+              stdout: new TextEncoder().encode(stdout),
+              stderr: new TextEncoder().encode(failed ? "fixture herdr setup failed" : ""),
+              truncated: false,
+            };
+          },
+          { finiteStdin: "bytes" as const },
+        ),
+      };
+    },
+  }),
+  {},
+  {},
+);
