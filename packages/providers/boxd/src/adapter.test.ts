@@ -84,6 +84,28 @@ test("boxd setup offers blocked and internet egress and takes the network once, 
     ).toMatchObject({ code: "INVALID_ARGUMENT" });
 });
 
+test("a key fenced to a non-default team org creates and reopens machines in that org", async () => {
+  const { fixture, adapter } = await setup();
+
+  const client = await Beachside.connect({
+    adapter,
+    config: { org: "team", networkPolicy: "internet" },
+    credentials: { apiKey: "fixture-team" },
+  });
+
+  try {
+    expect(client.scope.authority).toEqual({ kind: "org", id: "org-team" });
+    const box = await client.sandboxes.create();
+    expect(
+      fixture.calls.filter((call) => call.method === "CreateVm").at(-1)?.request,
+    ).toMatchObject({ org: "team" });
+    expect((await client.sandboxes.get(box.reference!)).id).toBe(box.id);
+    await box.destroy();
+  } finally {
+    await client.close();
+  }
+});
+
 test("boxd resources pick the smallest size class and inspect reports the real size", async () => {
   const { fixture, adapter } = await setup();
 

@@ -26,7 +26,7 @@ try {
 }
 ```
 
-Use a member API key. `connect` checks that `org` is the key's authenticated default org (by ID or slug) and reads the cluster zone; everything is scoped to that org. Userless org keys and custom endpoints are not supported.
+Use a member API key. Each boxd key is fenced to one org; `connect` checks that `org` (by ID or slug) is one the key can see, including a team org that is not your default, and reads the cluster zone. Everything is scoped to that org. Userless org keys and custom endpoints are not supported.
 
 The package also exports `boxd()`, which takes credentials and config in one object and returns an adapter you pass straight to `Beachside.connect`: `Beachside.connect(boxd({ apiKey, org: "my-org" }))`. It is the same setup; use whichever reads better.
 

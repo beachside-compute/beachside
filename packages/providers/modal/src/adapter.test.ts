@@ -1140,8 +1140,8 @@ test("Modal lists the verified App's sandboxes without reopenable references", a
       items: [{ id: "sb-1", state: "running", reference: null, labels: {}, createdAt: null }],
       nextCursor: "1",
     });
-    // The page stops reading after one look-ahead record and re-verifies the App once.
-    expect(calls).toMatchObject({ lookups: lookups + 1, lists: 1, yielded: 2 });
+    // The page stops reading after one look-ahead record; the App ID from connect is reused.
+    expect(calls).toMatchObject({ lookups, lists: 1, yielded: 2 });
 
     const rest = await client.sandboxes.list({ cursor: first.nextCursor });
     expect(rest).toEqual({
