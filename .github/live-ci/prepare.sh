@@ -3,7 +3,7 @@
 # Safe to run again; on a warm base both steps find their work already done.
 set -eu
 
-BUN_VERSION=1.3.14
+BUN_VERSION=1.4.4
 export PATH="$HOME/.bun/bin:$PATH"
 
 if [ "$(bun --version 2>/dev/null || true)" != "$BUN_VERSION" ]; then

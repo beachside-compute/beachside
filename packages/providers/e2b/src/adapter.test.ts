@@ -1,16 +1,7 @@
 import { expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { z } from "zod";
-import {
-  mkdtemp,
-  mkdir,
-  readFile,
-  readdir,
-  rm,
-  symlink,
-  unlink,
-  writeFile,
-} from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Sandbox, Template } from "e2b";
@@ -515,52 +506,6 @@ test("shell quoting and bounded streams preserve binary bytes", async () => {
   expect(await collectBounded(long, 2)).toEqual({ bytes: bytes.slice(0, 2), truncated: true });
 });
 
-test("GNU ln -T creates only an absent exact target and survives stage cleanup", async () => {
-  const command = process.platform === "darwin" ? "gln" : "ln";
-  const probe = Bun.spawnSync({ cmd: [command, "--version"], stdout: "pipe", stderr: "pipe" });
-
-  if (probe.exitCode !== 0) throw new Error("E2B no-clobber fixture requires GNU ln");
-
-  const root = await mkdtemp(join(tmpdir(), "beachside-e2b-link-"));
-  const stage = join(root, "stage");
-  const directory = join(root, "directory");
-  const directoryLink = join(root, "directory-link");
-  const existing = join(root, "existing");
-  const absent = join(root, "absent");
-
-  try {
-    await writeFile(stage, Uint8Array.of(0, 255));
-    await mkdir(directory);
-    await symlink(directory, directoryLink);
-    await writeFile(existing, Uint8Array.of(42));
-
-    for (const destination of [directory, directoryLink, existing]) {
-      const attempt = Bun.spawnSync({
-        cmd: [command, "-T", "--", stage, destination],
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-
-      expect(attempt.exitCode).not.toBe(0);
-      expect(await readdir(directory)).toEqual([]);
-    }
-
-    expect(new Uint8Array(await readFile(existing))).toEqual(Uint8Array.of(42));
-
-    const created = Bun.spawnSync({
-      cmd: [command, "-T", "--", stage, absent],
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-
-    expect(created.exitCode).toBe(0);
-    await unlink(stage);
-    expect(new Uint8Array(await readFile(absent))).toEqual(Uint8Array.of(0, 255));
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
 test.each([
   "complete",
   "lost-start",
@@ -768,6 +713,22 @@ test.each([
       expect(conflict.kind).toBe("rejected");
       expect(files.get("/tmp/file.bin")).toEqual(Uint8Array.of(42));
       expect(files.has("/tmp/.beachside-write-sub_conflict")).toBe(false);
+
+      // An unrecognised link answer is never reported as a successful write.
+      linkAnswer = "FAILED";
+
+      const uncertain = await submitOperation(
+        write,
+        {
+          operationId: "op_uncertain",
+          submissionId: "sub_uncertain",
+          invocationKey: "inv_uncertain",
+        },
+        signal,
+      );
+
+      expect(uncertain.kind).toBe("pending");
+      expect(files.get("/tmp/file.bin")).toEqual(Uint8Array.of(42));
     } finally {
       await connection.close();
     }

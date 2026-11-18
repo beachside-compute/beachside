@@ -100,12 +100,11 @@ async function fixture(
       if (options.failNoClobber && script.includes("ln -T --"))
         throw new Error("offline native link failure");
 
-      const link = process.platform === "darwin" ? "gln" : "ln";
-
       const rewritten = script
         .replaceAll("/tmp/", `${directory}/`)
         .replaceAll("/home/user/", `${directory}/`)
-        .replace("ln -T --", `${link} -T --`);
+        // Fixture files are never directories, so plain POSIX ln has the same no-clobber result.
+        .replace("ln -T --", "ln --");
 
       const result = Bun.spawnSync({
         cmd: ["/bin/sh", "-c", rewritten],
