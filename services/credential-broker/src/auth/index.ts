@@ -1,5 +1,5 @@
 import type { BrokerConfig } from "../config";
-import { bearer, grantTokenPattern } from "../grants/tokens";
+import { bearer } from "../grants/tokens";
 import { matchesKey } from "./api-key";
 import { githubActionsPrincipal } from "./github-oidc";
 
@@ -16,7 +16,7 @@ export async function orchestrator(
 ): Promise<Principal | undefined> {
   const token = bearer(request.headers.get("authorization"));
 
-  if (!token || token.length > 8192 || grantTokenPattern.test(token)) return;
+  if (!token || token.length > 8192) return;
 
   if (await matchesKey(apiKey, token)) {
     return {

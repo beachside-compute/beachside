@@ -1,4 +1,4 @@
-import type { OperationOutcome } from "@beachside/adapter";
+import type { DestroyValue, OperationOutcome } from "@beachside/adapter";
 import { SnapshotRequest, MountSpec } from "@beachside/adapter";
 import type {
   AdapterDirectClient,
@@ -356,11 +356,15 @@ export class WaitAbortedError<
     readonly reference: R,
     reason: AbortSignal["reason"],
     outcome?: OperationOutcome,
+    /** Present when compute destruction was confirmed before waiting for grant revocation stopped. */
+    readonly destroyOutcome?: DestroyValue,
   ) {
     super(
       "WAIT_ABORTED",
-      "Waiting stopped after submission; recover with this reference",
-      "possible",
+      destroyOutcome
+        ? "Compute destruction confirmed; stopped waiting for sandbox credential revocation"
+        : "Waiting stopped after submission; recover with this reference",
+      destroyOutcome ? "applied" : "possible",
       outcome,
     );
     this.name = "AbortError";

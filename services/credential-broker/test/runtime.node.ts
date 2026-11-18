@@ -18,6 +18,9 @@ import { convertV4MiniflareOptions, Miniflare, Response as RuntimeResponse } fro
 import type { V4MiniflareOptions } from "miniflare";
 import { z } from "zod";
 import { createCredentialBroker } from "../../../packages/credential-client/src/index";
+import { isBrokerApiKey, matchesKey } from "../src/auth/api-key";
+import { parseConfig } from "../src/config";
+import { workerSecretSource } from "../src/credentials/sources/worker-secret";
 import { tokenHash } from "../src/grants/tokens";
 
 const execute = promisify(execFile);
@@ -47,13 +50,19 @@ const policy = {
   integrations: ["github"],
 };
 
+const reusablePolicy = {
+  ...policy,
+  event: "workflow_dispatch",
+  jobWorkflowRef: "beachside-compute/automation/.github/workflows/shared.yml@refs/heads/main",
+};
+
 const config = {
   integrations: kinds.map((kind) => ({
     kind,
     id: kind,
     credential: { source: "worker-secret", binding: `CREDENTIAL_${kind.toUpperCase()}` },
   })),
-  githubActions: { audience, workflows: [policy] },
+  githubActions: { audience, workflows: [policy, reusablePolicy] },
 };
 
 const claims = {
@@ -62,6 +71,7 @@ const claims = {
   repository: policy.repository,
   ref: policy.ref,
   workflow_ref: policy.workflowRef,
+  job_workflow_ref: policy.workflowRef,
   event_name: policy.event,
   run_id: "300",
 };
@@ -270,6 +280,7 @@ async function githubToken(
 describe("credential broker running in workerd", () => {
   test("issues only with control authentication, persists a digest and enforces expiry/revocation", async () => {
     assert.equal((await issue(["openai"], "wrong-key")).status, 401);
+    assert.equal((await issue(["openai"], "z".repeat(32))).status, 401);
     assert.equal((await issue(["unknown"])).status, 403);
     assert.equal((await issue(["openai", "openai"])).status, 400);
     assert.equal((await issue(["openai"], apiKey, 3601)).status, 400);
@@ -316,9 +327,10 @@ describe("credential broker running in workerd", () => {
     assert.deepEqual(await storage.exec("SELECT id FROM grants WHERE id = ?", expiring.id), []);
   });
 
-  test("verifies GitHub Actions signature and configured claim policy through the JWKS endpoint", async () => {
+  test("verifies GitHub Actions signature and direct-workflow claims through the JWKS endpoint", async () => {
     const authority = await githubToken();
     const record = await grant(["github"], authority);
+    await grant(["github"], await githubToken({ job_workflow_ref: undefined }));
     assert.equal((await issue(["openai"], authority)).status, 403);
     const otherRun = await githubToken({ run_id: "301" });
     assert.equal((await access(`/v1/grants/${record.id}`, otherRun, "DELETE")).status, 204);
@@ -337,11 +349,28 @@ describe("credential broker running in workerd", () => {
       githubToken({
         workflow_ref: "beachside-compute/fixture/.github/workflows/other.yml@refs/heads/main",
       }),
+      githubToken({ job_workflow_ref: reusablePolicy.jobWorkflowRef }),
       githubToken({ event_name: "pull_request" }),
       githubToken({ ref: "refs/pull/1/merge" }),
     ]);
 
     for (const token of invalid) assert.equal((await issue(["github"], token)).status, 401);
+  });
+
+  test("requires an exact signed job_workflow_ref for a configured reusable workflow", async () => {
+    const event = { event_name: reusablePolicy.event };
+
+    const authority = await githubToken({
+      ...event,
+      job_workflow_ref: reusablePolicy.jobWorkflowRef,
+    });
+
+    await grant(["github"], authority);
+
+    for (const ref of [undefined, policy.workflowRef, `${reusablePolicy.jobWorkflowRef}-wrong`]) {
+      const wrong = await githubToken({ ...event, job_workflow_ref: ref });
+      assert.equal((await issue(["github"], wrong)).status, 401);
+    }
   });
 
   test("injects only at fixed upstreams and rejects unsafe query, redirect and routes", async () => {
@@ -396,6 +425,19 @@ describe("credential broker running in workerd", () => {
     assert.equal((await access("/api/v3/user?access_token=placeholder", issued.token)).status, 404);
     assert.equal((await access("/gateway/openrouter/v1/keys", issued.token)).status, 404);
 
+    const beforeRef = seen.length;
+
+    for (const endpoint of ["branches", "commits"]) {
+      for (const ref of ["feature/login", "feature%2Flogin"]) {
+        assert.equal(
+          (await access(`/api/v3/repos/org/demo/${endpoint}/${ref}`, issued.token)).status,
+          404,
+        );
+      }
+    }
+
+    assert.equal(seen.length, beforeRef);
+
     const beforeWrite = seen.length;
 
     const blockedWrite = await access(
@@ -411,6 +453,57 @@ describe("credential broker running in workerd", () => {
       [["PATCH", "/repos/org/demo/issues/99"]],
     );
   });
+});
+
+test("reserves the grant-token format outside the broker API-key parser", async () => {
+  const reserved = `bsg_${"0".repeat(64)}`;
+  assert.equal(isBrokerApiKey(apiKey), true);
+  assert.equal(isBrokerApiKey(reserved), false);
+  assert.equal(await matchesKey(reserved, reserved), false);
+});
+
+test("reuses only the last validated operator configuration", () => {
+  const raw = JSON.stringify(config);
+  const original = parseConfig(raw);
+  assert.equal(parseConfig(raw), original);
+
+  const changedRaw = JSON.stringify({
+    ...config,
+    githubActions: { ...config.githubActions, audience: "new-audience" },
+  });
+
+  const changed = parseConfig(changedRaw);
+  assert.equal(changed.githubActions?.audience, "new-audience");
+  assert.throws(
+    () => parseConfig(JSON.stringify({ integrations: [] })),
+    /Invalid broker configuration/,
+  );
+  assert.equal(parseConfig(changedRaw), changed);
+  assert.notEqual(parseConfig(raw), original);
+});
+
+test("reads Worker secret data properties and getters and rejects unavailable bindings", async () => {
+  const reference = { source: "worker-secret", binding: "CREDENTIAL_MODEL" } as const;
+  const plain = workerSecretSource({ CREDENTIAL_MODEL: "plain-fixture-value" });
+  assert.deepEqual(await plain.resolve(reference), { value: "plain-fixture-value" });
+
+  let value = "first-fixture-value";
+
+  const getter = workerSecretSource({
+    get CREDENTIAL_MODEL() {
+      return value;
+    },
+  });
+
+  assert.deepEqual(await getter.resolve(reference), { value });
+
+  value = "rotated-fixture-value";
+  assert.deepEqual(await getter.resolve(reference), { value });
+  assert.equal(await workerSecretSource({}).resolve(reference), undefined);
+  assert.equal(
+    await workerSecretSource({ CREDENTIAL_MODEL: "invalid\nvalue" }).resolve(reference),
+    undefined,
+  );
 });
 
 async function gitHttpBackend(

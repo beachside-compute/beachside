@@ -1,6 +1,6 @@
 import alchemy from "alchemy";
 import { DurableObjectNamespace, Worker } from "alchemy/cloudflare";
-import { apiKeyPattern } from "./src/auth/api-key";
+import { isBrokerApiKey } from "./src/auth/api-key";
 import { parseConfig } from "./src/config";
 import { traceAuthorization, traceEndpoint } from "./src/observability/otlp";
 import type { TraceExportBindings } from "./src/observability/otlp";
@@ -11,8 +11,10 @@ const config = parseConfig(alchemy.env("BROKER_CONFIG"));
 
 const key = process.env.BROKER_API_KEY;
 
-if (key !== undefined && !apiKeyPattern.test(key)) {
-  throw new Error("BROKER_API_KEY must be a random 32–256 character base64url value");
+if (key !== undefined && !isBrokerApiKey(key)) {
+  throw new Error(
+    "BROKER_API_KEY must be a random 32–256 character base64url value outside the reserved grant-token format",
+  );
 }
 
 if (!key && !config.githubActions) {

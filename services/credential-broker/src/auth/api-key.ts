@@ -1,12 +1,18 @@
+import { grantTokenPattern } from "../grants/tokens";
+
 const encoder = new TextEncoder();
 
-export const apiKeyPattern = /^[A-Za-z0-9_-]{32,256}$/;
+const apiKeyPattern = /^[A-Za-z0-9_-]{32,256}$/;
+
+export function isBrokerApiKey(value: string | undefined): value is string {
+  return value !== undefined && apiKeyPattern.test(value) && !grantTokenPattern.test(value);
+}
 
 export async function matchesKey(
   expected: string | undefined,
   presented: string,
 ): Promise<boolean> {
-  if (!expected || !apiKeyPattern.test(expected) || !apiKeyPattern.test(presented)) return false;
+  if (!isBrokerApiKey(expected) || !isBrokerApiKey(presented)) return false;
 
   const [stored, candidate] = await Promise.all([
     crypto.subtle.digest("SHA-256", encoder.encode(expected)),

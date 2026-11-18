@@ -96,6 +96,17 @@ export function commandEnvironment(
   if (!installed.env || installed.expiresAt <= Date.now())
     throw new BeachsideError("UNAUTHENTICATED", "Sandbox credentials have expired or been revoked");
 
+  if (
+    env &&
+    Object.entries(installed.env).some(
+      ([key, value]) => Object.hasOwn(env, key) && env[key] !== value,
+    )
+  )
+    throw new BeachsideError(
+      "INVALID_ARGUMENT",
+      "Command environment conflicts with sandbox credentials",
+    );
+
   return { ...env, ...installed.env };
 }
 
@@ -258,8 +269,10 @@ export function releaseCredentialState(
   client: AdapterDirectClient,
   id: string,
   reference: SandboxReference | null,
+  revocation: Revocation,
 ) {
-  if (knownGrant(client, id, reference)) byClient.get(client)?.delete(id);
+  if (knownGrant(client, id, reference)?.revocation === revocation)
+    byClient.get(client)?.delete(id);
 }
 
 export function destroyRevocation(

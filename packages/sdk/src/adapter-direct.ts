@@ -404,8 +404,14 @@ function abortWaiting(
   ref: RecoveryReference,
   reason: AbortSignal["reason"],
   outcome?: import("@beachside/adapter").OperationOutcome,
+  destroyOutcome?: DestroyValue,
 ): never {
-  throw new WaitAbortedError(ref, reason, outcome ?? acknowledgedLifecycleOutcome(ref));
+  throw new WaitAbortedError(
+    ref,
+    reason,
+    outcome ?? acknowledgedLifecycleOutcome(ref),
+    destroyOutcome,
+  );
 }
 
 async function waitForSubmission<T>(
@@ -703,24 +709,36 @@ export class AdapterOperation<T, K extends OperationKind = OperationKind> {
 
     if (value === null) return null;
 
-    const failure = await raceAbort(revocation, signal).catch(
-      () => new BeachsideError("WAIT_ABORTED", "Stopped waiting for sandbox credential revocation"),
+    // SAFETY: Only destroy operations populate the revocation map, after validating the provider result.
+    const destroyOutcome = value as DestroyValue;
+
+    const finalization = revocation.then((failure) => {
+      if (!failure) releaseCredentialState(this.client, id, ref, revocation);
+
+      return failure;
+    });
+
+    const failure = await raceAbort(finalization, signal).catch(() =>
+      abortWaiting(this.reference, signal.reason, undefined, destroyOutcome),
     );
 
     if (failure)
-      // SAFETY: The revocation map is populated only for the decoded destroy operation.
       throw new SandboxCredentialRevocationError(
         failure,
         id,
         ref,
-        value as DestroyValue,
+        destroyOutcome,
         undefined,
         this.reference,
       );
 
-    releaseCredentialState(this.client, id, ref);
-
     return value;
+  }
+  private confirmedCredentialedDestroy(): DestroyValue | undefined {
+    if (!credentialCleanup.has(this) || !this.terminal || !("value" in this.terminal)) return;
+
+    // SAFETY: The revocation map only tracks destroy operations, and terminal values are decoded.
+    return this.terminal.value as DestroyValue;
   }
   private async observeResult(signal: AbortSignal): Promise<T | null> {
     if (this.continuing)
@@ -733,6 +751,7 @@ export class AdapterOperation<T, K extends OperationKind = OperationKind> {
         this.first?.kind === "unknown"
           ? this.client.checkedOutcome(this.reference, this.first.outcome)
           : undefined,
+        this.confirmedCredentialedDestroy(),
       );
     const revision = this.revision;
 
@@ -897,6 +916,7 @@ export class AdapterOperation<T, K extends OperationKind = OperationKind> {
           this.first?.kind === "unknown"
             ? this.client.checkedOutcome(this.reference, this.first.outcome)
             : undefined,
+          this.confirmedCredentialedDestroy(),
         );
 
       const confirmedRejection =
@@ -913,6 +933,7 @@ export class AdapterOperation<T, K extends OperationKind = OperationKind> {
           this.first?.kind === "unknown"
             ? this.client.checkedOutcome(this.reference, this.first.outcome)
             : undefined,
+          this.confirmedCredentialedDestroy(),
         );
 
       if (this.pendingAt !== null) {

@@ -4,7 +4,7 @@ The broker lets a sandbox clone and push GitHub repositories, use GitHub CLI, an
 
 ## Deploy
 
-Use Bun 1.3.14, a Cloudflare account with Workers, and credentials for provisioning a Worker, its secrets, and a SQLite Durable Object namespace. From the repository root, run `bun install --frozen-lockfile`. Change into `services/credential-broker` before running Alchemy.
+Use Bun 1.4.4, a Cloudflare account with Workers, and credentials for provisioning a Worker, its secrets, and a SQLite Durable Object namespace. From the repository root, run `bun install --frozen-lockfile`. Change into `services/credential-broker` before running Alchemy.
 
 Save an operator-owned JSON configuration somewhere outside version control. Integration IDs are the names used in grant requests. The binding names below identify secrets and can be included in configuration files.
 
@@ -55,11 +55,11 @@ Configure an API key, GitHub Actions OIDC, or both. Run `bun run alchemy deploy`
 
 ## Authenticate the orchestrator
 
-For API key authentication, provide `BROKER_API_KEY` as a bearer token on management requests. The key can issue grants for any configured integration and revoke any grant on that deployment. Keep it in the orchestrator process.
+For API key authentication, provide `BROKER_API_KEY` as a bearer token on management requests. The key can issue grants for any configured integration and revoke any grant on that deployment. Keep it in the orchestrator process. The broker reserves the format `bsg_` followed by 64 lowercase hexadecimal characters for sandbox grant tokens.
 
 For GitHub Actions, give the trusted orchestration job `id-token: write` and request a GitHub Actions identity token for the exact configured audience. The [credential client](../../packages/credential-client/README.md) provides a helper that uses the runner's identity token endpoint. Pick an audience unique to this deployment. The broker verifies GitHub's signature, issuer, exact audience, expiry, token age, immutable repository and owner IDs, repository name, workflow path and ref, and event. Each workflow may grant its listed integrations and revoke grants issued within the same repository workflow run.
 
-Supported workflow events are `push`, `schedule`, `workflow_dispatch`, `workflow_run`, and `pull_request_target`. For reusable workflows, configure the exact `jobWorkflowRef`; omit it for a direct workflow job. Only trust a ref controlled by the operators of the broker. For `pull_request_target` and `workflow_run`, keep PR-controlled code, actions, scripts, and artifacts out of the orchestration job. Pass untrusted work into the sandbox after issuing its limited grant. A fork's `pull_request` job cannot satisfy the policy.
+Supported workflow events are `push`, `schedule`, `workflow_dispatch`, `workflow_run`, and `pull_request_target`. For reusable workflows, set `jobWorkflowRef` to the exact ref of the called workflow. For a direct job, omit it. The broker then accepts a token whose `job_workflow_ref` claim is absent or matches the configured `workflowRef`. Only trust a ref controlled by the operators of the broker. For `pull_request_target` and `workflow_run`, keep PR-controlled code, actions, scripts, and artifacts out of the orchestration job. Pass untrusted work into the sandbox after issuing its limited grant. A fork's `pull_request` job cannot satisfy the policy.
 
 ## Grant API
 
@@ -77,7 +77,7 @@ By default the registry admits up to 1,000 active grants and up to 100 per issui
 Use the [credential client](../../packages/credential-client/README.md) for Beachside-managed environment variables and revocation. It gives each opted-in sandbox a distinct grant. The client also works outside Beachside, where its caller owns revocation.
 
 - **Git HTTPS** uses the broker remote `https://<broker-host>/<owner>/<repo>.git` and the grant password with username `x-access-token`. The client configures Git to rewrite `https://github.com/` remotes in the sandbox's command environment. Clone, fetch and push are supported over smart HTTP. SSH, Git LFS, and submodules on unrelated hosts use their own access paths.
-- **GitHub CLI** uses `GH_HOST=<broker-host>` and `GH_ENTERPRISE_TOKEN=<grant>`. Give commands an explicit `--repo <broker-host>/<owner>/<repo>` if local remotes might resolve to another host. The broker maps GHES-style REST and GraphQL URLs to GitHub.com. Repo view, issue list/create, and PR list/create/comment have CLI fixtures. Canonical links returned by GitHub still point to GitHub.com. Browser views, auth login, workflows, releases, downloads, and endpoints outside the REST allowlist may require direct access. GraphQL forwards the queries and mutations allowed by the GitHub token.
+- **GitHub CLI** uses `GH_HOST=<broker-host>` and `GH_ENTERPRISE_TOKEN=<grant>`. Give commands an explicit `--repo <broker-host>/<owner>/<repo>` if local remotes might resolve to another host. The broker maps GHES-style REST and GraphQL URLs to GitHub.com. Repo view, issue list/create, and PR list/create/comment have CLI fixtures. Canonical links returned by GitHub still point to GitHub.com. Browser views, auth login, workflows, releases, downloads, and endpoints outside the REST allowlist may require direct access. REST branch and commit reads accept single-component refs. Use GraphQL for refs containing slashes, such as `feature/login`. GraphQL forwards the queries and mutations allowed by the GitHub token.
 - **Anthropic** uses `ANTHROPIC_BASE_URL=https://<broker-host>/gateway/<integration>` and `ANTHROPIC_API_KEY=<grant>`. The gateway supports messages, token counts, and model metadata.
 - **OpenAI** and **OpenRouter** use `OPENAI_BASE_URL` or `OPENROUTER_BASE_URL` ending in `/gateway/<integration>/v1`. Supply the grant in the respective `*_API_KEY`. The gateway forwards model metadata, chat completions, responses creation, and embeddings where the upstream provider supports them. Files, key management, account endpoints, realtime WebSockets, and retrieval of stored responses are outside this gateway.
 

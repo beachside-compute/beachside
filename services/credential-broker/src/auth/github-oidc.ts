@@ -36,7 +36,10 @@ export async function githubActionsPrincipal(
         payload.repository === policy.repository &&
         payload.ref === policy.ref &&
         payload.workflow_ref === policy.workflowRef &&
-        payload.job_workflow_ref === policy.jobWorkflowRef &&
+        (policy.jobWorkflowRef === undefined
+          ? payload.job_workflow_ref === undefined ||
+            payload.job_workflow_ref === policy.workflowRef
+          : payload.job_workflow_ref === policy.jobWorkflowRef) &&
         payload.event_name === policy.event,
     );
 

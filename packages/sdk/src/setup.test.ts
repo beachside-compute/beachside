@@ -24,9 +24,11 @@ import {
   SandboxCredentialRevocationError,
   Setup,
   SetupFailedError,
+  WaitAbortedError,
   type SandboxCredentials,
   type SetupEvent,
 } from "./index";
+import { hasSandboxCredentials } from "./sandbox-credentials";
 import {
   planSetup,
   readSetupState,
@@ -720,6 +722,43 @@ test("credential preflight catches blocked egress and advanced creation before a
   }
 });
 
+test("conflicting managed environment values reject command and setup execution", async () => {
+  const f = fixture({ credentialEgress: true });
+  const client = await f.connect();
+  const { credentials } = sandboxGrant();
+
+  try {
+    const box = await client.sandboxes.create({ network: "internet", credentials });
+    const conflicting = { OPENAI_API_KEY: "application-canary" };
+    const command = { kind: "argv" as const, argv: ["touch", "unexpected"] };
+    const input = { command, env: conflicting };
+
+    const conflict = {
+      code: "INVALID_ARGUMENT",
+      effect: "none",
+      message: "Command environment conflicts with sandbox credentials",
+    };
+
+    await expect(box.exec(input)).rejects.toMatchObject(conflict);
+    await expect(box.exec(input, { onOutput: () => undefined })).rejects.toMatchObject(conflict);
+    await expect(box.processes.start(input)).rejects.toMatchObject(conflict);
+    await expect(box.terminals.start(input)).rejects.toMatchObject(conflict);
+    await expect(
+      box.runSetup({ setup: [{ run: ["touch", "unexpected"], env: conflicting }], record: false }),
+    ).rejects.toMatchObject({ code: "SETUP_FAILED", cause: conflict });
+
+    const output = await box.exec({
+      command: { kind: "shell", script: 'test ! -e unexpected && printf "%s" "$EXTRA"' },
+      env: { OPENAI_API_KEY: brokerToken, EXTRA: "passed through" },
+    });
+
+    expect(output.stdoutText()).toBe("passed through");
+    await box.destroy();
+  } finally {
+    await client.close();
+  }
+});
+
 test("failed credential acquisition retains confirmed ownership when compute cleanup is uncertain", async () => {
   const f = fixture({ credentialEgress: true, destroyFailure: true });
   const client = await f.connect();
@@ -800,6 +839,68 @@ test("failed revocation preserves an already confirmed compute destroy outcome",
     expect(history).toEqual(["acquire", "revoke"]);
     expect(f.destroyed).toEqual(["box-1"]);
   } finally {
+    await client.close();
+  }
+});
+
+test("cancelling a wait after confirmed destroy leaves the grant revocation running", async () => {
+  const f = fixture({ credentialEgress: true });
+  const client = await f.connect();
+  const revoking = Promise.withResolvers<AbortSignal>();
+  const revocation = Promise.withResolvers<void>();
+  const controller = new AbortController();
+
+  const credentials: SandboxCredentials = {
+    async acquire() {
+      return {
+        env: { OPENAI_API_KEY: brokerToken },
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        async revoke(signal) {
+          revoking.resolve(signal);
+          await revocation.promise;
+        },
+      };
+    },
+  };
+
+  try {
+    const box = await client.sandboxes.create({ network: "internet", credentials });
+    const alias = await client.sandboxes.get(box.reference!);
+    const operation = await box.submitDestroy();
+    const revokeSignal = await revoking.promise;
+    const waiting = operation.wait({ signal: controller.signal }).catch((error) => error);
+
+    // The fixture confirms compute on submission. Let the wait reach the blocked grant revocation.
+    await Bun.sleep(0);
+    const reason = new Error("caller stopped waiting");
+    controller.abort(reason);
+    const cancellation = await waiting;
+    const destroyOutcome = { computeStopped: true, retainedResources: [] };
+
+    expect(cancellation).toBeInstanceOf(WaitAbortedError);
+    expect(cancellation).toMatchObject({
+      code: "WAIT_ABORTED",
+      effect: "applied",
+      cause: reason,
+      reference: operation.reference,
+      destroyOutcome,
+    });
+    await expect(operation.wait({ signal: controller.signal })).rejects.toMatchObject({
+      code: "WAIT_ABORTED",
+      effect: "applied",
+      destroyOutcome,
+    });
+    expect(revokeSignal.aborted).toBe(false);
+    expect(hasSandboxCredentials(client, alias)).toBe(true);
+
+    revocation.resolve();
+    await Bun.sleep(0);
+
+    expect(hasSandboxCredentials(client, alias)).toBe(false);
+    expect(await operation.wait()).toEqual(destroyOutcome);
+    expect(f.destroyed).toEqual([box.id]);
+  } finally {
+    revocation.resolve();
     await client.close();
   }
 });

@@ -9,7 +9,7 @@ const integration = z.strictObject({
   kind: z.enum(["github", "anthropic", "openai", "openrouter"]),
   credential: z.strictObject({
     source: z.literal("worker-secret"),
-    binding: z.string().regex(/^CREDENTIAL_[A-Z][A-Z0-9_]{0,79}$/),
+    binding: z.templateLiteral(["CREDENTIAL_", z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/)]),
   }),
 });
 
@@ -80,10 +80,16 @@ export type CredentialReference = Integration["credential"];
 
 export type BrokerConfig = z.infer<typeof configuration>;
 
+let cachedConfig: { raw: string; config: BrokerConfig } | undefined;
+
 export function parseConfig(raw: string): BrokerConfig {
+  if (cachedConfig?.raw === raw) return cachedConfig.config;
+
   const result = configuration.safeParse(JSON.parse(raw));
 
   if (!result.success) throw new Error("Invalid broker configuration");
+
+  cachedConfig = { raw, config: result.data };
 
   return result.data;
 }
