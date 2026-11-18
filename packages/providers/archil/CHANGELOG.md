@@ -1,5 +1,18 @@
 # @beachside/archil
 
+## 0.18.0
+
+### Minor Changes
+
+- [#251](https://github.com/beachside-compute/beachside/pull/251) [`720d4f7`](https://github.com/beachside-compute/beachside/commit/720d4f73b6a8108ac4621407fe5076393fd9b535) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - **Breaking:** E2B, Freestyle and Archil scopes no longer fingerprint the API key. Each provider authorizes every call with the current key, so scope is now the service plus its endpoint (and region for Archil), and saved references keep working after a key rotation. E2B also drops the default template from its scope and sandbox markers. References and E2B sandboxes saved by earlier versions do not reopen; recreate them.
+
+  `adapterSuite` fixtures can now omit `alternate` when a provider has one fixed endpoint, and can pass `rotatedCredentials` to check that another key for the same account keeps the scope.
+
+### Patch Changes
+
+- Updated dependencies [[`720d4f7`](https://github.com/beachside-compute/beachside/commit/720d4f73b6a8108ac4621407fe5076393fd9b535)]:
+  - @beachside/adapter@0.18.0
+
 ## 0.17.1
 
 ### Patch Changes
