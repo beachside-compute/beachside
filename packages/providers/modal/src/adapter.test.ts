@@ -45,7 +45,10 @@ test("Modal public adapter passes required managed-compute scenarios", async () 
 
       return record.id;
     },
-    async findByName(_name, _environment, name) {
+    async findBySubmission(appId, name) {
+      // Correlation is by the App ID resolved at connect, never the App name.
+      if (!appId.startsWith("ap-")) throw new Error("Expected the connected App ID");
+
       return records.get(name) ?? null;
     },
     async *list() {
@@ -175,7 +178,7 @@ test("Modal direct exec and write recover by execution ID after one uncertain su
 
       return "sb-1";
     },
-    async findByName(_app, _env, name) {
+    async findBySubmission(_appId, name) {
       return records.get(name) ?? null;
     },
     async *list() {
@@ -402,7 +405,7 @@ test.each(["lost-start", "lost-input", "lost-result"] as const)(
 
         return "sb-stdin";
       },
-      async findByName(_app, _env, name) {
+      async findBySubmission(_appId, name) {
         return records.get(name) ?? null;
       },
       async *list() {
@@ -546,7 +549,7 @@ test("public finite stdin preserves UTF-8 bytes, output streams, cwd, env and ex
 
       return "sb-finite-stdin";
     },
-    async findByName(_app, _environment, name) {
+    async findBySubmission(_appId, name) {
       return records.get(name) ?? null;
     },
     async *list() {
@@ -656,7 +659,7 @@ test("file writes require decimal byte-count evidence in submit and reopened obs
 
       return record.id;
     },
-    async findByName() {
+    async findBySubmission() {
       return record;
     },
     async *list() {
@@ -792,7 +795,7 @@ test("OCI create builds only in submit and never replays an uncertain image or s
           records.set(input.name, { id: "sb-oci", tags: input.tags, running: true });
         throw new Error("lost native response");
       },
-      async findByName(_app, _env, name) {
+      async findBySubmission(_appId, name) {
         return records.get(name) ?? null;
       },
       async *list() {
@@ -890,7 +893,7 @@ test("Modal submission window covers start lookup and result; observation gets i
 
       return "sb-fixture";
     },
-    async findByName() {
+    async findBySubmission() {
       return { id: "sb-fixture", tags, running: true };
     },
     async *list() {
@@ -990,7 +993,7 @@ test("Modal setup supplies a working default image and a lifetime up to 24 hours
 
       return `sb-${requests.length}`;
     },
-    async findByName(_app, _env, name) {
+    async findBySubmission(_appId, name) {
       const index = requests.findIndex((request) => request.name === name);
 
       return index < 0
@@ -1088,7 +1091,7 @@ test("Modal lists the verified App's sandboxes without reopenable references", a
     async create() {
       throw new Error("unused");
     },
-    async findByName() {
+    async findBySubmission() {
       return null;
     },
     async *list(appId) {
@@ -1184,7 +1187,7 @@ test("Modal resources reserve the configured size and inspect reports it", async
 
       return record.id;
     },
-    async findByName(_app, _environment, name) {
+    async findBySubmission(_appId, name) {
       return records.get(name) ?? null;
     },
     async *list() {

@@ -20,7 +20,7 @@ test("Modal passes create env to the single native create and saves no value", a
 
       return "sb-env";
     },
-    async findByName(_app, _environment, name) {
+    async findBySubmission(_appId, name) {
       const input = creates.find((create) => create.name === name);
 
       return input ? { id: "sb-env", tags: input.tags, running: true } : null;

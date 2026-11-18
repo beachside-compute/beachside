@@ -494,11 +494,7 @@ export function createModalAdapter(
           if (!/^[A-Za-z0-9_-]{1,128}$/.test(id))
             return ctx.unknown("Modal returned an invalid sandbox ID");
 
-          const record = await transport.findByName(
-            config.appName,
-            config.environment,
-            ctx.submissionId,
-          );
+          const record = await transport.findBySubmission(appId, ctx.submissionId);
 
           if (
             !record ||
@@ -523,11 +519,7 @@ export function createModalAdapter(
       };
 
       const observeCreate = async (attempt: { submissionId: string; operationId: string }) => {
-        const record = await transport.findByName(
-          config.appName,
-          config.environment,
-          attempt.submissionId,
-        );
+        const record = await transport.findBySubmission(appId, attempt.submissionId);
 
         if (
           !record ||

@@ -17,7 +17,7 @@ function fixture(failure: Error) {
       creates++;
       throw failure;
     },
-    async findByName() {
+    async findBySubmission() {
       return null;
     },
     async *list() {},
