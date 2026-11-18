@@ -652,6 +652,7 @@ export const rexAddons = bindAdapter(
             const failed = script.includes("https://tailscale.com/install.sh");
             let stdout = "";
 
+            // The SDK setup engine queries HOME before running inline setup steps.
             if (script.includes('printf %s "$HOME"')) stdout = "/tmp/fake-addon-home";
 
             if (script.includes("rex server logs"))

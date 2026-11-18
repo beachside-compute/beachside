@@ -52,7 +52,7 @@ beachside create --name rex --ttl 2h --with rex
 
 It prints the `https://beachside-rex.<your-tailnet>.ts.net` address once Rex is ready, usually within a minute, and `beachside inspect rex` shows it again.
 
-After provisioning, Beachside looks for `rex` on your local `PATH`, then in Rex.app or Rex Beta.app on macOS (in `/Applications` or `~/Applications`). Set `BEACHSIDE_REX_BIN` to override the executable. When the local Rex server supports host registration, Beachside adds the instance to your Rex home as `beachside-<name>` (with `-rex` when herdr is also installed). Registration failures do not fail provisioning. The connection address is always printed, whether registration succeeds or not.
+After provisioning, Beachside looks for `rex` on your local `PATH`, then in Rex.app or Rex Beta.app on macOS (in `/Applications` or `~/Applications`). Set `BEACHSIDE_REX_BIN` to override the executable. When the local Rex server supports host registration, Beachside adds the instance to your Rex home as `beachside-<name>` (with `-rex` when herdr is also installed). Registration is attempted automatically whenever a local CLI is found; there is no registration opt-out. A missing CLI or registration failure is reported on stderr and does not fail provisioning. The connection address is always printed, whether registration succeeds or not.
 
 Behind the scenes, `--with rex` runs the same steps as the manual recipe below:
 

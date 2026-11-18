@@ -676,6 +676,7 @@ describe("create --with", () => {
       await writeFile(
         executable,
         `#!${process.execPath}
+await Bun.stdin.text();
 await Bun.write(process.env.REX_TEST_CALLS, JSON.stringify(process.argv.slice(2)));
 process.exit(Number(process.env.REX_TEST_EXIT));
 `,
@@ -703,6 +704,9 @@ process.exit(Number(process.env.REX_TEST_EXIT));
       );
 
       const inspected = await run(["inspect", name, "--json"], { BEACHSIDE_CONFIG: config });
+      expect(inspected.code).toBe(0);
+      expect(inspected.json.ok).toBe(true);
+
       const rex = inspected.json.data.addons.find((addon: AddonRecord) => addon.name === "rex");
 
       expect(rex.state).toBe("ready");

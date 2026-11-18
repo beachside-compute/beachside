@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { access } from "node:fs/promises";
+import { access, stat } from "node:fs/promises";
 import { constants } from "node:fs";
 import { homedir } from "node:os";
 import { delimiter, join } from "node:path";
@@ -10,26 +10,36 @@ export type RexRun = (binary: string, args: string[]) => Promise<string>;
 function runner(env: NodeJS.ProcessEnv, signal: AbortSignal): RexRun {
   return (binary, args) =>
     new Promise((resolve, reject) => {
-      execFile(
+      const child = execFile(
         binary,
         args,
         { env, signal, timeout: 15_000, maxBuffer: 8 * 1024 * 1024 },
         (error, stdout) => (error ? reject(error) : resolve(stdout)),
       );
+
+      child.stdin?.end();
     });
 }
 
 /** Prefer an explicit executable, then PATH, then the macOS app's bundled CLI. */
-export async function findRex(env: NodeJS.ProcessEnv): Promise<string | undefined> {
+export async function findRex(
+  env: NodeJS.ProcessEnv,
+  installation: { platform?: NodeJS.Platform; appDirectories?: string[] } = {},
+): Promise<string | undefined> {
   if (env.BEACHSIDE_REX_BIN) return env.BEACHSIDE_REX_BIN;
+
+  const platform = installation.platform ?? process.platform;
 
   const candidates = (env.PATH ?? "")
     .split(delimiter)
     .filter(Boolean)
-    .map((directory) => join(directory, process.platform === "win32" ? "rex.exe" : "rex"));
+    .map((directory) => join(directory, platform === "win32" ? "rex.exe" : "rex"));
 
-  if (process.platform === "darwin") {
-    for (const directory of ["/Applications", join(env.HOME ?? homedir(), "Applications")]) {
+  if (platform === "darwin") {
+    for (const directory of installation.appDirectories ?? [
+      "/Applications",
+      join(env.HOME ?? homedir(), "Applications"),
+    ]) {
       for (const app of ["Rex.app", "Rex Beta.app"])
         candidates.push(join(directory, app, "Contents/Helpers/Rex Server.rex/Contents/MacOS/rex"));
     }
@@ -37,6 +47,8 @@ export async function findRex(env: NodeJS.ProcessEnv): Promise<string | undefine
 
   for (const candidate of candidates) {
     try {
+      if (!(await stat(candidate)).isFile()) continue;
+
       await access(candidate, constants.X_OK);
 
       return candidate;
@@ -57,6 +69,8 @@ export async function registerRexHost(
   out: Pick<Output, "note">,
   dependencies: { find?: typeof findRex; run?: RexRun } = {},
 ): Promise<void> {
+  if (signal.aborted) return;
+
   try {
     const binary = await (dependencies.find ?? findRex)(env);
 
@@ -73,6 +87,8 @@ export async function registerRexHost(
     await run(binary, ["hosts", "add", label, address]);
     out.note(`rex: registered ${label} with your Rex home`);
   } catch (cause) {
+    if (signal.aborted || (cause instanceof Error && cause.name === "AbortError")) return;
+
     const message = cause instanceof Error ? cause.message : String(cause);
     out.note(
       `rex: automatic host registration failed: ${message}; add the connection address manually`,

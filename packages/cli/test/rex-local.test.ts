@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { chmod, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { findRex, registerRexHost } from "../src/rex-local";
@@ -55,5 +55,63 @@ for (const scenario of ["missing", "unsupported", "success", "failure"] as const
 
       expect(notes[0]).toContain(messages[scenario]);
     }
+  });
+}
+
+for (const app of ["Rex.app", "Rex Beta.app"]) {
+  test(`finds the bundled CLI in ${app} and skips PATH directories`, async () => {
+    const root = await mkdtemp(join(tmpdir(), "rex-bundle-"));
+
+    try {
+      await mkdir(join(root, "rex"));
+      const helper = join(root, app, "Contents/Helpers/Rex Server.rex/Contents/MacOS");
+      await mkdir(helper, { recursive: true });
+      const binary = join(helper, "rex");
+      await writeFile(binary, "", { mode: 0o755 });
+      expect(await findRex({ PATH: root }, { platform: "darwin", appDirectories: [root] })).toBe(
+        binary,
+      );
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+}
+
+test("looks for rex.exe on Windows", async () => {
+  const root = await mkdtemp(join(tmpdir(), "rex-windows-"));
+
+  try {
+    const binary = join(root, "rex.exe");
+    await writeFile(binary, "", { mode: 0o755 });
+    expect(await findRex({ PATH: root }, { platform: "win32" })).toBe(binary);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+for (const alreadyAborted of [false, true]) {
+  test(`cancellation does not report a registration failure (pre-aborted: ${alreadyAborted})`, async () => {
+    const controller = new AbortController();
+    const notes: string[] = [];
+    const calls: string[][] = [];
+
+    if (alreadyAborted) controller.abort();
+    await registerRexHost(
+      "web",
+      "https://web.example.ts.net",
+      {},
+      controller.signal,
+      { note: (note) => notes.push(note) },
+      {
+        find: async () => "/rex",
+        run: async (_binary, args) => {
+          calls.push(args);
+          controller.abort();
+          throw new DOMException("Aborted", "AbortError");
+        },
+      },
+    );
+    expect(notes).toEqual([]);
+    expect(calls).toHaveLength(alreadyAborted ? 0 : 1);
   });
 }
