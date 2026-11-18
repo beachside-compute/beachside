@@ -19,7 +19,7 @@ test("Archil conformance: one native attempt, regions and rotated keys, lost and
         config: { region: "aws-eu-west-1", baseUrl: fixture.baseUrl },
         credentials: { apiKey: "fixture-alt" },
       },
-      rotatedCredentials: { apiKey: "fixture-alt" },
+      rotatedCredentials: { apiKey: "fixture-rotated" },
       createInput: { image: { kind: "oci", value: "node:24-bookworm" }, networkPolicy: "blocked" },
       counters: () => ({
         create: fixture.effects.create,
@@ -77,6 +77,23 @@ test("create sends an explicit image, exact size, session budget, blocked egress
     expect(fixture.sandboxes.size).toBe(0);
   } finally {
     await client.close();
+  }
+});
+
+test("a rotated key for the same account reopens a saved sandbox reference", async () => {
+  const { connect } = setup();
+  const main = await connect();
+  const rotated = await connect({}, { apiKey: "fixture-rotated" });
+
+  try {
+    const box = await main.sandboxes.create();
+    const saved = JSON.parse(JSON.stringify(box.reference));
+    expect(JSON.stringify(saved)).not.toContain("fixture-main");
+    expect((await rotated.sandboxes.get(saved)).id).toBe(box.id);
+    await box.destroy();
+  } finally {
+    await main.close();
+    await rotated.close();
   }
 });
 

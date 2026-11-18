@@ -65,6 +65,8 @@ export type Call = { method: string; path: string; body?: Json };
 
 const accounts = new Map([
   ["fixture-main", "acct_main"],
+  // A second key for the same account, as after a key rotation.
+  ["fixture-rotated", "acct_main"],
   ["fixture-alt", "acct_alt"],
 ]);
 
