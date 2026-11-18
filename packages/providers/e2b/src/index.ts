@@ -423,20 +423,10 @@ export function createE2BAdapter(transportFactory?: (options: { apiKey: string }
       if (config.templateId !== "base")
         await transport.verifyTemplate(config.teamId, config.templateId);
 
-      // The authenticated read proves this credential works, not its native team identity.
-      const authority = config.teamId
-        ? { kind: "team", id: config.teamId }
-        : {
-            kind: "api-key",
-            id: createHash("sha256")
-              .update("beachside:e2b:api-key-scope:v1\0")
-              .update(credentials.apiKey)
-              .digest("hex"),
-          };
-
-      const scopeMarker = config.teamId
-        ? `${config.teamId}:${config.templateId}`
-        : `api-key:${authority.id}:${config.templateId}`;
+      // An API key belongs to one E2B project and the provider authorizes each call with it, so
+      // the service and endpoint identify resources; rotated keys keep saved references usable.
+      const authority = { kind: "service", id: new URL(E2B_ENDPOINT).host };
+      const scopeMarker = "beachside";
 
       const owned = (record: E2BRecord) =>
         nativeId.test(record.id) &&
@@ -645,7 +635,7 @@ export function createE2BAdapter(transportFactory?: (options: { apiKey: string }
 
       const boundScope = {
         authority,
-        partition: { endpoint: E2B_ENDPOINT, template: config.templateId },
+        partition: { endpoint: E2B_ENDPOINT },
       };
 
       const images = e2bImages({ scope: boundScope, transport, teamId: config.teamId });
@@ -851,7 +841,7 @@ export function createE2BAdapter(transportFactory?: (options: { apiKey: string }
         defaultNetworkPolicy: config.networkPolicy,
         scope: {
           authority,
-          partition: { endpoint: E2B_ENDPOINT, template: config.templateId },
+          partition: { endpoint: E2B_ENDPOINT },
         },
         async preview(input, ctx) {
           if (!PreviewPort.safeParse(input.port).success)

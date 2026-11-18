@@ -629,7 +629,7 @@ export function createArchilAdapter(options: ArchilAdapterOptions = {}) {
       const sandboxPath = (id: string, suffix = "") =>
         `/api/sandboxes/${encodeURIComponent(Id.parse(id))}${suffix}`;
 
-      // Archil exposes no account id to an API key; one authenticated read proves the key.
+      // One authenticated read proves the key before any mutation.
       await read("GET", "/api/sandboxes", readContext(host.signal));
 
       if (defaultImage.kind === "prepared") {
@@ -639,14 +639,10 @@ export function createArchilAdapter(options: ArchilAdapterOptions = {}) {
           throw new AdapterError("NOT_FOUND", "Archil image is unavailable to this API key");
       }
 
+      // Archil keys belong to one account in one region and authorize each call; the regional
+      // control plane identifies resources, so rotated keys keep saved references usable.
       const scope = {
-        authority: {
-          kind: "api-key",
-          id: createHash("sha256")
-            .update("beachside:archil:api-key-scope:v1\0")
-            .update(credentials.apiKey)
-            .digest("hex"),
-        },
+        authority: { kind: "service", id: new URL(control.baseUrl).host },
         partition: { region: config.region, endpoint: control.baseUrl },
       };
 

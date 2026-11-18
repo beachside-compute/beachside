@@ -61,7 +61,7 @@ function fixture(version = "0.5.7", shortUpload = false, nativeFilesystem = fals
           state: "running",
           metadata: nativeFilesystem
             ? {
-                beachside_scope: "team:base",
+                beachside_scope: "beachside",
                 beachside_template: "base",
                 beachside_operation: "op_seed",
                 beachside_submission: "sub_seed",

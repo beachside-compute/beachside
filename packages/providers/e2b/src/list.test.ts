@@ -9,7 +9,7 @@ const owned = (id: string, state: E2BRecord["state"] = "running"): E2BRecord => 
   templateId: "template_1",
   state,
   metadata: {
-    beachside_scope: "team_one:template_1",
+    beachside_scope: "beachside",
     beachside_template: "template_1",
     beachside_submission: `sub_${id}`,
     beachside_operation: `op_${id}`,
@@ -75,7 +75,7 @@ function fixture(records: E2BRecord[]) {
 
 test("E2B lists only this binding's Beachside-created sandboxes and reopens them", async () => {
   const foreign = owned("foreign_scope");
-  foreign.metadata.beachside_scope = "team_two:template_1";
+  foreign.metadata.beachside_scope = "elsewhere";
   const unmarked = { ...owned("unmarked"), metadata: {} };
   const records = [owned("one"), foreign, unmarked, owned("paused", "paused"), owned("two")];
   const f = fixture(records);
@@ -83,7 +83,7 @@ test("E2B lists only this binding's Beachside-created sandboxes and reopens them
 
   try {
     const first = await client.sandboxes.list({ limit: 4 });
-    expect(f.lists).toEqual([{ metadata: { beachside_scope: "team_one:template_1" }, limit: 4 }]);
+    expect(f.lists).toEqual([{ metadata: { beachside_scope: "beachside" }, limit: 4 }]);
     expect(f.gets).toEqual([]);
     expect(first.coverage).toBe("managed");
     expect(first.nextCursor).toBe("4");
@@ -93,8 +93,8 @@ test("E2B lists only this binding's Beachside-created sandboxes and reopens them
     ]);
 
     const scope = {
-      authority: { kind: "team", id: "team_one" },
-      partition: { endpoint: "https://api.e2b.app", template: "template_1" },
+      authority: { kind: "service", id: "api.e2b.app" },
+      partition: { endpoint: "https://api.e2b.app" },
     };
 
     expect(first.items[0]!.reference).toEqual(
@@ -103,7 +103,7 @@ test("E2B lists only this binding's Beachside-created sandboxes and reopens them
 
     const second = await client.sandboxes.list({ cursor: first.nextCursor, limit: 4 });
     expect(f.lists[1]).toEqual({
-      metadata: { beachside_scope: "team_one:template_1" },
+      metadata: { beachside_scope: "beachside" },
       limit: 4,
       nextToken: "4",
     });

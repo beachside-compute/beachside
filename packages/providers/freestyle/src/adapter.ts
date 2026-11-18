@@ -503,15 +503,10 @@ export function createFreestyleAdapter(options: FreestyleAdapterOptions = {}) {
           );
       }
 
-      // The authenticated read proves this credential works, not its native team identity.
+      // Freestyle addresses VMs by ID and authorizes each call with the current key, so the
+      // service and endpoint identify resources; rotated keys keep saved references usable.
       const scope = {
-        authority: {
-          kind: "api-key",
-          id: createHash("sha256")
-            .update("beachside:freestyle:api-key-scope:v1\0")
-            .update(credentials.apiKey)
-            .digest("hex"),
-        },
+        authority: { kind: "service", id: new URL(FREESTYLE_API).host },
         partition: { endpoint: FREESTYLE_API },
       };
 

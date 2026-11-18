@@ -144,7 +144,7 @@ test("the create-time env file is private to the command user (mode 0600)", asyn
 const creates = (fixture: ReturnType<typeof freestyleFixture>) =>
   fixture.calls.filter((call) => call.method === "POST" && call.path === "/v5/vms");
 
-test("Freestyle conformance: one native attempt, distinct keys, lost and late responses", async () => {
+test("Freestyle conformance: one native attempt, rotated keys, lost and late responses", async () => {
   const { fixture, adapter } = setup();
 
   const report = await adapterSuite({
@@ -152,7 +152,7 @@ test("Freestyle conformance: one native attempt, distinct keys, lost and late re
     fixture: {
       config: {},
       credentials: { apiKey: "fixture-main" },
-      alternate: { config: {}, credentials: { apiKey: "fixture-alt" } },
+      rotatedCredentials: { apiKey: "fixture-rotated" },
       createInput: {
         image: { kind: "prepared", value: "freestyle/ubuntu" },
         networkPolicy: "blocked",
@@ -553,7 +553,7 @@ test("configured preview ports are published at create, others on first use", as
   }
 });
 
-test("destroy confirms the VM is gone and references never carry the API key", async () => {
+test("destroy confirms the VM is gone, and references work across keys without carrying them", async () => {
   const { fixture, connect } = setup();
   const client = await connect();
 
@@ -567,19 +567,17 @@ test("destroy confirms the VM is gone and references never carry the API key", a
     const reopened = await client.sandboxes.get(reference);
     expect(reopened.id).toBe(box.id);
 
-    expect(await box.destroy()).toMatchObject({ computeStopped: true });
-    expect(fixture.vms.size).toBe(0);
-
     const other = await Beachside.connect({
       adapter: createFreestyleAdapter({ fetch: fixture.fetch, pollIntervalMs: 1 }),
       config: {},
-      credentials: { apiKey: "fixture-alt" },
+      credentials: { apiKey: "fixture-rotated" },
     });
 
     try {
-      await expect(other.sandboxes.get(reference)).rejects.toMatchObject({
-        code: "CONFLICT",
-      });
+      expect((await other.sandboxes.get(reference)).id).toBe(box.id);
+      expect(await box.destroy()).toMatchObject({ computeStopped: true });
+      expect(fixture.vms.size).toBe(0);
+      await expect(other.sandboxes.get(reference)).rejects.toMatchObject({ code: "NOT_FOUND" });
     } finally {
       await other.close();
     }
