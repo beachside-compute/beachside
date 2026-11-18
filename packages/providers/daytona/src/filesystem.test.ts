@@ -9,11 +9,15 @@ import {
   readFileSync,
   mkdirSync,
   existsSync,
-  readdirSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { FILESYSTEM_HELPER, filesystemResult, type FilesystemInput } from "./filesystem";
+import { dirname, join } from "node:path";
+import {
+  FILESYSTEM_HELPER,
+  filesystemResult,
+  type FilesystemInput,
+  type FilesystemValue,
+} from "./filesystem";
 import { daytonaProvider, createDaytonaAdapter } from "./index";
 import { Beachside, AdapterSandbox } from "beachside";
 import { artifactFiles } from "../../../../apps/docs/examples/directory-files";
@@ -618,78 +622,240 @@ test("Daytona interrupted and malformed helpers retain possible copy effects and
   }
 });
 
-test("Daytona writes create missing parent folders and leave no staging or receipts behind", async () => {
-  const root = mkdtempSync(join(tmpdir(), "beachside-daytona-parents-"));
+/**
+ * A deterministic in-memory guest for the Daytona toolbox. It understands only the
+ * commands the adapter's write path issues, so an unexpected command fails loudly.
+ * It proves Beachside's orchestration (parents, staging, publication, cleanup);
+ * the Linux link/renameat2 semantics themselves are covered by the native tests above.
+ */
+type GuestReply = { result: string; exitCode: number };
 
-  const receiptsBefore = new Set(
-    readdirSync("/tmp").filter((name) => name.startsWith(".beachside-")),
-  );
+const HelperInput = z.object({
+  op: z.string(),
+  path: z.string().optional(),
+  source: z.string().optional(),
+  destination: z.string().optional(),
+  stagingDirectory: z.string().optional(),
+  overwrite: z.boolean().optional(),
+});
 
-  let client: Awaited<ReturnType<typeof Beachside.connect>> | undefined;
+class RecordingGuest {
+  readonly files = new Map<string, Uint8Array<ArrayBuffer>>();
+  readonly directories = new Set<string>(["/", "/tmp"]);
+  readonly events: string[] = [];
 
-  try {
-    const transport: typeof fetch = Object.assign(
-      async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = new URL(String(input));
+  mkdir(path: string, parents: boolean) {
+    const parent = dirname(path);
 
-        if (url.pathname.endsWith("/api-keys/current"))
-          return Response.json({ organizationId: "org" });
+    if (!this.directories.has(parent)) {
+      if (!parents) return false;
+      this.mkdir(parent, true);
+    }
 
-        if (url.pathname.endsWith("/regions"))
-          return Response.json([{ id: "us", name: "us", regionType: "shared" }]);
+    if (this.directories.has(path) && !parents) return false;
+    this.directories.add(path);
 
-        if (url.pathname.endsWith("/organizations/org"))
-          return Response.json({ id: "org", sandboxLimitedNetworkEgress: false });
+    return true;
+  }
 
-        if (url.pathname === "/api/sandbox/box")
-          return Response.json({
-            id: "box",
-            name: "box",
-            organizationId: "org",
-            target: "us",
-            state: "started",
-            networkBlockAll: true,
-            public: false,
-            toolboxProxyUrl: "https://proxy.app.daytona.io/toolbox",
-          });
+  remove(path: string) {
+    for (const key of this.files.keys())
+      if (key === path || key.startsWith(`${path}/`)) this.files.delete(key);
 
-        if (url.pathname.endsWith("/process/execute")) {
-          const request = z.object({ command: z.string() }).parse(JSON.parse(String(init?.body)));
-          const execution = spawnSync("sh", ["-c", request.command], { encoding: "utf8" });
+    for (const key of this.directories)
+      if (key === path || key.startsWith(`${path}/`)) this.directories.delete(key);
+  }
 
-          return Response.json({ result: execution.stdout, exitCode: execution.status });
-        }
+  publish(from: string, to: string, overwrite: boolean) {
+    const bytes = this.files.get(from);
 
-        if (url.pathname.endsWith("/files/upload-v2")) {
-          const form =
-            init?.body instanceof FormData
-              ? init.body
-              : await new Response(init?.body, {
-                  headers: { "content-type": new Headers(init?.headers).get("content-type")! },
-                }).formData();
+    if (!bytes || !this.directories.has(dirname(to))) return false;
 
-          const file = form.get("file");
+    if (!overwrite && (this.files.has(to) || this.directories.has(to))) return false;
+    this.files.set(to, bytes);
+    this.files.delete(from);
+    this.events.push(`publish ${to}`);
 
-          if (!(file instanceof Blob)) throw new Error("Expected multipart upload file");
-          const path = url.searchParams.get("path")!;
-          writeFileSync(path, new Uint8Array(await file.arrayBuffer()));
+    return true;
+  }
 
-          return Response.json({ path, name: "payload", type: "file" });
-        }
+  helper(input: FilesystemInput): FilesystemValue {
+    const path = input.path ?? "";
 
-        if (url.pathname.endsWith("/files/download")) {
-          const path = url.searchParams.get("path")!;
+    switch (input.op) {
+      case "reserve":
+        this.mkdir(dirname(path), true);
+        this.mkdir(path, false);
+        this.events.push(`stage ${path}`);
 
-          return existsSync(path)
-            ? new Response(readFileSync(path))
-            : new Response(null, { status: 404 });
-        }
+        return path;
+      case "stat": {
+        const bytes = this.files.get(path)!;
 
-        throw new Error(`Unexpected parent fixture route ${url.pathname}`);
-      },
-      { preconnect: fetch.preconnect },
+        return {
+          type: "file",
+          sizeBytes: bytes.length,
+          mode: 0o644,
+          modifiedAt: new Date(0).toISOString(),
+        };
+      }
+
+      case "publish":
+        return this.publish(path, input.destination!, input.overwrite!);
+      case "cleanup":
+        this.remove(path);
+        this.events.push(`cleanup ${path}`);
+
+        return true;
+      case "copy": {
+        const stage = input.stagingDirectory!;
+        this.mkdir(dirname(stage), true);
+        this.mkdir(stage, false);
+        this.events.push(`stage ${stage}`);
+        this.files.set(`${stage}/payload`, this.files.get(input.source!)!);
+        const published = this.publish(`${stage}/payload`, input.destination!, input.overwrite!);
+        this.remove(stage);
+
+        return published;
+      }
+
+      default:
+        throw new Error(`Unexpected guest helper op ${input.op}`);
+    }
+  }
+
+  execute(command: string): GuestReply {
+    const quoted = [...command.matchAll(/'((?:[^']|'\\'')*)'/g)].map((match) =>
+      match[1]!.replaceAll("'\\''", "'"),
     );
 
+    if (command.startsWith("python3 -c ")) {
+      const input = HelperInput.parse(JSON.parse(Buffer.from(quoted.at(-1)!, "base64").toString()));
+
+      return { result: JSON.stringify({ ok: true, value: this.helper(input) }), exitCode: 0 };
+    }
+
+    if (command.startsWith("mkdir -m 700 -- ")) {
+      // A private stage beside the destination and a receipt directory. The stage's
+      // parent exists only if the command itself asks for it with mkdir -p.
+      const [stage] = quoted;
+      const receipt = quoted.find((path) => path.startsWith("/tmp/.beachside-write-"));
+      const parent = dirname(stage!);
+
+      if (command.includes(`mkdir -p -- '${parent}'`)) {
+        this.mkdir(parent, true);
+        this.events.push(`parent ${parent}`);
+      }
+
+      if (!this.mkdir(stage!, false) || !receipt || !this.mkdir(receipt, false))
+        return { result: "", exitCode: 126 };
+      this.events.push(`stage ${stage}`);
+
+      return { result: "", exitCode: 0 };
+    }
+
+    if (command.startsWith("ln -T -- ") || command.startsWith("cat ")) {
+      // ln/cat leave the staged payload in place; only the command's own cleanup removes it.
+      const [from, to] = quoted;
+      const bytes = this.files.get(from!);
+
+      if (!this.publish(from!, to!, command.startsWith("cat "))) return { result: "", exitCode: 1 };
+      this.files.set(from!, bytes!);
+
+      if (command.includes(`rm -f '${from}'`)) this.files.delete(from!);
+
+      if (command.includes(`rmdir -- '${dirname(from!)}'`)) {
+        this.remove(dirname(from!));
+        this.events.push(`cleanup ${dirname(from!)}`);
+      }
+
+      return { result: "", exitCode: 0 };
+    }
+
+    if (command.startsWith("rm -rf -- ")) {
+      this.remove(quoted[0]!);
+      this.events.push(`cleanup ${quoted[0]}`);
+
+      return { result: "", exitCode: 0 };
+    }
+
+    throw new Error(`Unexpected guest command ${command.slice(0, 60)}`);
+  }
+
+  leftovers() {
+    return [...this.files.keys(), ...this.directories].filter((path) =>
+      path.includes(".beachside"),
+    );
+  }
+}
+
+test("Daytona writes create missing parent folders and leave no staging or receipts behind", async () => {
+  const guest = new RecordingGuest();
+  let client: Awaited<ReturnType<typeof Beachside.connect>> | undefined;
+
+  const transport: typeof fetch = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input));
+
+      if (url.pathname.endsWith("/api-keys/current"))
+        return Response.json({ organizationId: "org" });
+
+      if (url.pathname.endsWith("/regions"))
+        return Response.json([{ id: "us", name: "us", regionType: "shared" }]);
+
+      if (url.pathname.endsWith("/organizations/org"))
+        return Response.json({ id: "org", sandboxLimitedNetworkEgress: false });
+
+      if (url.pathname === "/api/sandbox/box")
+        return Response.json({
+          id: "box",
+          name: "box",
+          organizationId: "org",
+          target: "us",
+          state: "started",
+          networkBlockAll: true,
+          public: false,
+          toolboxProxyUrl: "https://proxy.app.daytona.io/toolbox",
+        });
+
+      if (url.pathname.endsWith("/process/execute")) {
+        const request = z.object({ command: z.string() }).parse(JSON.parse(String(init?.body)));
+
+        return Response.json(guest.execute(request.command));
+      }
+
+      if (url.pathname.endsWith("/files/upload-v2")) {
+        const form =
+          init?.body instanceof FormData
+            ? init.body
+            : await new Response(init?.body, {
+                headers: { "content-type": new Headers(init?.headers).get("content-type")! },
+              }).formData();
+
+        const file = form.get("file");
+
+        if (!(file instanceof Blob)) throw new Error("Expected multipart upload file");
+        const path = url.searchParams.get("path")!;
+
+        if (!guest.directories.has(dirname(path))) return new Response(null, { status: 404 });
+        guest.files.set(path, new Uint8Array(await file.arrayBuffer()));
+        guest.events.push(`upload ${path}`);
+
+        return Response.json({ path, name: "payload", type: "file" });
+      }
+
+      if (url.pathname.endsWith("/files/download")) {
+        const bytes = guest.files.get(url.searchParams.get("path")!);
+
+        return bytes ? new Response(bytes) : new Response(null, { status: 404 });
+      }
+
+      throw new Error(`Unexpected parent fixture route ${url.pathname}`);
+    },
+    { preconnect: fetch.preconnect },
+  );
+
+  try {
     client = await Beachside.connect({
       adapter: createDaytonaAdapter(transport),
       config: { target: "us", networkPolicy: "blocked" },
@@ -700,26 +866,38 @@ test("Daytona writes create missing parent folders and leave no staging or recei
     const small = new Uint8Array([1, 2, 3]);
     const large = new Uint8Array(2 * 1024 * 1024).fill(7);
 
-    await box.writeFile(join(root, "a", "b", "small.bin"), small);
-    await box.writeFile(join(root, "c", "overwrite.bin"), small, { overwrite: true });
-    await box.writeFile(join(root, "d", "e", "large.bin"), large);
-    await box.copyFile(join(root, "a", "b", "small.bin"), join(root, "f", "g", "copy.bin"));
-    await box.exec({ command: { kind: "shell", script: "true" } });
+    await box.writeFile("/work/a/b/small.bin", small);
+    await box.writeFile("/work/c/overwrite.bin", small, { overwrite: true });
+    await box.writeFile("/work/d/e/large.bin", large);
+    await box.copyFile("/work/a/b/small.bin", "/work/f/g/copy.bin");
 
-    expect(Array.from(readFileSync(join(root, "a", "b", "small.bin")))).toEqual([1, 2, 3]);
-    expect(Array.from(readFileSync(join(root, "c", "overwrite.bin")))).toEqual([1, 2, 3]);
-    expect(readFileSync(join(root, "d", "e", "large.bin")).byteLength).toBe(large.byteLength);
-    expect(Array.from(readFileSync(join(root, "f", "g", "copy.bin")))).toEqual([1, 2, 3]);
+    expect(guest.files.get("/work/a/b/small.bin")).toEqual(small);
+    expect(guest.files.get("/work/c/overwrite.bin")).toEqual(small);
+    expect(guest.files.get("/work/d/e/large.bin")?.byteLength).toBe(large.byteLength);
+    expect(guest.files.get("/work/f/g/copy.bin")).toEqual(small);
 
-    for (const directory of ["a/b", "c", "d/e", "f/g"])
-      expect(readdirSync(join(root, directory)).filter((name) => name.startsWith("."))).toEqual([]);
-    expect(
-      readdirSync("/tmp").filter(
-        (name) => name.startsWith(".beachside-") && !receiptsBefore.has(name),
-      ),
-    ).toEqual([]);
+    // Every write stages beside its destination, inside the parent it had to create,
+    // and publishes only after that stage exists.
+    for (const destination of [
+      "/work/a/b/small.bin",
+      "/work/c/overwrite.bin",
+      "/work/d/e/large.bin",
+      "/work/f/g/copy.bin",
+    ]) {
+      const parent = dirname(destination);
+
+      const staged = guest.events.findIndex((event) =>
+        event.startsWith(`stage ${parent}/.beachside`),
+      );
+
+      const published = guest.events.indexOf(`publish ${destination}`);
+
+      expect(staged).toBeGreaterThanOrEqual(0);
+      expect(published).toBeGreaterThan(staged);
+    }
+
+    expect(guest.leftovers()).toEqual([]);
   } finally {
     await client?.close();
-    rmSync(root, { recursive: true, force: true });
   }
 });
