@@ -112,4 +112,4 @@ Any sandbox workload or provider infrastructure able to read a grant can use it 
 
 ## Validate locally
 
-Run `bun run test` in this directory. Tests start workerd on loopback with fixture upstreams, use local Git and GitHub CLI, and use OpenSSL to create a temporary loopback certificate. They run without Cloudflare credentials or upstream API accounts.
+Run `bun run test` in this directory. The suite uses Node.js 22 or later to run workerd on loopback with fixture upstreams. It uses local Git and GitHub CLI and creates a temporary loopback certificate with OpenSSL. They run without Cloudflare credentials or upstream API accounts.

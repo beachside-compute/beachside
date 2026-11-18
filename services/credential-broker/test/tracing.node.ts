@@ -1,4 +1,6 @@
-import { expect, test } from "bun:test";
+import assert from "node:assert/strict";
+import { setTimeout as delay } from "node:timers/promises";
+import { test } from "node:test";
 import { build } from "esbuild";
 import { convertV4MiniflareOptions, Miniflare, Response as RuntimeResponse } from "miniflare";
 import { z } from "zod";
@@ -24,7 +26,7 @@ const traceparent = `00-${traceId}-${parentSpanId}-01`;
 const sdkScope = "beachside.credential-broker";
 
 const result = await build({
-  entryPoints: [`${import.meta.dir}/../src/index.ts`],
+  entryPoints: [`${import.meta.dirname}/../../src/index.ts`],
   bundle: true,
   write: false,
   format: "esm",
@@ -99,7 +101,7 @@ function fixture(bindings: TraceExportBindings, collectorStatus = 200) {
       },
       async outboundService(request) {
         if (request.url === endpoint) {
-          expect(request.method).toBe("POST");
+          assert.equal(request.method, "POST");
           exported.push({
             authorization: request.headers.get("authorization"),
             contentType: request.headers.get("content-type"),
@@ -109,10 +111,10 @@ function fixture(bindings: TraceExportBindings, collectorStatus = 200) {
           return new RuntimeResponse("collector-response-canary", { status: collectorStatus });
         }
 
-        expect(request.url).toBe("https://api.openai.com/v1/responses?query=query-canary");
-        expect(request.headers.get("authorization")).toBe(`Bearer ${upstreamKey}`);
-        expect(request.headers.get("traceparent")).toBeNull();
-        expect(await request.text()).toBe(gatewayBody);
+        assert.equal(request.url, "https://api.openai.com/v1/responses?query=query-canary");
+        assert.equal(request.headers.get("authorization"), `Bearer ${upstreamKey}`);
+        assert.equal(request.headers.get("traceparent"), null);
+        assert.equal(await request.text(), gatewayBody);
         upstreamCalls++;
 
         return RuntimeResponse.json({ fixture: "response-canary" });
@@ -135,7 +137,7 @@ function fixture(bindings: TraceExportBindings, collectorStatus = 200) {
         body: JSON.stringify({ integrations: ["trace-canary"], ttlSeconds: 60 }),
       });
 
-      expect(response.status).toBe(201);
+      assert.equal(response.status, 201);
 
       return z.object({ id: z.string(), token: z.string() }).parse(await response.json());
     },
@@ -153,13 +155,12 @@ function fixture(bindings: TraceExportBindings, collectorStatus = 200) {
         },
       );
 
-      expect(response.status).toBe(200);
-      expect(await response.json()).toEqual({ fixture: "response-canary" });
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), { fixture: "response-canary" });
     },
     async spans(count: number) {
-      for (let attempt = 0; exported.length < count && attempt < 100; attempt++)
-        await Bun.sleep(10);
-      expect(exported).toHaveLength(count);
+      for (let attempt = 0; exported.length < count && attempt < 100; attempt++) await delay(10);
+      assert.equal(exported.length, count);
 
       return exported.map(
         ({ body }) => otlp.parse(JSON.parse(body)).resourceSpans[0].scopeSpans[0].spans[0],
@@ -181,20 +182,19 @@ test("exports safe sampled grant and gateway spans with the verified parent and 
     const spans = await broker.spans(2);
     const issuance = spans.find(({ name }) => name === "beachside.broker.grant.create")!;
     const gateway = spans.find(({ name }) => name === "beachside.broker.gateway")!;
-    expect(issuance).toMatchObject({ traceId, parentSpanId, links: [] });
-    expect(issuance.attributes[0].value.intValue).toBe(201);
-    expect(gateway.parentSpanId).toBeUndefined();
-    expect(gateway.traceId).not.toBe(traceId);
-    expect(gateway.traceId).not.toBe("f".repeat(32));
-    expect(gateway.links).toEqual([{ traceId, spanId: issuance.spanId }]);
-    expect(gateway.attributes[0].value.intValue).toBe(200);
+    assert.partialDeepStrictEqual(issuance, { traceId, parentSpanId, links: [] });
+    assert.equal(issuance.attributes[0].value.intValue, 201);
+    assert.equal(gateway.parentSpanId, undefined);
+    assert.notEqual(gateway.traceId, traceId);
+    assert.notEqual(gateway.traceId, "f".repeat(32));
+    assert.deepEqual(gateway.links, [{ traceId, spanId: issuance.spanId }]);
+    assert.equal(gateway.attributes[0].value.intValue, 200);
 
-    for (const span of spans)
-      expect(span.endTimeUnixNano).toBeGreaterThanOrEqual(span.startTimeUnixNano);
+    for (const span of spans) assert.ok(span.endTimeUnixNano >= span.startTimeUnixNano);
 
     for (const request of broker.exported) {
-      expect(request.authorization).toBe(collectorAuthorization);
-      expect(request.contentType).toBe("application/json");
+      assert.equal(request.authorization, collectorAuthorization);
+      assert.equal(request.contentType, "application/json");
 
       for (const canary of [
         apiKey,
@@ -209,7 +209,7 @@ test("exports safe sampled grant and gateway spans with the verified parent and 
         "response-canary",
         "/v1/responses",
       ]) {
-        expect(request.body).not.toContain(canary);
+        assert.ok(!request.body.includes(canary));
       }
     }
   } finally {
@@ -224,8 +224,11 @@ test("collector rejection leaves grant issuance and upstream forwarding successf
     const grant = await broker.issue();
     await broker.gateway(grant.token);
     await broker.spans(2);
-    expect(broker.upstreamCalls()).toBe(1);
-    expect(broker.exported.every(({ authorization }) => authorization === null)).toBe(true);
+    assert.equal(broker.upstreamCalls(), 1);
+    assert.equal(
+      broker.exported.every(({ authorization }) => authorization === null),
+      true,
+    );
   } finally {
     await broker.runtime.dispose();
   }
@@ -237,25 +240,27 @@ test("disabled tracing makes no collector requests", async () => {
   try {
     const grant = await broker.issue();
     await broker.gateway(grant.token);
-    expect(broker.upstreamCalls()).toBe(1);
+    assert.equal(broker.upstreamCalls(), 1);
   } finally {
     await broker.runtime.dispose();
   }
 
-  expect(broker.exported).toEqual([]);
+  assert.deepEqual(broker.exported, []);
 });
 
-test.each([
+for (const [index, bindings] of [
   { BROKER_OTLP_TRACES_ENDPOINT: "http://collector.test/v1/traces" },
   { BROKER_OTLP_TRACES_ENDPOINT: endpoint, BROKER_OTLP_AUTHORIZATION: "invalid\r\nauthorization" },
-])("invalid runtime tracing settings skip instrumentation %#", (bindings) => {
-  const span = startSpan(
-    bindings,
-    () => {
-      throw new Error("Unexpected export");
-    },
-    "grant.create",
-  );
+].entries()) {
+  test(`invalid runtime tracing settings skip instrumentation ${index}`, () => {
+    const span = startSpan(
+      bindings,
+      () => {
+        throw new Error("Unexpected export");
+      },
+      "grant.create",
+    );
 
-  expect(span).toBeUndefined();
-});
+    assert.equal(span, undefined);
+  });
+}

@@ -30,11 +30,12 @@
     "release:bootstrap": "bun scripts/npm-bootstrap.mjs",
     "observability:check": "bun run --cwd packages/sdk-qualification check && bun packages/sdk-qualification/observability/run.mjs",
     "check:built": "bun run --filter '@beachside-internal/*' check && bun run --cwd packages/adapter check && bun run --cwd packages/sdk check && bun run --cwd packages/credential-client check && bun run --cwd packages/providers/daytona check && bun run --cwd packages/providers/e2b check && bun run --cwd packages/providers/boxd check && bun run --cwd packages/providers/boat check && bun run --cwd packages/providers/runloop check && bun run --cwd packages/providers/freestyle check && bun run --cwd packages/providers/archil check && bun run --cwd packages/providers/exe-dev check && bun run --cwd packages/providers/vercel check && bun run --cwd packages/cli check",
-    "test:built": "bun test",
+    "test:broker": "bun run --cwd services/credential-broker test",
+    "test:built": "bun run test:broker && bun test",
     "docs:check:built": "bun run --cwd apps/docs check && bun run --cwd apps/docs build && bun run --cwd apps/docs examples:test",
     "package:smoke:built": "bun packages/sdk-qualification/package-smoke.mjs",
     "build:built": "bun run --cwd apps/docs build",
-    "test:sdk:built": "bun test packages/adapter packages/provider-spi packages/providers packages/sdk packages/credential-client packages/sdk-qualification packages/cli tools examples actions services"
+    "test:sdk:built": "bun run test:broker && bun test packages/adapter packages/provider-spi packages/providers packages/sdk packages/credential-client packages/sdk-qualification packages/cli tools examples actions"
   },
   "devDependencies": {
     "@changesets/changelog-github": "1.0.0",

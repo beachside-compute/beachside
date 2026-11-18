@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "check": "tsc -p tsconfig.json",
-    "test": "bun test",
+    "test": "bun build ./test/runtime.node.ts ./test/tracing.node.ts --target=node --format=esm --packages=external --outdir=dist/test && node --test ./dist/test/runtime.node.js ./dist/test/tracing.node.js",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
