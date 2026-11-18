@@ -7,7 +7,7 @@ import { setup, type ArchilFixture } from "./fixture.test-support";
 const creates = (fixture: ArchilFixture) =>
   fixture.calls.filter((call) => call.method === "POST" && call.path === "/api/sandboxes");
 
-test("Archil conformance: one native attempt, distinct keys, lost and late responses", async () => {
+test("Archil conformance: one native attempt, regions and rotated keys, lost and late responses", async () => {
   const { fixture, adapter } = setup();
 
   const report = await adapterSuite({
@@ -16,9 +16,10 @@ test("Archil conformance: one native attempt, distinct keys, lost and late respo
       config: { region: "aws-us-east-1", baseUrl: fixture.baseUrl },
       credentials: { apiKey: "fixture-main" },
       alternate: {
-        config: { region: "aws-us-east-1", baseUrl: fixture.baseUrl },
+        config: { region: "aws-eu-west-1", baseUrl: fixture.baseUrl },
         credentials: { apiKey: "fixture-alt" },
       },
+      rotatedCredentials: { apiKey: "fixture-alt" },
       createInput: { image: { kind: "oci", value: "node:24-bookworm" }, networkPolicy: "blocked" },
       counters: () => ({
         create: fixture.effects.create,

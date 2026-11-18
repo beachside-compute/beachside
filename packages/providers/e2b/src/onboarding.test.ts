@@ -99,16 +99,15 @@ function fixture() {
   };
 }
 
-test("API-key-only defaults reopen the same scope and bind canonical base resources", async () => {
+test("API-key-only defaults reopen the same scope across key rotation and bind canonical base resources", async () => {
   expect(e2b({ apiKey: "fixture" }).bound).toBe(true);
   const f = fixture();
   const options = { adapter: f.adapter, config: {}, credentials: { apiKey: "first-key" } };
   const client = await Beachside.connect(options);
-  expect(client.scope).toMatchObject({
-    authority: { kind: "api-key" },
-    partition: { template: "base" },
+  expect(client.scope).toEqual({
+    authority: { kind: "service", id: "api.e2b.app" },
+    partition: { endpoint: "https://api.e2b.app" },
   });
-  expect(client.scope.authority.id).toMatch(/^[a-f0-9]{64}$/);
   expect(JSON.stringify(client.scope)).not.toContain("first-key");
   expect(f.calls.template).toBe(0);
   expect(f.calls.create).toBe(0);
@@ -123,22 +122,10 @@ test("API-key-only defaults reopen the same scope and bind canonical base resour
 
   try {
     expect(reopened.scope).toEqual(client.scope);
-    expect(rotated.scope).not.toEqual(client.scope);
+    expect(rotated.scope).toEqual(client.scope);
     const recovered = await reopened.recover(reference);
     expect(await recovered.wait()).toMatchObject({ id: box.id });
-    const before = { ...f.calls };
-    await expect(rotated.recover(reference)).rejects.toThrow();
-    await expect(
-      rotated.sandboxes.create({
-        environment: Image.prepared({
-          kind: "prepared",
-          value: "base",
-          provider: "e2b",
-          scope: client.scope,
-        }),
-      }),
-    ).rejects.toThrow("scope differs");
-    expect(f.calls).toEqual(before);
+    expect(await (await rotated.recover(reference)).wait()).toMatchObject({ id: box.id });
     f.records.clear();
     expect(f.calls.auth).toBeGreaterThan(0);
     expect(f.calls.team).toBe(0);
@@ -205,7 +192,7 @@ test("lost base create recovers by exact native markers after reconnect without 
   }
 });
 
-test("owned aliases resolve to canonical IDs and explicit team scope survives key rotation", async () => {
+test("owned aliases resolve to canonical IDs and team-routed scope survives key rotation", async () => {
   const f = fixture();
 
   const client = await Beachside.connect({
@@ -238,7 +225,7 @@ test("owned aliases resolve to canonical IDs and explicit team scope survives ke
 
   try {
     expect(first.scope).toEqual(rotated.scope);
-    expect(first.scope.authority).toEqual({ kind: "team", id: "team_one" });
+    expect(first.scope.authority).toEqual({ kind: "service", id: "api.e2b.app" });
   } finally {
     await first.close();
     await rotated.close();
@@ -385,7 +372,7 @@ test("sandbox references reopen fresh scoped connections without creation and di
   }
 });
 
-test("sandbox key-scoped references cannot rotate credentials or change template binding", async () => {
+test("sandbox references survive key rotation and default template changes", async () => {
   const f = fixture();
 
   const first = await Beachside.connect({
@@ -405,7 +392,7 @@ test("sandbox key-scoped references cannot rotate credentials or change template
     });
 
     try {
-      await expect(fresh.sandboxes.get(box.reference!)).rejects.toMatchObject({ code: "CONFLICT" });
+      expect((await fresh.sandboxes.get(box.reference!)).id).toBe(box.id);
     } finally {
       await fresh.close();
     }

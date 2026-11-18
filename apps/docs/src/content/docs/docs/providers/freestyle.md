@@ -26,7 +26,7 @@ try {
 }
 ```
 
-Create an API key in the [Freestyle dashboard](https://dash.freestyle.sh). `connect` checks it with one read-only `GET /v5/vms`. Freestyle does not tell an API key which account it belongs to, so the scope is a one-way fingerprint of the key: a saved sandbox reference reopens with the same key, not with a rotated one.
+Create an API key in the [Freestyle dashboard](https://dash.freestyle.sh). `connect` checks it with one read-only `GET /v5/vms`. Freestyle authorizes every call with the current key, so saved references name only the Freestyle service and resource ID, never the key: a rotated key for the same account reopens them.
 
 The package also exports `freestyle()`, which takes credentials and config in one object and returns an adapter you pass straight to `Beachside.connect`: `Beachside.connect(freestyle({ apiKey }))`. It is the same setup; use whichever reads better.
 

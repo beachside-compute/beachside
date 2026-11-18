@@ -167,9 +167,10 @@ test("restores that ask for a new size reject before any Freestyle effect", asyn
   }
 });
 
-test("snapshot references are bound to the verified API key", async () => {
+test("snapshot references stay usable with a rotated API key", async () => {
   const { connect } = setup();
   const main = await connect();
+  const rotated = await connect({}, "fixture-rotated");
   const alt = await connect({}, "fixture-alt");
 
   try {
@@ -177,10 +178,13 @@ test("snapshot references are bound to the verified API key", async () => {
     const { snapshot } = await source.snapshot();
     const saved = JSON.parse(JSON.stringify(snapshot.reference));
 
-    await expect(alt.snapshots.get(saved)).rejects.toMatchObject({ code: "CONFLICT" });
+    expect((await rotated.snapshots.get(saved)).id).toBe(snapshot.id);
+    // Another account's key: the provider refuses it, so the snapshot is not found there.
+    await expect(alt.snapshots.get(saved)).rejects.toMatchObject({ code: "NOT_FOUND" });
     await source.destroy();
   } finally {
     await main.close();
+    await rotated.close();
     await alt.close();
   }
 });

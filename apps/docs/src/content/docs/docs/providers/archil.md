@@ -26,7 +26,7 @@ try {
 }
 ```
 
-Create an API key in the [Archil console](https://console.archil.com). `connect` checks it with one read-only `GET /api/sandboxes` in the chosen region. Archil does not tell an API key which account it belongs to, so the scope is a one-way fingerprint of the key: a saved sandbox reference reopens with the same key, not with a rotated one.
+Create an API key in the [Archil console](https://console.archil.com). `connect` checks it with one read-only `GET /api/sandboxes` in the chosen region. Archil authorizes every call with the current key, so saved references name only the Archil service region and resource ID, never the key: a rotated key for the same account reopens them.
 
 The package also exports `archil()`, which takes credentials and config in one object and returns an adapter you pass straight to `Beachside.connect`: `Beachside.connect(archil({ apiKey, region: "aws-us-east-1" }))`. It is the same setup; use whichever reads better.
 

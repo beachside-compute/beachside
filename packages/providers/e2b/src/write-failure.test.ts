@@ -146,7 +146,7 @@ test("write recovery retains sanitized failure across restart and distinguishes 
   });
 
   let metadata: E2BRecord["metadata"] = {
-    beachside_scope: "team_one:template_1",
+    beachside_scope: "beachside",
     beachside_submission: "sub_seed",
     beachside_operation: "op_seed",
     beachside_template: "template_1",

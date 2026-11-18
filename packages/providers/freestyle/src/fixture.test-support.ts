@@ -81,6 +81,8 @@ export type CommandResult = { statusCode: number | null; stdout: string; stderr:
 
 const accounts = new Map([
   ["fixture-main", "acct_main"],
+  // A second key for the same account, as after a key rotation.
+  ["fixture-rotated", "acct_main"],
   ["fixture-alt", "acct_alt"],
 ]);
 

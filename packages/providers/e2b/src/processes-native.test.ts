@@ -56,7 +56,7 @@ async function fixture(
     templateID: "template_one",
     state: "running",
     metadata: {
-      beachside_scope: "team_one:base",
+      beachside_scope: "beachside",
       beachside_operation: "operation_one",
       beachside_submission: "submission_one",
       beachside_template: "template_one",

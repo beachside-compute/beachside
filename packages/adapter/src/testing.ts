@@ -17,7 +17,13 @@ type Counters = { create: number; destroy: number; release: number };
 export type AdapterSuiteFixture<C extends z.ZodType, K extends z.ZodType> = {
   config: z.input<C>;
   credentials: z.input<K>;
-  alternate: { config: z.input<C>; credentials: z.input<K> };
+  /**
+   * Another routing partition or tenant authority, such as a second region. Omit it when the
+   * provider addresses every resource through one fixed service endpoint.
+   */
+  alternate?: { config: z.input<C>; credentials: z.input<K> };
+  /** Another valid key for the same native scope; its connection must report the same scope. */
+  rotatedCredentials?: z.input<K>;
   /** Use another host-installed definition when endpoint is fixed in trusted host configuration. */
   alternateAdapter?: AdapterDefinition<C, K, { scope: Scope }>;
   createInput: CreateInput;
@@ -92,19 +98,38 @@ export async function adapterSuite<
   });
 
   try {
-    const alternate = await connectAdapter(fixture.alternateAdapter ?? adapter, {
-      config: fixture.alternate.config,
-      credentials: fixture.alternate.credentials,
-    });
+    if (fixture.alternate) {
+      const alternate = await connectAdapter(fixture.alternateAdapter ?? adapter, {
+        config: fixture.alternate.config,
+        credentials: fixture.alternate.credentials,
+      });
 
-    try {
-      requireCondition(
-        canonicalScope(connection.scope) !== canonicalScope(alternate.scope),
-        "alternate verified authority or endpoint must produce another scope",
-      );
-      scenarios.push("independent verified scopes");
-    } finally {
-      await alternate.close();
+      try {
+        requireCondition(
+          canonicalScope(connection.scope) !== canonicalScope(alternate.scope),
+          "alternate verified authority or endpoint must produce another scope",
+        );
+        scenarios.push("independent verified scopes");
+      } finally {
+        await alternate.close();
+      }
+    }
+
+    if (fixture.rotatedCredentials) {
+      const rotated = await connectAdapter(adapter, {
+        config: fixture.config,
+        credentials: fixture.rotatedCredentials,
+      });
+
+      try {
+        requireCondition(
+          canonicalScope(connection.scope) === canonicalScope(rotated.scope),
+          "a rotated credential for the same native scope must keep the scope",
+        );
+        scenarios.push("credential-independent scope");
+      } finally {
+        await rotated.close();
+      }
     }
 
     const invalidBefore = fixture.counters().create;
@@ -240,8 +265,11 @@ export async function adapterSuite<
 
   const after = fixture.counters();
   requireCondition(
-    after.release === before.release + 2 * (fixture.expectedReleasesPerConnection ?? 1),
-    "each verified connection must release once, including the alternate",
+    after.release ===
+      before.release +
+        (1 + Number(!!fixture.alternate) + Number(!!fixture.rotatedCredentials)) *
+          (fixture.expectedReleasesPerConnection ?? 1),
+    "each verified connection must release once, including alternate and rotated ones",
   );
   scenarios.push("close hooks exactly once");
 
