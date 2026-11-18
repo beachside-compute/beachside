@@ -726,7 +726,7 @@ test("the repeat command never prints a key kept in beachside.json", () => {
   expect(command).not.toContain("secret");
   // Several piped keys are read one per line, --api-key first; a string that looks like JSON stays one.
   expect(command).toBe(
-    `beachside init --module @acme/adapter --export acme --profile work --api-key - --credential other=op://vault/item/field --credential extra=- --store config --set org=org-1 --set 'flag="true"' --set 'environment={"kind":"prepared","value":"x y"}' --default`,
+    `beachside init --module @acme/adapter --export acme --profile work --api-key - --credential other=op://vault/item/field --credential extra=- --set org=org-1 --set 'flag="true"' --set 'environment={"kind":"prepared","value":"x y"}' --default`,
   );
 });
 
