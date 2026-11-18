@@ -4,6 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FILESYSTEM_HELPER } from "./filesystem-native";
 
+/**
+ * Tests of the guest helper's no-clobber moves, which need Linux `renameat2` as every
+ * E2B guest has. They run on Linux, as in CI, and are skipped elsewhere, such as macOS.
+ */
+const linuxGuest = test.skipIf(process.platform !== "linux");
+
 async function helper(op: string, path: string, destination = "", flag = false, stage = "") {
   const process = Bun.spawn(
     ["python3", "-c", FILESYSTEM_HELPER, op, path, destination, String(flag), stage],
@@ -77,13 +83,27 @@ test("E2B staged copy keeps destination and source on collision, refuses links, 
     expect(await helper("copy", source, destination, true, stage)).toMatchObject({ ok: true });
     expect(await readFile(destination)).toEqual(Buffer.from(content));
     expect((await helper("stat", source)).value.sizeBytes).toBe(content.length);
-    expect(await helper("move", source, destination)).toMatchObject({
-      ok: false,
-      code: process.platform === "linux" ? "CONFLICT" : "UNSUPPORTED",
-    });
-    expect((await helper("stat", source)).ok).toBe(true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 
-    if (process.platform === "linux") {
+linuxGuest(
+  "E2B guest helper moves refuse to clobber, move directories and refuse other filesystems",
+  async () => {
+    const root = await mkdtemp(join(tmpdir(), "beachside-e2b-move-"));
+
+    try {
+      const source = join(root, "source");
+      const destination = join(root, "destination");
+      await writeFile(source, "source bytes");
+      await writeFile(destination, "original");
+      expect(await helper("move", source, destination)).toMatchObject({
+        ok: false,
+        code: "CONFLICT",
+      });
+      expect(await readFile(destination, "utf8")).toBe("original");
+      expect((await helper("stat", source)).ok).toBe(true);
       const oldDirectory = join(root, "old-directory");
       const newDirectory = join(root, "new-directory");
       await mkdir(oldDirectory);
@@ -104,11 +124,11 @@ test("E2B staged copy keeps destination and source on collision, refuses links, 
           await rm(otherFilesystem, { recursive: true, force: true });
         }
       }
+    } finally {
+      await rm(root, { recursive: true, force: true });
     }
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
+  },
+);
 
 test("E2B guest helper copies into missing parent folders", async () => {
   const root = await mkdtemp(join(tmpdir(), "beachside-e2b-copy-parents-"));

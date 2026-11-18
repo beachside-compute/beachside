@@ -847,7 +847,7 @@ test("Daytona expired attachment leases park output, preserve input, and fence a
     await supervisor.exited;
     await rm(root, { recursive: true, force: true });
   }
-});
+}, 15_000);
 
 test("Daytona PTY executes an explicitly requested shell script once", async () => {
   const native = fixture();

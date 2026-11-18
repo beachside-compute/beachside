@@ -22,6 +22,13 @@ import { daytonaProvider, createDaytonaAdapter } from "./index";
 import { Beachside, AdapterSandbox } from "beachside";
 import { artifactFiles } from "../../../../apps/docs/examples/directory-files";
 
+/**
+ * Tests that run the guest helper's no-clobber copies and moves on the host, which need
+ * Linux `renameat2` as every Daytona guest has. They run on Linux, as in CI, and are
+ * skipped elsewhere, such as macOS.
+ */
+const linuxGuest = test.skipIf(process.platform !== "linux");
+
 function run(input: FilesystemInput) {
   const result = spawnSync(
     "python3",
@@ -50,86 +57,87 @@ test("recursive mkdir reports possible effects when a parent is created before t
   }
 });
 
-test("guest filesystem preserves unusual names, dangling links, directory protection and staged copy", () => {
-  const root = mkdtempSync(join(tmpdir(), "beachside-daytona-fs-"));
-  const source = join(root, "quote'\n雪.bin");
-
-  try {
-    writeFileSync(source, new Uint8Array([0, 255, 1]));
-    symlinkSync(join(root, "absent"), join(root, "dangling"));
-    mkdirSync(join(root, "empty"));
-    expect(spawnSync("mkfifo", [join(root, "pipe")]).status).toBe(0);
-    expect(run({ op: "list", path: root })).toEqual([
-      { name: "dangling", type: "symlink" },
-      { name: "empty", type: "directory" },
-      { name: "pipe", type: "unknown" },
-      { name: "quote'\n雪.bin", type: "file" },
-    ]);
-    expect(run({ op: "exists", path: join(root, "dangling") })).toBe(true);
-    expect(() => run({ op: "mkdir", path: source, recursive: true })).toThrow(
-      expect.objectContaining({ code: "INVALID_ARGUMENT" }),
-    );
-    expect(() => run({ op: "mkdir", path: source, recursive: false })).toThrow(
-      expect.objectContaining({ code: "INVALID_ARGUMENT" }),
-    );
-    symlinkSync(join(root, "empty"), join(root, "directory-link"));
-    expect(run({ op: "mkdir", path: join(root, "directory-link"), recursive: false })).toBe(true);
-    writeFileSync(join(root, "empty", "child"), "intermediate-link");
-    expect(run({ op: "list", path: join(root, "directory-link") })).toEqual([
-      { name: "child", type: "file" },
-    ]);
-    expect(
-      run({ op: "remove", path: join(root, "directory-link", "child"), recursive: false }),
-    ).toBe(true);
-    expect(existsSync(join(root, "empty", "child"))).toBe(false);
-    expect(run({ op: "remove", path: join(root, "directory-link"), recursive: true })).toBe(true);
-    expect(existsSync(join(root, "empty"))).toBe(true);
-
-    expect(run({ op: "stat", path: join(root, "dangling") })).toMatchObject({ type: "symlink" });
-    expect(() => run({ op: "stat", path: join(root, "dangling"), follow: true })).toThrow();
-    expect(() => run({ op: "remove", path: root, recursive: false })).toThrow();
-    const reserved = join(root, ".stream-stage");
-    expect(run({ op: "reserve", path: reserved })).toBe(reserved);
-    expect(existsSync(reserved)).toBe(true);
-    expect(() => run({ op: "reserve", path: reserved })).toThrow();
-    expect(run({ op: "cleanup", path: reserved })).toBe(true);
-    expect(existsSync(reserved)).toBe(false);
-
-    const copy = join(root, "copied");
-    expect(
-      run({
-        op: "copy",
-        source,
-        destination: copy,
-        stagingDirectory: join(root, ".copy-stage"),
-        overwrite: true,
-      }),
-    ).toBe(true);
-    expect(readFileSync(copy)).toEqual(readFileSync(source));
+linuxGuest(
+  "guest filesystem preserves unusual names, dangling links, directory protection and staged copy",
+  () => {
+    const root = mkdtempSync(join(tmpdir(), "beachside-daytona-fs-"));
+    const source = join(root, "quote'\n雪.bin");
 
     try {
-      run({
-        op: "copy",
-        source,
-        destination: copy,
-        stagingDirectory: join(root, ".collision-stage"),
-        overwrite: false,
-      });
-      throw new Error("No-clobber unexpectedly replaced destination");
-    } catch (error) {
-      expect(error).toMatchObject({
-        code: process.platform === "linux" ? "CONFLICT" : "UNSUPPORTED",
-      });
-    }
+      writeFileSync(source, new Uint8Array([0, 255, 1]));
+      symlinkSync(join(root, "absent"), join(root, "dangling"));
+      mkdirSync(join(root, "empty"));
+      expect(spawnSync("mkfifo", [join(root, "pipe")]).status).toBe(0);
+      expect(run({ op: "list", path: root })).toEqual([
+        { name: "dangling", type: "symlink" },
+        { name: "empty", type: "directory" },
+        { name: "pipe", type: "unknown" },
+        { name: "quote'\n雪.bin", type: "file" },
+      ]);
+      expect(run({ op: "exists", path: join(root, "dangling") })).toBe(true);
+      expect(() => run({ op: "mkdir", path: source, recursive: true })).toThrow(
+        expect.objectContaining({ code: "INVALID_ARGUMENT" }),
+      );
+      expect(() => run({ op: "mkdir", path: source, recursive: false })).toThrow(
+        expect.objectContaining({ code: "INVALID_ARGUMENT" }),
+      );
+      symlinkSync(join(root, "empty"), join(root, "directory-link"));
+      expect(run({ op: "mkdir", path: join(root, "directory-link"), recursive: false })).toBe(true);
+      writeFileSync(join(root, "empty", "child"), "intermediate-link");
+      expect(run({ op: "list", path: join(root, "directory-link") })).toEqual([
+        { name: "child", type: "file" },
+      ]);
+      expect(
+        run({ op: "remove", path: join(root, "directory-link", "child"), recursive: false }),
+      ).toBe(true);
+      expect(existsSync(join(root, "empty", "child"))).toBe(false);
+      expect(run({ op: "remove", path: join(root, "directory-link"), recursive: true })).toBe(true);
+      expect(existsSync(join(root, "empty"))).toBe(true);
 
-    expect(existsSync(join(root, ".collision-stage"))).toBe(false);
-    expect(new Uint8Array(readFileSync(source))).toEqual(new Uint8Array([0, 255, 1]));
-    expect(readFileSync(copy)).toEqual(readFileSync(source));
-    const directorySource = join(root, "directory-source");
-    const directoryDestination = join(root, "directory-destination");
-    mkdirSync(directorySource);
+      expect(run({ op: "stat", path: join(root, "dangling") })).toMatchObject({ type: "symlink" });
+      expect(() => run({ op: "stat", path: join(root, "dangling"), follow: true })).toThrow();
+      expect(() => run({ op: "remove", path: root, recursive: false })).toThrow();
+      const reserved = join(root, ".stream-stage");
+      expect(run({ op: "reserve", path: reserved })).toBe(reserved);
+      expect(existsSync(reserved)).toBe(true);
+      expect(() => run({ op: "reserve", path: reserved })).toThrow();
+      expect(run({ op: "cleanup", path: reserved })).toBe(true);
+      expect(existsSync(reserved)).toBe(false);
 
-    if (process.platform === "linux") {
+      const copy = join(root, "copied");
+      expect(
+        run({
+          op: "copy",
+          source,
+          destination: copy,
+          stagingDirectory: join(root, ".copy-stage"),
+          overwrite: true,
+        }),
+      ).toBe(true);
+      expect(readFileSync(copy)).toEqual(readFileSync(source));
+
+      try {
+        run({
+          op: "copy",
+          source,
+          destination: copy,
+          stagingDirectory: join(root, ".collision-stage"),
+          overwrite: false,
+        });
+        throw new Error("No-clobber unexpectedly replaced destination");
+      } catch (error) {
+        expect(error).toMatchObject({
+          code: "CONFLICT",
+        });
+      }
+
+      expect(existsSync(join(root, ".collision-stage"))).toBe(false);
+      expect(new Uint8Array(readFileSync(source))).toEqual(new Uint8Array([0, 255, 1]));
+      expect(readFileSync(copy)).toEqual(readFileSync(source));
+      const directorySource = join(root, "directory-source");
+      const directoryDestination = join(root, "directory-destination");
+      mkdirSync(directorySource);
+
       expect(
         run({
           op: "move",
@@ -140,39 +148,24 @@ test("guest filesystem preserves unusual names, dangling links, directory protec
       ).toBe(true);
       expect(existsSync(directorySource)).toBe(false);
       expect(existsSync(directoryDestination)).toBe(true);
-    } else {
-      try {
+
+      expect(() =>
         run({
-          op: "move",
-          source: directorySource,
-          destination: directoryDestination,
-          overwrite: false,
-        });
-        throw new Error("Expected Linux renameat2 prerequisite");
-      } catch (error) {
-        expect(error).toMatchObject({ code: "UNSUPPORTED" });
-      }
-
-      expect(existsSync(directorySource)).toBe(true);
-      expect(existsSync(directoryDestination)).toBe(false);
+          op: "copy",
+          source: join(root, "dangling"),
+          destination: copy,
+          stagingDirectory: join(root, ".copy-stage"),
+          overwrite: true,
+        }),
+      ).toThrow();
+      expect(() => run({ op: "move", source, destination: source, overwrite: true })).toThrow();
+      expect(run({ op: "remove", path: join(root, "empty"), recursive: false })).toBe(true);
+      expect(run({ op: "remove", path: join(root, "absent"), recursive: false })).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
     }
-
-    expect(() =>
-      run({
-        op: "copy",
-        source: join(root, "dangling"),
-        destination: copy,
-        stagingDirectory: join(root, ".copy-stage"),
-        overwrite: true,
-      }),
-    ).toThrow();
-    expect(() => run({ op: "move", source, destination: source, overwrite: true })).toThrow();
-    expect(run({ op: "remove", path: join(root, "empty"), recursive: false })).toBe(true);
-    expect(run({ op: "remove", path: join(root, "absent"), recursive: false })).toBe(true);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
+  },
+);
 
 test("Daytona transfer transport streams 32 MiB with incremental multipart input and matching completion", async () => {
   const size = 32 * 1024 * 1024;
@@ -312,131 +305,134 @@ test("Daytona transfer transport streams 32 MiB with incremental multipart input
   expect(downloaded).toBe(size);
 });
 
-test("Daytona public SDK preserves definitive filesystem rejections and artifact workflow outcomes", async () => {
-  const root = mkdtempSync(join(tmpdir(), "beachside-daytona-public-files-"));
-  let client: Awaited<ReturnType<typeof Beachside.connect>> | undefined;
-  let delayCleanup = false;
-  let delayedStage = "";
-  let releaseCleanup: (() => void) | undefined;
+linuxGuest(
+  "Daytona public SDK preserves definitive filesystem rejections and artifact workflow outcomes",
+  async () => {
+    const root = mkdtempSync(join(tmpdir(), "beachside-daytona-public-files-"));
+    let client: Awaited<ReturnType<typeof Beachside.connect>> | undefined;
+    let delayCleanup = false;
+    let delayedStage = "";
+    let releaseCleanup: (() => void) | undefined;
 
-  const cleanupReleased = new Promise<void>((resolve) => {
-    releaseCleanup = resolve;
-  });
+    const cleanupReleased = new Promise<void>((resolve) => {
+      releaseCleanup = resolve;
+    });
 
-  let cleanupFinished: Promise<void> | undefined;
+    let cleanupFinished: Promise<void> | undefined;
 
-  try {
-    const transport: typeof fetch = Object.assign(
-      async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = new URL(String(input));
+    try {
+      const transport: typeof fetch = Object.assign(
+        async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = new URL(String(input));
 
-        if (url.pathname.endsWith("/api-keys/current"))
-          return Response.json({ organizationId: "org" });
+          if (url.pathname.endsWith("/api-keys/current"))
+            return Response.json({ organizationId: "org" });
 
-        if (url.pathname.endsWith("/regions"))
-          return Response.json([{ id: "us", name: "us", regionType: "shared" }]);
+          if (url.pathname.endsWith("/regions"))
+            return Response.json([{ id: "us", name: "us", regionType: "shared" }]);
 
-        if (url.pathname.endsWith("/organizations/org"))
-          return Response.json({ id: "org", sandboxLimitedNetworkEgress: false });
+          if (url.pathname.endsWith("/organizations/org"))
+            return Response.json({ id: "org", sandboxLimitedNetworkEgress: false });
 
-        if (url.pathname === "/api/sandbox/box")
-          return Response.json({
-            id: "box",
-            name: "box",
-            organizationId: "org",
-            target: "us",
-            state: "started",
-            networkBlockAll: true,
-            public: false,
-            toolboxProxyUrl: "https://proxy.app.daytona.io/toolbox",
-          });
+          if (url.pathname === "/api/sandbox/box")
+            return Response.json({
+              id: "box",
+              name: "box",
+              organizationId: "org",
+              target: "us",
+              state: "started",
+              networkBlockAll: true,
+              public: false,
+              toolboxProxyUrl: "https://proxy.app.daytona.io/toolbox",
+            });
 
-        if (url.pathname.endsWith("/process/execute")) {
-          const request = z.object({ command: z.string() }).parse(JSON.parse(String(init?.body)));
+          if (url.pathname.endsWith("/process/execute")) {
+            const request = z.object({ command: z.string() }).parse(JSON.parse(String(init?.body)));
 
-          if (delayCleanup) {
-            const argument = request.command.slice(request.command.lastIndexOf(" '") + 2, -1);
+            if (delayCleanup) {
+              const argument = request.command.slice(request.command.lastIndexOf(" '") + 2, -1);
 
-            const operation = z
-              .object({ op: z.string(), path: z.string().optional() })
-              .parse(JSON.parse(Buffer.from(argument, "base64").toString()));
+              const operation = z
+                .object({ op: z.string(), path: z.string().optional() })
+                .parse(JSON.parse(Buffer.from(argument, "base64").toString()));
 
-            if (operation.op === "cleanup") {
-              delayedStage = operation.path!;
-              cleanupFinished = cleanupReleased.then(() => {
-                const execution = spawnSync("sh", ["-c", request.command], { encoding: "utf8" });
-                expect(execution.status).toBe(0);
-              });
-              await cleanupFinished;
+              if (operation.op === "cleanup") {
+                delayedStage = operation.path!;
+                cleanupFinished = cleanupReleased.then(() => {
+                  const execution = spawnSync("sh", ["-c", request.command], { encoding: "utf8" });
+                  expect(execution.status).toBe(0);
+                });
+                await cleanupFinished;
 
-              return Response.json({
-                result: JSON.stringify({ ok: true, value: true }),
-                exitCode: 0,
-              });
+                return Response.json({
+                  result: JSON.stringify({ ok: true, value: true }),
+                  exitCode: 0,
+                });
+              }
             }
+
+            const execution = spawnSync("sh", ["-c", request.command], { encoding: "utf8" });
+
+            return Response.json({ result: execution.stdout, exitCode: execution.status });
           }
 
-          const execution = spawnSync("sh", ["-c", request.command], { encoding: "utf8" });
+          if (url.pathname.endsWith("/files/upload-v2")) {
+            const form =
+              init?.body instanceof FormData
+                ? init.body
+                : await new Response(init?.body, {
+                    headers: { "content-type": new Headers(init?.headers).get("content-type")! },
+                  }).formData();
 
-          return Response.json({ result: execution.stdout, exitCode: execution.status });
-        }
+            const file = form.get("file");
 
-        if (url.pathname.endsWith("/files/upload-v2")) {
-          const form =
-            init?.body instanceof FormData
-              ? init.body
-              : await new Response(init?.body, {
-                  headers: { "content-type": new Headers(init?.headers).get("content-type")! },
-                }).formData();
+            if (!(file instanceof Blob)) throw new Error("Expected multipart upload file");
+            const path = url.searchParams.get("path")!;
+            writeFileSync(path, new Uint8Array(await file.arrayBuffer()));
 
-          const file = form.get("file");
+            return Response.json({ path, name: "payload", type: "file" });
+          }
 
-          if (!(file instanceof Blob)) throw new Error("Expected multipart upload file");
-          const path = url.searchParams.get("path")!;
-          writeFileSync(path, new Uint8Array(await file.arrayBuffer()));
+          if (url.pathname.endsWith("/files/download"))
+            return new Response(readFileSync(url.searchParams.get("path")!));
+          throw new Error(`Unexpected public filesystem fixture route ${url.pathname}`);
+        },
+        { preconnect: fetch.preconnect },
+      );
 
-          return Response.json({ path, name: "payload", type: "file" });
-        }
+      client = await Beachside.connect({
+        adapter: createDaytonaAdapter(transport),
+        config: { target: "us", networkPolicy: "blocked" },
+        credentials: { apiKey: "fixture" },
+      });
 
-        if (url.pathname.endsWith("/files/download"))
-          return new Response(readFileSync(url.searchParams.get("path")!));
-        throw new Error(`Unexpected public filesystem fixture route ${url.pathname}`);
-      },
-      { preconnect: fetch.preconnect },
-    );
+      const box = new AdapterSandbox(client, "box");
+      await box.makeDirectory(join(root, "results"), { recursive: true });
+      const source = join(root, "results", "source.bin");
+      const payload = new Uint8Array(2 * 1024 * 1024).fill(239);
+      await box.writeFile(source, payload, { overwrite: true, maxBytes: payload.byteLength });
+      await expect(box.makeDirectory(source)).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+      await expect(box.makeDirectory(source, { recursive: true })).rejects.toMatchObject({
+        code: "INVALID_ARGUMENT",
+      });
+      await expect(box.removeFile(join(root, "results"))).rejects.toMatchObject({
+        code: "CONFLICT",
+      });
+      expect(await box.readDirectory(join(root, "results"))).toMatchObject({
+        completeness: "complete",
+        entries: [{ name: "source.bin", type: "file" }],
+      });
+      expect(await box.statFile(source)).toMatchObject({
+        type: "file",
+        sizeBytes: payload.byteLength,
+      });
+      const copy = join(root, "copy.bin");
+      const final = join(root, "final.bin");
+      await box.copyFile(source, copy, { overwrite: true });
+      await box.moveFile(copy, final, { overwrite: true });
+      expect(await box.fileExists(copy)).toBe(false);
+      expect(await box.readFile(final, { maxBytes: payload.byteLength })).toEqual(payload);
 
-    client = await Beachside.connect({
-      adapter: createDaytonaAdapter(transport),
-      config: { target: "us", networkPolicy: "blocked" },
-      credentials: { apiKey: "fixture" },
-    });
-
-    const box = new AdapterSandbox(client, "box");
-    await box.makeDirectory(join(root, "results"), { recursive: true });
-    const source = join(root, "results", "source.bin");
-    const payload = new Uint8Array(2 * 1024 * 1024).fill(239);
-    await box.writeFile(source, payload, { overwrite: true, maxBytes: payload.byteLength });
-    await expect(box.makeDirectory(source)).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
-    await expect(box.makeDirectory(source, { recursive: true })).rejects.toMatchObject({
-      code: "INVALID_ARGUMENT",
-    });
-    await expect(box.removeFile(join(root, "results"))).rejects.toMatchObject({ code: "CONFLICT" });
-    expect(await box.readDirectory(join(root, "results"))).toMatchObject({
-      completeness: "complete",
-      entries: [{ name: "source.bin", type: "file" }],
-    });
-    expect(await box.statFile(source)).toMatchObject({
-      type: "file",
-      sizeBytes: payload.byteLength,
-    });
-    const copy = join(root, "copy.bin");
-    const final = join(root, "final.bin");
-    await box.copyFile(source, copy, { overwrite: true });
-    await box.moveFile(copy, final, { overwrite: true });
-    expect(await box.fileExists(copy)).toBe(false);
-    expect(await box.readFile(final, { maxBytes: payload.byteLength })).toEqual(payload);
-
-    if (process.platform === "linux") {
       const chunks: Uint8Array[] = [];
       const artifactRoot = join(root, "artifacts");
 
@@ -466,54 +462,55 @@ test("Daytona public SDK preserves definitive filesystem rejections and artifact
         "results/report.json",
       ]);
       expect(existsSync(artifactRoot)).toBe(false);
-    }
 
-    delayCleanup = true;
-    const published = join(root, "confirmed-before-cleanup.bin");
+      delayCleanup = true;
+      const published = join(root, "confirmed-before-cleanup.bin");
 
-    const write = box.writeFileStream(
-      published,
-      (async function* () {
-        yield payload;
-      })(),
-      { overwrite: true, overallTimeoutMs: 2000 },
-    );
+      const write = box.writeFileStream(
+        published,
+        (async function* () {
+          yield payload;
+        })(),
+        { overwrite: true, overallTimeoutMs: 2000 },
+      );
 
-    try {
-      await expect(write).rejects.toMatchObject({
-        code: "TIMEOUT",
-        effect: "applied",
-        details: {
+      try {
+        await expect(write).rejects.toMatchObject({
+          code: "TIMEOUT",
           effect: "applied",
-          destination: published,
-          bytesTransferred: payload.byteLength,
-          temporaryPaths: [expect.stringContaining(".beachside-stream-")],
-        },
-      });
-      expect(readFileSync(published)).toEqual(Buffer.from(payload));
-      expect(existsSync(delayedStage)).toBe(true);
+          details: {
+            effect: "applied",
+            destination: published,
+            bytesTransferred: payload.byteLength,
+            temporaryPaths: [expect.stringContaining(".beachside-stream-")],
+          },
+        });
+        expect(readFileSync(published)).toEqual(Buffer.from(payload));
+        expect(existsSync(delayedStage)).toBe(true);
+      } finally {
+        releaseCleanup?.();
+      }
+
+      await cleanupFinished;
+      expect(existsSync(delayedStage)).toBe(false);
+      await box.removeFile(root, { recursive: true });
+      expect(existsSync(root)).toBe(false);
     } finally {
       releaseCleanup?.();
-    }
 
-    await cleanupFinished;
-    expect(existsSync(delayedStage)).toBe(false);
-    await box.removeFile(root, { recursive: true });
-    expect(existsSync(root)).toBe(false);
-  } finally {
-    releaseCleanup?.();
-
-    try {
-      await cleanupFinished;
-    } finally {
       try {
-        await client?.close();
+        await cleanupFinished;
       } finally {
-        rmSync(root, { recursive: true, force: true });
+        try {
+          await client?.close();
+        } finally {
+          rmSync(root, { recursive: true, force: true });
+        }
       }
     }
-  }
-}, 30_000);
+  },
+  30_000,
+);
 
 test("Daytona interrupted and malformed helpers retain possible copy effects and staging custody", async () => {
   const root = mkdtempSync(join(tmpdir(), "beachside-daytona-interrupted-"));

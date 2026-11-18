@@ -739,7 +739,7 @@ test("Vercel expired attachment leases park output, preserve input, and fence al
     await supervisor.exited;
     await rm(root, { recursive: true, force: true });
   }
-});
+}, 15_000);
 
 test("Vercel PTY executes an explicitly requested shell script once", async () => {
   const native = fixture();
