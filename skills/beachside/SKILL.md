@@ -15,19 +15,19 @@ Beachside is one TypeScript API over several sandbox providers. The application 
 
 ## Connect
 
-| Provider               | Package                  | Connect with                                                                                                                                                               |
-| ---------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| boxd                   | `@beachside/boxd`        | `Beachside.connect({ adapter: boxdAdapter, credentials: { apiKey }, config: { org } })`                                                                                    |
-| Freestyle              | `@beachside/freestyle`   | `Beachside.connect({ adapter: freestyleAdapter, credentials: { apiKey }, config: {} })`                                                                                    |
-| Daytona                | `@beachside/daytona`     | `Beachside.connect({ adapter: daytonaAdapter, credentials: { apiKey }, config: { target: "us", environment: Image.prepared("<snapshot>"), network: "daytona-default" } })` |
-| Boat                   | `@beachside/boat`        | `Beachside.connect({ adapter: boatAdapter, credentials: { apiKey }, config: {} })`                                                                                         |
-| Runloop (experimental) | `@beachside/runloop`     | `Beachside.connect({ adapter: runloopAdapter, credentials: { apiKey }, config: {} })`                                                                                      |
-| E2B                    | `@beachside/e2b`         | `Beachside.connect({ adapter: e2bAdapter, credentials: { apiKey }, config: {} })`                                                                                          |
-| Archil (experimental)  | `@beachside/archil`      | `Beachside.connect({ adapter: archilAdapter, credentials: { apiKey }, config: { region: "aws-us-east-1" } })`                                                              |
-| exe.dev (experimental) | `@beachside/exe-dev`     | `Beachside.connect({ adapter: exeDevAdapter, credentials: { token }, config: {} })`                                                                                        |
-| Upstash Box            | `@beachside/upstash-box` | `Beachside.connect({ adapter: upstashBoxAdapter, credentials: { apiKey }, config: {} })`                                                                                   |
-| Vercel                 | `@beachside/vercel`      | `Beachside.connect({ adapter: vercelAdapter, credentials: { token }, config: { teamId, projectId } })`                                                                     |
-| Modal (experimental)   | `@beachside/modal`       | `Beachside.connect({ adapter: modalAdapter, credentials: { tokenId, tokenSecret }, config: { appName } })`                                                                 |
+| Provider                   | Package                  | Connect with                                                                                                                                                               |
+| -------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| boxd                       | `@beachside/boxd`        | `Beachside.connect({ adapter: boxdAdapter, credentials: { apiKey }, config: { org } })`                                                                                    |
+| Freestyle                  | `@beachside/freestyle`   | `Beachside.connect({ adapter: freestyleAdapter, credentials: { apiKey }, config: {} })`                                                                                    |
+| Daytona                    | `@beachside/daytona`     | `Beachside.connect({ adapter: daytonaAdapter, credentials: { apiKey }, config: { target: "us", environment: Image.prepared("<snapshot>"), network: "daytona-default" } })` |
+| Boat                       | `@beachside/boat`        | `Beachside.connect({ adapter: boatAdapter, credentials: { apiKey }, config: {} })`                                                                                         |
+| Runloop (experimental)     | `@beachside/runloop`     | `Beachside.connect({ adapter: runloopAdapter, credentials: { apiKey }, config: {} })`                                                                                      |
+| E2B                        | `@beachside/e2b`         | `Beachside.connect({ adapter: e2bAdapter, credentials: { apiKey }, config: {} })`                                                                                          |
+| Archil (experimental)      | `@beachside/archil`      | `Beachside.connect({ adapter: archilAdapter, credentials: { apiKey }, config: { region: "aws-us-east-1" } })`                                                              |
+| exe.dev (experimental)     | `@beachside/exe-dev`     | `Beachside.connect({ adapter: exeDevAdapter, credentials: { token }, config: {} })`                                                                                        |
+| Upstash Box (experimental) | `@beachside/upstash-box` | `Beachside.connect({ adapter: upstashBoxAdapter, credentials: { apiKey }, config: {} })`                                                                                   |
+| Vercel                     | `@beachside/vercel`      | `Beachside.connect({ adapter: vercelAdapter, credentials: { token }, config: { teamId, projectId } })`                                                                     |
+| Modal (experimental)       | `@beachside/modal`       | `Beachside.connect({ adapter: modalAdapter, credentials: { tokenId, tokenSecret }, config: { appName } })`                                                                 |
 
 Every adapter uses this same `{ adapter, credentials, config }` shape, including third-party ones. Each first-party package also exports a factory named after the provider that takes credentials and config in one object, such as `Beachside.connect(e2b({ apiKey }))`; prefer the split form unless the code picks a provider at run time. Older Vercel code imported the definition as `vercel`; it is now `vercelAdapter`, and `vercel` is the factory.
 

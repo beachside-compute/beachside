@@ -21,6 +21,7 @@
     "@beachside/freestyle": "workspace:*",
     "@beachside/archil": "workspace:*",
     "@beachside/exe-dev": "workspace:*",
+    "@beachside/upstash-box": "workspace:*",
     "@beachside/vercel": "workspace:*"
   }
 }

@@ -42,4 +42,4 @@ try {
 
 Save the full Beachside reference after create. A fresh client can reopen the exact Box ID with a currently authorized key. Unknown create and delete outcomes are never replayed automatically. A confirmed Box ID remains available for follow-up if provisioning could not be confirmed. A delete acknowledgment followed by an inconclusive read leaves cleanup unconfirmed.
 
-Live qualification is pending.
+The adapter remains experimental pending live qualification.

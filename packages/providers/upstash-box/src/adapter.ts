@@ -127,6 +127,24 @@ function marker(submissionId: string) {
   );
 }
 
+const CreationReceipt = z.object({ submission: z.string().min(1).max(128) });
+
+function hasEphemeralEvidence(box: Detail, ref: SandboxReference) {
+  if (box.ephemeral !== undefined) return box.ephemeral;
+
+  if (ref.ownership !== "verified-created" || !ref.receipt || !box.labels) return false;
+
+  // The shared Box detail endpoint may omit the class. In that case cite the
+  // native marker from the adapter's ephemeral create instead.
+  try {
+    const receipt = CreationReceipt.safeParse(JSON.parse(ref.receipt));
+
+    return receipt.success && box.labels.includes(marker(receipt.data.submission));
+  } catch {
+    return false;
+  }
+}
+
 function nativeLabels(labels: CreateInput["labels"]): string[] {
   const result = Object.entries(labels ?? {}).map(([key, value]) => {
     const label = `${key}:${value}`;
@@ -554,8 +572,11 @@ export function defineUpstashBoxAdapter(origin: string, options: UpstashBoxAdapt
           if (box.status === "deleted")
             throw new AdapterError("NOT_FOUND", "Upstash Box was deleted");
 
-          if (box.ephemeral === false)
-            throw new AdapterError("CONFLICT", "Saved Upstash Box is not ephemeral");
+          if (!hasEphemeralEvidence(box, ref))
+            throw new AdapterError(
+              "CONFLICT",
+              "Could not confirm the saved Upstash Box is ephemeral",
+            );
 
           return sandboxInfo(box, ref);
         },

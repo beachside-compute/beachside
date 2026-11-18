@@ -278,6 +278,7 @@
         "@beachside/exe-dev": "workspace:*",
         "@beachside/freestyle": "workspace:*",
         "@beachside/runloop": "workspace:*",
+        "@beachside/upstash-box": "workspace:*",
         "@beachside/vercel": "workspace:*",
       },
     },

@@ -1,6 +1,6 @@
 # @beachside/upstash-box
 
-Beachside adapter for Upstash Box ephemeral sandboxes in AWS us-east-1. The implementation has local fixture coverage. Live qualification is pending.
+Experimental Beachside adapter for Upstash Box ephemeral sandboxes in AWS us-east-1. The implementation has local fixture coverage. Live qualification is pending.
 
 ```sh
 npm install beachside @beachside/upstash-box

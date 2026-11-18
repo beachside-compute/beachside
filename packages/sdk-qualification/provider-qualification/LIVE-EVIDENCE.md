@@ -421,26 +421,26 @@ Adapter support and live validation are separate facts. **Supported** means impl
 
 **E2B experimental-volume exception:** the Volume CRUD row's unsupported label excludes experimental native CRUD from maintained live qualification; SDK hooks exist. A live create was blocked by HTTP 403 for the tested account; original volume custody remains unresolved, so maintained qualification skips volume cases before setup. This is separate from mounts, which the adapter rejects before allocation. See the [volume caveat](#e2b-volumes) and [mounted-persistence caveat](#e2b-persistence).
 
-| Feature                             | Daytona                                                         | E2B                                                                               |
-| ----------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| Sandbox lifecycle                   | [Supported · passed at 8449def7](#daytona-lifecycle)            | [Supported · passed at 8449def7](#e2b-lifecycle)                                  |
-| Native sandbox suspend/resume       | [Conditional · passed at 6796b30b](#daytona-suspension)         | [Conditional · passed at 26f516d1](#e2b-suspension)                               |
-| Protected HTTP preview              | [Conditional · passed at 3188e333](#daytona-previewProtected)   | [Conditional · not-run](#e2b-previewProtected)                                    |
-| Public HTTP preview                 | [Conditional · not-run](#daytona-previewPublic)                 | [Conditional · passed at 3188e333](#e2b-previewPublic)                            |
-| Local-handle process termination    | [Conditional · passed at aaba981e](#daytona-termination)        | [Conditional · passed at aaba981e](#e2b-termination)                              |
-| Configured lifetime renewal         | [Conditional · passed at 3188e333](#daytona-renewal)            | [Conditional · passed at 3188e333](#e2b-renewal)                                  |
-| Scoped sandbox reopening            | [Conditional · passed at 3188e333](#daytona-reopening)          | [Conditional · passed at 3188e333](#e2b-reopening)                                |
-| Execution and captured output       | [Supported · passed at 8449def7](#daytona-execution)            | [Supported · passed at 8449def7](#e2b-execution)                                  |
-| Process streams and terminals       | [Conditional · passed at aaba981e](#daytona-streaming)          | [Conditional · passed at aaba981e](#e2b-streaming)                                |
-| Finite execution input              | [Conditional · not-run](#daytona-finiteStdin)                   | [Conditional · not-run](#e2b-finiteStdin)                                         |
-| Binary files and overwrite          | [Conditional · passed at 3188e333](#daytona-files)              | [Conditional · passed at 3188e333](#e2b-files)                                    |
-| Directory primitives                | [Conditional · passed at e91f2d5f](#daytona-directories)        | [Conditional · passed at e91f2d5f](#e2b-directories)                              |
-| OCI image builds                    | [Conditional · not-run](#daytona-oci)                           | [Conditional · not-run](#e2b-oci)                                                 |
-| Measured network controls           | [Conditional · not-run](#daytona-network)                       | [Supported · failed](#e2b-network)                                                |
-| Cold snapshot with selected storage | [Conditional · passed at 5911cccd](#daytona-storageComposition) | [Unsupported · not-run](#e2b-storageComposition)                                  |
-| Snapshot roundtrip                  | [Conditional · passed at 1505ee0d](#daytona-snapshots)          | [Conditional · passed at 8449def7](#e2b-snapshots)                                |
-| Volume CRUD                         | [Supported · passed at 1505ee0d](#daytona-volumes)              | [Unsupported · blocked at working-tree-before-dfc34b6 (historical)](#e2b-volumes) |
-| Mounted persistence                 | [Conditional · passed at 1505ee0d](#daytona-persistence)        | [Unsupported · not-run](#e2b-persistence)                                         |
+| Feature                             | Daytona                                                         | E2B                                                                               | Upstash Box                                              |
+| ----------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| Sandbox lifecycle                   | [Supported · passed at 8449def7](#daytona-lifecycle)            | [Supported · passed at 8449def7](#e2b-lifecycle)                                  | [Supported · not-run](#upstash-box-lifecycle)            |
+| Native sandbox suspend/resume       | [Conditional · passed at 6796b30b](#daytona-suspension)         | [Conditional · passed at 26f516d1](#e2b-suspension)                               | [Unsupported · not-run](#upstash-box-suspension)         |
+| Protected HTTP preview              | [Conditional · passed at 3188e333](#daytona-previewProtected)   | [Conditional · not-run](#e2b-previewProtected)                                    | [Unsupported · not-run](#upstash-box-previewProtected)   |
+| Public HTTP preview                 | [Conditional · not-run](#daytona-previewPublic)                 | [Conditional · passed at 3188e333](#e2b-previewPublic)                            | [Unsupported · not-run](#upstash-box-previewPublic)      |
+| Local-handle process termination    | [Conditional · passed at aaba981e](#daytona-termination)        | [Conditional · passed at aaba981e](#e2b-termination)                              | [Unsupported · not-run](#upstash-box-termination)        |
+| Configured lifetime renewal         | [Conditional · passed at 3188e333](#daytona-renewal)            | [Conditional · passed at 3188e333](#e2b-renewal)                                  | [Unsupported · not-run](#upstash-box-renewal)            |
+| Scoped sandbox reopening            | [Conditional · passed at 3188e333](#daytona-reopening)          | [Conditional · passed at 3188e333](#e2b-reopening)                                | [Conditional · not-run](#upstash-box-reopening)          |
+| Execution and captured output       | [Supported · passed at 8449def7](#daytona-execution)            | [Supported · passed at 8449def7](#e2b-execution)                                  | [Supported · not-run](#upstash-box-execution)            |
+| Process streams and terminals       | [Conditional · passed at aaba981e](#daytona-streaming)          | [Conditional · passed at aaba981e](#e2b-streaming)                                | [Unsupported · not-run](#upstash-box-streaming)          |
+| Finite execution input              | [Conditional · not-run](#daytona-finiteStdin)                   | [Conditional · not-run](#e2b-finiteStdin)                                         | [Supported · not-run](#upstash-box-finiteStdin)          |
+| Binary files and overwrite          | [Conditional · passed at 3188e333](#daytona-files)              | [Conditional · passed at 3188e333](#e2b-files)                                    | [Supported · not-run](#upstash-box-files)                |
+| Directory primitives                | [Conditional · passed at e91f2d5f](#daytona-directories)        | [Conditional · passed at e91f2d5f](#e2b-directories)                              | [Unsupported · not-run](#upstash-box-directories)        |
+| OCI image builds                    | [Conditional · not-run](#daytona-oci)                           | [Conditional · not-run](#e2b-oci)                                                 | [Unsupported · not-run](#upstash-box-oci)                |
+| Measured network controls           | [Conditional · not-run](#daytona-network)                       | [Supported · failed](#e2b-network)                                                | [Conditional · not-run](#upstash-box-network)            |
+| Cold snapshot with selected storage | [Conditional · passed at 5911cccd](#daytona-storageComposition) | [Unsupported · not-run](#e2b-storageComposition)                                  | [Unsupported · not-run](#upstash-box-storageComposition) |
+| Snapshot roundtrip                  | [Conditional · passed at 1505ee0d](#daytona-snapshots)          | [Conditional · passed at 8449def7](#e2b-snapshots)                                | [Unsupported · not-run](#upstash-box-snapshots)          |
+| Volume CRUD                         | [Supported · passed at 1505ee0d](#daytona-volumes)              | [Unsupported · blocked at working-tree-before-dfc34b6 (historical)](#e2b-volumes) | [Unsupported · not-run](#upstash-box-volumes)            |
+| Mounted persistence                 | [Conditional · passed at 1505ee0d](#daytona-persistence)        | [Unsupported · not-run](#e2b-persistence)                                         | [Unsupported · not-run](#upstash-box-persistence)        |
 
 ### Daytona caveats
 
@@ -661,6 +661,116 @@ Volume workflows are not supported for E2B qualification; volume CRUD and persis
 #### Mounted persistence
 
 Native mounts select reusable names without immutable volume-ID binding; the adapter rejects mounts before allocation. Volume artifact CRUD is a separate capability.
+
+### Upstash Box caveats
+
+<a id="upstash-box-lifecycle"></a>
+
+#### Sandbox lifecycle
+
+Create, inspect and destroy ephemeral Debian Node boxes in us-east-1 with native expiry. Remote inventory is outside the adapter's scope. Deterministic fixtures passed; live qualification is pending.
+
+<a id="upstash-box-suspension"></a>
+
+#### Native sandbox suspend/resume
+
+Ephemeral boxes can auto-pause and wake on work.
+
+<a id="upstash-box-previewProtected"></a>
+
+#### Protected HTTP preview
+
+Ephemeral boxes have no public preview routes.
+
+<a id="upstash-box-previewPublic"></a>
+
+#### Public HTTP preview
+
+Ephemeral boxes have no public preview routes.
+
+<a id="upstash-box-termination"></a>
+
+#### Local-handle process termination
+
+Finite exec requests termination on timeout. The adapter exposes no process handle for independent termination and exit observation.
+
+<a id="upstash-box-renewal"></a>
+
+#### Configured lifetime renewal
+
+The adapter sets TTL at create.
+
+<a id="upstash-box-reopening"></a>
+
+#### Scoped sandbox reopening
+
+Saved Beachside references reopen the exact ephemeral Box ID using a currently authorized key. Covered by deterministic fixtures; live qualification is pending.
+
+<a id="upstash-box-execution"></a>
+
+#### Execution and captured output
+
+Finite argv and shell with cwd/env, separate binary streams and a 1 MiB combined capture bound. Deterministic fixtures passed; live qualification is pending.
+
+<a id="upstash-box-streaming"></a>
+
+#### Process streams and terminals
+
+The adapter exposes finite captured exec.
+
+<a id="upstash-box-finiteStdin"></a>
+
+#### Finite execution input
+
+Up to 1 MiB of binary input followed by EOF over a native live session. Deterministic fixtures passed; live qualification is pending.
+
+<a id="upstash-box-files"></a>
+
+#### Binary files and overwrite
+
+Bounded binary ranges and streaming reads, with exclusive creation by default and explicit overwrite. Writes are limited to 1 MiB. Paged reads and exclusive writes passed deterministic fixtures. Live qualification is pending.
+
+<a id="upstash-box-directories"></a>
+
+#### Directory primitives
+
+Directory and file metadata APIs are outside the adapter's scope.
+
+<a id="upstash-box-oci"></a>
+
+#### OCI image builds
+
+The adapter uses the prepared Debian Node runtime.
+
+<a id="upstash-box-network"></a>
+
+#### Measured network controls
+
+Maps internet, blocked and configured allowlists to native policies and validates stored policy after creation. Private IPv4 ranges cannot be included in an allowlist. Fixture coverage confirms the mapping; live egress enforcement has not been measured.
+
+<a id="upstash-box-storageComposition"></a>
+
+#### Cold snapshot with selected storage
+
+The adapter exposes neither snapshots nor volume mounts.
+
+<a id="upstash-box-snapshots"></a>
+
+#### Snapshot roundtrip
+
+Snapshot operations are outside the adapter's scope.
+
+<a id="upstash-box-volumes"></a>
+
+#### Volume CRUD
+
+The adapter exposes no independent volume API.
+
+<a id="upstash-box-persistence"></a>
+
+#### Mounted persistence
+
+The adapter exposes no volume mounts.
 
 ## Updating support
 

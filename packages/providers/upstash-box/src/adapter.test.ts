@@ -6,8 +6,15 @@ import { join } from "node:path";
 import { WebSocketServer } from "ws";
 import { z } from "zod";
 import { adapterSuite } from "@beachside/adapter/testing";
-import { Beachside, NoExitCodeError, NonzeroExitError, type BeachsideClient } from "beachside";
+import {
+  Beachside,
+  Image,
+  NoExitCodeError,
+  NonzeroExitError,
+  type BeachsideClient,
+} from "beachside";
 import { createUpstashBoxAdapter, defineUpstashBoxAdapter } from "./adapter";
+import { MAX_OUTPUT_BYTES } from "./exec";
 import { EXCLUSIVE_WRITE } from "./files";
 import { ORIGIN, RANGE_BYTES } from "./transport";
 
@@ -61,6 +68,7 @@ function apiFixture() {
   let failDeleteRead = false;
   let held: (() => void) | undefined;
   let fileVersion = "1";
+  let detailClass: boolean | undefined = true;
   const ranges: { offset: number; length: number }[] = [];
 
   const fetch = Object.assign(
@@ -131,7 +139,7 @@ function apiFixture() {
 
       if (failDeleteRead) return new Response(null, { status: 403 });
 
-      return Response.json(box);
+      return Response.json({ ...box, ephemeral: detailClass });
     },
     { preconnect: globalThis.fetch.preconnect },
   );
@@ -150,6 +158,9 @@ function apiFixture() {
     },
     releaseHeldCreateResponse() {
       held?.();
+    },
+    reportDetailClass(value: boolean | undefined) {
+      detailClass = value;
     },
     badTtl() {
       ttlOverride = 259_200;
@@ -200,6 +211,19 @@ async function socketFixture() {
         });
 
         socket.send(JSON.stringify({ type: "exit", code: await child.exited }));
+
+        return;
+      }
+
+      if (start?.cmd === "combined-output") {
+        socket.send(
+          JSON.stringify({
+            type: "stdout",
+            data: Buffer.alloc(MAX_OUTPUT_BYTES - 2, 0xa5).toString("base64"),
+          }),
+        );
+        socket.send(JSON.stringify({ type: "stderr", data: "YWJjZA==" }));
+        socket.send(JSON.stringify({ type: "exit", code: 0 }));
 
         return;
       }
@@ -291,6 +315,69 @@ test("creates at the requested size and policy, checks TTL, and reopens by exact
 
   fixture.badTtl();
   await expect(client.sandboxes.create()).rejects.toMatchObject({ code: "OUTCOME_UNKNOWN" });
+});
+
+test("reopen requires evidence of an ephemeral Box when detail omits its class", async () => {
+  const fixture = apiFixture();
+  const adapter = createUpstashBoxAdapter({ fetch: fixture.fetch });
+
+  const client = tracked(
+    await Beachside.connect({
+      adapter,
+      config: {},
+      credentials: { apiKey: "fixture" },
+    }),
+  );
+
+  const box = await client.sandboxes.create();
+  const reference = box.reference!;
+  fixture.reportDetailClass(undefined);
+  expect((await client.sandboxes.get(reference)).reference).toEqual(reference);
+
+  fixture.reportDetailClass(false);
+  await expect(client.sandboxes.get(reference)).rejects.toMatchObject({ code: "CONFLICT" });
+
+  fixture.reportDetailClass(undefined);
+  fixture.boxes.get(box.id)?.labels.pop();
+  await expect(client.sandboxes.get(reference)).rejects.toMatchObject({ code: "CONFLICT" });
+
+  fixture.reportDetailClass(true);
+  await box.destroy();
+});
+
+test("blocked egress selects the native deny-all policy", async () => {
+  const fixture = apiFixture();
+
+  const client = tracked(
+    await Beachside.connect({
+      adapter: createUpstashBoxAdapter({ fetch: fixture.fetch }),
+      credentials: { apiKey: "fixture" },
+      config: { network: "blocked" },
+    }),
+  );
+
+  const box = await client.sandboxes.create();
+  expect(fixture.boxes.get(box.id)?.network_policy).toEqual({ mode: "deny-all" });
+  await box.destroy();
+});
+
+test("rejects OCI images before allocation", async () => {
+  const fixture = apiFixture();
+
+  const client = tracked(
+    await Beachside.connect({
+      adapter: createUpstashBoxAdapter({ fetch: fixture.fetch }),
+      credentials: { apiKey: "fixture" },
+      config: {},
+    }),
+  );
+
+  await expect(
+    client.sandboxes.create({ environment: Image.oci("node:22") }),
+  ).rejects.toMatchObject({
+    code: "UNSUPPORTED",
+  });
+  expect(fixture.counters().create).toBe(0);
 });
 
 test("rejects a private egress range before sending the API key", async () => {
@@ -397,6 +484,27 @@ test("live session frames preserve argv, relative cwd, env, input and exit evide
 
   if (!(loss instanceof NoExitCodeError)) throw new Error("Expected a lost native exit");
   expect(loss.result.stdout).toEqual(Uint8Array.of(0xff));
+  await box.destroy();
+});
+
+test("exec truncates combined output and retains the exit code", async () => {
+  const fixture = apiFixture();
+  const wire = await socketFixture();
+
+  const client = tracked(
+    await Beachside.connect({
+      adapter: defineUpstashBoxAdapter(wire.origin, { fetch: fixture.fetch }),
+      credentials: { apiKey: "fixture" },
+      config: {},
+    }),
+  );
+
+  const box = await client.sandboxes.create();
+  const result = await box.exec({ command: { kind: "shell", script: "combined-output" } });
+  expect(result.exitCode).toBe(0);
+  expect(result.stdout.byteLength).toBe(MAX_OUTPUT_BYTES - 2);
+  expect(result.stderrText()).toBe("ab");
+  expect(result.truncated).toBe(true);
   await box.destroy();
 });
 

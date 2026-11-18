@@ -72,6 +72,70 @@ export const supportMetadataSchema = z.strictObject({
 
 export type SupportMetadata = z.infer<typeof supportMetadataSchema>;
 
+export const upstashBoxSupport: SupportMetadata = {
+  id: "upstash-box",
+  name: "Upstash Box",
+  features: {
+    lifecycle: {
+      support: "supported",
+      note: "Create, inspect and destroy ephemeral Debian Node boxes in us-east-1 with native expiry. Remote inventory is outside the adapter's scope. Deterministic fixtures passed; live qualification is pending.",
+    },
+    execution: {
+      support: "supported",
+      note: "Finite argv and shell with cwd/env, separate binary streams and a 1 MiB combined capture bound. Deterministic fixtures passed; live qualification is pending.",
+    },
+    finiteStdin: {
+      support: "supported",
+      note: "Up to 1 MiB of binary input followed by EOF over a native live session. Deterministic fixtures passed; live qualification is pending.",
+    },
+    files: {
+      support: "supported",
+      note: "Bounded binary ranges and streaming reads, with exclusive creation by default and explicit overwrite. Writes are limited to 1 MiB. Paged reads and exclusive writes passed deterministic fixtures. Live qualification is pending.",
+    },
+    reopening: {
+      support: "conditional",
+      note: "Saved Beachside references reopen the exact ephemeral Box ID using a currently authorized key. Covered by deterministic fixtures; live qualification is pending.",
+    },
+    network: {
+      support: "conditional",
+      note: "Maps internet, blocked and configured allowlists to native policies and validates stored policy after creation. Private IPv4 ranges cannot be included in an allowlist. Fixture coverage confirms the mapping; live egress enforcement has not been measured.",
+    },
+    termination: {
+      support: "unsupported",
+      note: "Finite exec requests termination on timeout. The adapter exposes no process handle for independent termination and exit observation.",
+    },
+    renewal: { support: "unsupported", note: "The adapter sets TTL at create." },
+    streaming: { support: "unsupported", note: "The adapter exposes finite captured exec." },
+    directories: {
+      support: "unsupported",
+      note: "Directory and file metadata APIs are outside the adapter's scope.",
+    },
+    suspension: {
+      support: "unsupported",
+      note: "Ephemeral boxes can auto-pause and wake on work.",
+    },
+    previewProtected: {
+      support: "unsupported",
+      note: "Ephemeral boxes have no public preview routes.",
+    },
+    previewPublic: {
+      support: "unsupported",
+      note: "Ephemeral boxes have no public preview routes.",
+    },
+    oci: { support: "unsupported", note: "The adapter uses the prepared Debian Node runtime." },
+    snapshots: {
+      support: "unsupported",
+      note: "Snapshot operations are outside the adapter's scope.",
+    },
+    volumes: { support: "unsupported", note: "The adapter exposes no independent volume API." },
+    persistence: { support: "unsupported", note: "The adapter exposes no volume mounts." },
+    storageComposition: {
+      support: "unsupported",
+      note: "The adapter exposes neither snapshots nor volume mounts.",
+    },
+  },
+};
+
 export const officialSupport: SupportMetadata[] = [
   {
     id: "daytona",
@@ -229,6 +293,7 @@ export const officialSupport: SupportMetadata[] = [
       },
     },
   },
+  upstashBoxSupport,
 ];
 
 function validation(
@@ -519,6 +584,13 @@ export const providerStatus: ProviderStatus[] = [
     note: "Checked by hand against the live exe.dev service; the qualification suite passed streaming and termination but has not yet completed the sandbox workflow.",
   },
   {
+    id: "upstash-box",
+    name: "Upstash Box",
+    href: "/docs/providers/upstash-box/",
+    experimental: true,
+    note: "Deterministic fixtures cover ephemeral sandbox lifecycle, finite commands and files. Live qualification is pending.",
+  },
+  {
     id: "modal",
     name: "Modal",
     experimental: true,
@@ -574,7 +646,14 @@ export function renderSupportOverview(
   metadata: readonly SupportMetadata[] = officialSupport,
   statuses: readonly ProviderStatus[] = providerStatus,
 ) {
-  const profiles = metadata.map((profile) => supportMetadataSchema.parse(profile));
+  const supportedIds = new Set(
+    statuses.flatMap((status) => (status.experimental ? [] : [status.id])),
+  );
+
+  const profiles = metadata.flatMap((profile) =>
+    supportedIds.has(profile.id) ? [supportMetadataSchema.parse(profile)] : [],
+  );
+
   const records = reports.flatMap((report) => parseReport(report).records);
 
   const live = (status: ProviderStatus) => {

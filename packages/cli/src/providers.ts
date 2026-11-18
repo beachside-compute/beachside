@@ -82,7 +82,7 @@ export const providers: readonly OfficialProvider[] = [
   official(
     "upstash-box",
     "upstashBoxAdapter",
-    false,
+    true,
     "Upstash Box ephemeral sandboxes",
     "UPSTASH_BOX_API_KEY",
   ),
