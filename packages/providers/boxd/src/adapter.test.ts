@@ -5,6 +5,7 @@ import { AdapterError } from "@beachside/adapter";
 import { adapterSuite, snapshotSuite } from "@beachside/adapter/testing";
 import { Beachside, OutcomeUnknownError, Preserve } from "beachside";
 import { createBoxdAdapter } from "./adapter";
+import { expectRejection } from "./expect-rejection.test-support";
 import { boxdFixture } from "./fixture.test-support";
 import { regionTarget, type CallContext } from "./transport";
 
@@ -30,18 +31,6 @@ function helperMissing<T>(ctx: CallContext, action: () => Promise<T>): () => Pro
 afterEach(() => {
   for (const fixture of fixtures.splice(0)) fixture.close();
 });
-
-// Await fixture I/O before using an expect matcher. Bun 1.4 can stall
-// the loopback gRPC connection while matching a pending rejection.
-async function expectRejection(promise: Promise<unknown>) {
-  try {
-    await promise;
-  } catch (error) {
-    return expect(error);
-  }
-
-  throw new Error("Expected a rejected promise");
-}
 
 async function setup() {
   const fixture = await boxdFixture();
