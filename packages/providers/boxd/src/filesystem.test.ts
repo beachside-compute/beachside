@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Beachside } from "beachside";
 import { createBoxdAdapter } from "./adapter";
+import { expectRejection } from "./expect-rejection.test-support";
 import { boxdFixture } from "./fixture.test-support";
 
 const roots: string[] = [];
@@ -279,7 +280,7 @@ test("producer failures and byte-limit failure keep discoverable staging", async
       throw Error("producer stopped");
     }
 
-    await expect(f.box.writeFileStream(join(f.root, "failed"), failed())).rejects.toMatchObject({
+    (await expectRejection(f.box.writeFileStream(join(f.root, "failed"), failed()))).toMatchObject({
       details: {
         destination: join(f.root, "failed"),
         bytesTransferred: 2,
@@ -292,9 +293,11 @@ test("producer failures and byte-limit failure keep discoverable staging", async
       yield Uint8Array.of(2);
     }
 
-    await expect(
-      f.box.writeFileStream(join(f.root, "oversized"), oversized(), { maxBytes: 1 }),
-    ).rejects.toMatchObject({
+    (
+      await expectRejection(
+        f.box.writeFileStream(join(f.root, "oversized"), oversized(), { maxBytes: 1 }),
+      )
+    ).toMatchObject({
       code: "OUTPUT_CAPACITY",
       details: {
         destination: join(f.root, "oversized"),
@@ -305,7 +308,7 @@ test("producer failures and byte-limit failure keep discoverable staging", async
     const fifo = join(f.root, "fifo");
     execFileSync("mkfifo", [fifo]);
     const read = f.box.readFileStream(fifo)[Symbol.asyncIterator]();
-    await expect(read.next()).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+    (await expectRejection(read.next())).toMatchObject({ code: "INVALID_ARGUMENT" });
     expect(await f.box.fileExists(join(f.root, "failed"))).toBe(false);
     expect(await f.box.fileExists(join(f.root, "oversized"))).toBe(false);
   } finally {
