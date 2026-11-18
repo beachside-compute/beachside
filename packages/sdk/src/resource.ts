@@ -10,6 +10,7 @@ import type { OperationKind, RetainedArtifact, Scope } from "@beachside/adapter"
 import { z } from "zod";
 import type { AdapterImage, AdapterSnapshot, AdapterVolume } from "./resources";
 import type { SetupCreateOptions } from "./setup";
+import type { SandboxCredentials } from "./sandbox-credentials";
 import {
   CreateEnv,
   CreateSandboxInput,
@@ -64,6 +65,8 @@ export const Image = {
 export type NetworkPolicy = "blocked" | "internet" | "allow" | (string & {});
 
 export type CreateInput = {
+  /** Short-lived credentials applied to commands started through this connection. */
+  credentials?: SandboxCredentials;
   environment?: ImageInput;
   requirements?: { snapshot: SnapshotRequest };
   mounts?: MountSpec[];

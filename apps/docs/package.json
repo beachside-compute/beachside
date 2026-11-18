@@ -23,6 +23,7 @@
     "posthog-js": "^1.448.0"
   },
   "devDependencies": {
+    "@beachside/credential-client": "workspace:*",
     "@astrojs/check": "0.9.6",
     "beachside": "workspace:*",
     "@beachside-internal/provider-fake": "workspace:*",

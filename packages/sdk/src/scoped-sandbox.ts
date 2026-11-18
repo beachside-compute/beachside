@@ -23,7 +23,7 @@ export type SandboxScopeCallbackOutcome<T> =
   | { status: "completed"; value: T }
   | { status: "failed"; error: unknown };
 
-/** Destruction failed or was not confirmed; neither work nor cleanup is replayed. */
+/** An owned sandbox cleanup obligation failed or could not be confirmed. */
 export class SandboxCleanupError<T = unknown> extends BeachsideError {
   readonly sandboxId: string;
   readonly sandboxReference: SandboxReference | null;
@@ -37,7 +37,7 @@ export class SandboxCleanupError<T = unknown> extends BeachsideError {
     const failure = cleanupError instanceof BeachsideError ? cleanupError : undefined;
     super(
       "SANDBOX_CLEANUP_FAILED",
-      "Owned sandbox cleanup was not confirmed; inspect the cleanup error and recovery reference",
+      "Owned sandbox cleanup was not fully confirmed; inspect the cleanup error and recovery reference",
       failure?.effect ?? "possible",
       failure?.outcome,
       failure?.reference ?? cleanupOperation?.reference,
@@ -87,6 +87,20 @@ export async function withSandbox<T>(
     callbackOutcome = { status: "failed", error };
   }
 
+  await cleanupOwnedSandbox(sandbox, callbackOutcome, timeout, storage);
+
+  if (callbackOutcome.status === "failed") throw callbackOutcome.error;
+
+  return callbackOutcome.value;
+}
+
+/** A fresh cleanup budget, independent of work cancellation. */
+export async function cleanupOwnedSandbox<T>(
+  sandbox: SandboxHandle<true>,
+  callbackOutcome: SandboxScopeCallbackOutcome<T>,
+  timeout = 30_000,
+  storage?: SandboxScopeOptions["storage"],
+): Promise<void> {
   const controller = new AbortController();
 
   const timer = setTimeout(
@@ -111,8 +125,4 @@ export async function withSandbox<T>(
   } finally {
     clearTimeout(timer);
   }
-
-  if (callbackOutcome.status === "failed") throw callbackOutcome.error;
-
-  return callbackOutcome.value;
 }

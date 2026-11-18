@@ -17,6 +17,7 @@
 | Archil adapter (experimental) | `@beachside/archil` | `@beachside/archil` |
 | exe.dev adapter (experimental) | `@beachside/exe-dev` | `@beachside/exe-dev` |
 | Official Vercel adapter | `@beachside/vercel` | `@beachside/vercel` |
+| Credential broker client | `@beachside/credential-client` | `@beachside/credential-client` |
 | Command line (`beachside` binary) | `@beachside/cli` | none; run `beachside` |
 | Custom adapter authoring | `@beachside/adapter` | `@beachside/adapter` |
 | Adapter conformance tests | included in `@beachside/adapter` | `@beachside/adapter/testing` |
@@ -68,7 +69,7 @@ Private implementation workspaces may be bundled into adapter artifacts. Their u
 
 ## Implementation and release acceptance
 
-The initial 0.1.0 fixed, lockstep public release group is `@beachside/adapter`, `beachside`, `@beachside/daytona`, `@beachside/e2b`, `@beachside/boxd`, `@beachside/boat`, `@beachside/runloop`, and `@beachside/vercel`; `@beachside/cli` joins the group from its first release, experimental `@beachside/modal` from 0.7.0 and experimental `@beachside/freestyle` and `@beachside/archil` from their first releases. Separate installation does not require independent release infrastructure. Keep the existing release machinery and release the actual distributable graph.
+The initial 0.1.0 fixed, lockstep public release group is `@beachside/adapter`, `beachside`, `@beachside/daytona`, `@beachside/e2b`, `@beachside/boxd`, `@beachside/boat`, `@beachside/runloop`, and `@beachside/vercel`; `@beachside/cli` joins the group from its first release, experimental `@beachside/modal` from 0.7.0 and experimental `@beachside/freestyle` and `@beachside/archil` from their first releases. `@beachside/credential-client` joins the lockstep group from its first release. Separate installation does not require independent release infrastructure. Keep the existing release machinery and release the actual distributable graph.
 
 Qualify real tarballs in isolated consumers: core alone, core plus each released provider, combined Daytona/E2B, and an independently authored adapter. Verify strict NodeNext declarations, Node/Bun execution, private-workspace isolation and npm/pnpm/Bun installation. Archive overrides may resolve transitive local packages without adding undeclared root dependencies.
 

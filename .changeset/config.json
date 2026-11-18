@@ -11,6 +11,7 @@
     [
       "@beachside/adapter",
       "beachside",
+      "@beachside/credential-client",
       "@beachside/daytona",
       "@beachside/e2b",
       "@beachside/boxd",

@@ -1,6 +1,7 @@
 [
   "packages/adapter",
   "packages/sdk",
+  "packages/credential-client",
   "packages/providers/daytona",
   "packages/providers/e2b",
   "packages/providers/boxd",

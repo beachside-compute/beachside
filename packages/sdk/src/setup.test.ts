@@ -17,7 +17,16 @@ import {
   sandboxReference,
   type ExecInput as NativeExecInput,
 } from "@beachside/adapter";
-import { Beachside, BeachsideError, Setup, SetupFailedError, type SetupEvent } from "./index";
+import {
+  Beachside,
+  BeachsideError,
+  SandboxCleanupError,
+  SandboxCredentialRevocationError,
+  Setup,
+  SetupFailedError,
+  type SandboxCredentials,
+  type SetupEvent,
+} from "./index";
 import {
   planSetup,
   readSetupState,
@@ -64,7 +73,7 @@ function shell(
 }
 
 /** A provider model whose sandboxes are local folders and whose exec runs a real `sh`. */
-function fixture() {
+function fixture(options: { credentialEgress?: boolean; destroyFailure?: boolean } = {}) {
   const homes = new Map<string, string>();
   const destroyed: string[] = [];
   const creates: unknown[] = [];
@@ -79,7 +88,7 @@ function fixture() {
         defaultImage: { kind: "prepared" as const, value: "base" },
         supports: {
           images: ["prepared" as const],
-          network: ["blocked"],
+          network: options.credentialEgress ? ["internet", "blocked"] : ["blocked"],
           exec: { commands: ["argv" as const, "shell" as const], maxOutputBytes: 1_048_576 },
         },
         create: {
@@ -126,6 +135,8 @@ function fixture() {
           },
           async submit(input) {
             destroyed.push(input.id);
+
+            if (options.destroyFailure) return null;
 
             return { computeStopped: true as const, retainedResources: [] };
           },
@@ -608,6 +619,186 @@ test("a parallel group runs every step as one setup step and fails after all fin
     await expect(
       client.sandboxes.create({ setup: ["true"], startup: [Setup.parallel(["a", "b"])] }),
     ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+  } finally {
+    await client.close();
+  }
+});
+
+const brokerToken = "fixture-opaque-sandbox-grant";
+
+function sandboxGrant(options: { acquireFailure?: boolean; revokeFailure?: boolean } = {}) {
+  const history: string[] = [];
+
+  const credentials: SandboxCredentials = {
+    async acquire(signal) {
+      expect(signal.aborted).toBe(false);
+      history.push("acquire");
+
+      if (options.acquireFailure) throw new Error(brokerToken);
+
+      return {
+        env: {
+          OPENAI_API_KEY: brokerToken,
+          OPENAI_BASE_URL: "https://broker.example.invalid/gateway/gpt/v1",
+        },
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        async revoke(signal) {
+          expect(signal.aborted).toBe(false);
+          history.push("revoke");
+
+          if (options.revokeFailure) throw new Error(brokerToken);
+        },
+      };
+    },
+  };
+
+  return { credentials, history };
+}
+
+test("credentialed create supplies command and setup env, reopens locally, and revokes on scoped cleanup", async () => {
+  const f = fixture({ credentialEgress: true });
+  const client = await f.connect();
+  const other = await f.connect();
+  const { credentials, history } = sandboxGrant();
+  const command = ["sh", "-c", 'test -n "$OPENAI_API_KEY" && printf "%s" "$OPENAI_BASE_URL"'];
+
+  try {
+    const result = await client.sandboxes.with(
+      {
+        network: "internet",
+        credentials,
+        setup: ['test -n "$OPENAI_API_KEY" && touch setup-used-credential'],
+      },
+      async (box) => {
+        expect(history).toEqual(["acquire"]);
+        expect(JSON.stringify(f.creates)).not.toContain(brokerToken);
+        expect(JSON.stringify(box.reference)).not.toContain(brokerToken);
+        expect((await box.checkSnapshot()).status).toBe("unsupported");
+        expect((await box.checkFork()).status).toBe("unsupported");
+        expect((await box.capabilities()).snapshots.capture.status).toBe("unsupported");
+        await expect(box.snapshot()).rejects.toMatchObject({ code: "UNSUPPORTED", effect: "none" });
+        await expect(box.fork()).rejects.toMatchObject({ code: "UNSUPPORTED", effect: "none" });
+
+        const alias = await client.sandboxes.get(box.reference!);
+        const external = await other.sandboxes.get(box.reference!);
+        await expect(external.exec(command)).rejects.toMatchObject({ code: "NONZERO_EXIT" });
+        expect((await alias.exec(["sh", "-c", "test -f setup-used-credential"])).exitCode).toBe(0);
+        expect((await alias.checkSnapshot()).status).toBe("unsupported");
+        const output = await alias.exec(command);
+
+        return output.stdoutText();
+      },
+    );
+
+    expect(result).toBe("https://broker.example.invalid/gateway/gpt/v1");
+    expect(history).toEqual(["acquire", "revoke"]);
+    expect(f.destroyed).toEqual(["box-1"]);
+  } finally {
+    await Promise.all([client.close(), other.close()]);
+  }
+});
+
+test("credential preflight catches blocked egress and advanced creation before allocating", async () => {
+  const f = fixture({ credentialEgress: true });
+  const client = await f.connect();
+  const { credentials, history } = sandboxGrant();
+
+  try {
+    await expect(
+      client.sandboxes.create({ network: "blocked", credentials }),
+    ).rejects.toMatchObject({ code: "UNSUPPORTED" });
+    await expect(client.sandboxes.submitCreate({ credentials })).rejects.toMatchObject({
+      code: "UNSUPPORTED",
+    });
+    expect((await client.sandboxes.checkCreate({ network: "internet", credentials })).status).toBe(
+      "supported",
+    );
+    expect(f.creates).toHaveLength(0);
+    expect(history).toHaveLength(0);
+  } finally {
+    await client.close();
+  }
+});
+
+test("failed credential acquisition retains confirmed ownership when compute cleanup is uncertain", async () => {
+  const f = fixture({ credentialEgress: true, destroyFailure: true });
+  const client = await f.connect();
+  const { credentials } = sandboxGrant({ acquireFailure: true });
+
+  try {
+    const error = await client.sandboxes
+      .create({ network: "internet", credentials })
+      .catch((error) => error);
+
+    expect(error).toBeInstanceOf(SandboxCleanupError);
+    expect(error.sandboxId).toBe("box-1");
+    expect(error.sandboxReference.nativeId).toBe("box-1");
+    expect(error.cleanupReference.kind).toBe("destroy");
+    expect(error.callbackOutcome.error).toMatchObject({
+      message: "Sandbox credential acquisition failed",
+      code: "UNAVAILABLE",
+    });
+    expect(f.destroyed).toEqual(["box-1"]);
+  } finally {
+    await client.close();
+  }
+});
+
+test("setup failure revokes and destroys by default, or revokes and retains with keep", async () => {
+  const f = fixture({ credentialEgress: true });
+  const client = await f.connect();
+
+  try {
+    for (const onSetupFailure of [undefined, "keep"] as const) {
+      const { credentials, history } = sandboxGrant();
+
+      const result = await client.sandboxes
+        .create({
+          network: "internet",
+          credentials,
+          setup: ["exit 7"],
+          onSetupFailure,
+        })
+        .catch((error) => error);
+
+      expect(result).toBeInstanceOf(SetupFailedError);
+      expect(history).toEqual(["acquire", "revoke"]);
+
+      if (onSetupFailure === "keep") {
+        expect(result.sandbox.id).toBe("box-2");
+        await expect(result.sandbox.exec(["true"])).rejects.toMatchObject({
+          code: "UNAUTHENTICATED",
+        });
+        expect(f.destroyed).toEqual(["box-1"]);
+        await result.sandbox.destroy();
+      }
+    }
+
+    expect(f.destroyed).toEqual(["box-1", "box-2"]);
+  } finally {
+    await client.close();
+  }
+});
+
+test("failed revocation preserves an already confirmed compute destroy outcome", async () => {
+  const f = fixture({ credentialEgress: true });
+  const client = await f.connect();
+  const { credentials, history } = sandboxGrant({ revokeFailure: true });
+
+  try {
+    const box = await client.sandboxes.create({ network: "internet", credentials });
+    const error = await box.destroy().catch((error) => error);
+    expect(error).toBeInstanceOf(SandboxCredentialRevocationError);
+    expect(error).toMatchObject({
+      code: "CREDENTIAL_REVOCATION_FAILED",
+      effect: "applied",
+      sandboxId: box.id,
+      destroyOutcome: { computeStopped: true, retainedResources: [] },
+      revocationError: { code: "UNAVAILABLE", message: "Sandbox credential revocation failed" },
+      reference: { kind: "destroy" },
+    });
+    expect(history).toEqual(["acquire", "revoke"]);
+    expect(f.destroyed).toEqual(["box-1"]);
   } finally {
     await client.close();
   }

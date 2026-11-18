@@ -56,6 +56,7 @@ export function noteOperation<T extends object>(
 }
 
 const codes = new Set([
+  "CREDENTIAL_REVOCATION_FAILED",
   "INVALID_ARGUMENT",
   "INVALID_RESPONSE",
   "UNSUPPORTED",

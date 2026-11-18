@@ -1,4 +1,19 @@
-import { withSandbox, type SandboxScopeOptions } from "./scoped-sandbox";
+import {
+  cleanupOwnedSandbox,
+  withSandbox,
+  SandboxCleanupError,
+  type SandboxScopeOptions,
+} from "./scoped-sandbox";
+import {
+  acquireSandboxCredentials,
+  commandEnvironment,
+  destroyRevocation,
+  hasSandboxCredentials,
+  releaseCredentialState,
+  revokeSandboxCredentials,
+  SandboxCredentialRevocationError,
+  type SandboxCredentials,
+} from "./sandbox-credentials";
 import {
   applySetup,
   prepareSetup,
@@ -510,6 +525,8 @@ function sandboxInput(id: string, reference?: SandboxReference | null) {
   return reference ? { id, reference } : { id };
 }
 
+const credentialCleanup = new WeakMap<object, Promise<BeachsideError | undefined>>();
+
 /** Use the OperationHandle type for consumer annotations. This compatibility runtime class remains supported. */
 export class AdapterOperation<T, K extends OperationKind = OperationKind> {
   readonly durability = "process" as const;
@@ -658,6 +675,54 @@ export class AdapterOperation<T, K extends OperationKind = OperationKind> {
     return this.observeWithSignal(this.client.signal);
   }
   private async observeWithSignal(signal: AbortSignal): Promise<T | null> {
+    const revocation = credentialCleanup.get(this);
+
+    if (!revocation) return this.observeResult(signal);
+
+    const id = this.reference.sandboxId!;
+    const ref = this.reference.sandboxReference ?? null;
+    let value: T | null;
+
+    try {
+      value = await this.observeResult(signal);
+    } catch (destroyError) {
+      if (signal.aborted) throw destroyError;
+      const failure = await raceAbort(revocation, signal).catch(() => undefined);
+
+      if (failure)
+        throw new SandboxCredentialRevocationError(
+          failure,
+          id,
+          ref,
+          undefined,
+          destroyError,
+          this.reference,
+        );
+      throw destroyError;
+    }
+
+    if (value === null) return null;
+
+    const failure = await raceAbort(revocation, signal).catch(
+      () => new BeachsideError("WAIT_ABORTED", "Stopped waiting for sandbox credential revocation"),
+    );
+
+    if (failure)
+      // SAFETY: The revocation map is populated only for the decoded destroy operation.
+      throw new SandboxCredentialRevocationError(
+        failure,
+        id,
+        ref,
+        value as DestroyValue,
+        undefined,
+        this.reference,
+      );
+
+    releaseCredentialState(this.client, id, ref);
+
+    return value;
+  }
+  private async observeResult(signal: AbortSignal): Promise<T | null> {
     if (this.continuing)
       throw new BeachsideError("CONFLICT", "Operation continuation is already active");
 
@@ -979,7 +1044,7 @@ export class AdapterSandbox {
         {
           command: input.command,
           cwd: input.cwd,
-          env: input.env,
+          env: commandEnvironment(this.client, this, input.env),
           stdin: "pipe",
           output: { mode: "stream", format: "bytes" },
         },
@@ -1038,7 +1103,9 @@ export class AdapterSandbox {
       return startProcess(
         this.client,
         sandboxInput(this.id, this.reference),
-        input,
+        hasSandboxCredentials(this.client, this)
+          ? { ...input, env: commandEnvironment(this.client, this, input.env) }
+          : input,
         options,
         () => control.active,
       );
@@ -1309,6 +1376,9 @@ export class AdapterSandbox {
     assertSignal(signal);
     request = validateResourceInput(ForkRequest, request, "Invalid fork request");
 
+    if (hasSandboxCredentials(this.client, this))
+      return { status: "unsupported", reason: "Sandbox credentials cannot be carried into a fork" };
+
     if (!this.reference)
       return { status: "unsupported", reason: "Fork needs a verified sandbox reference" };
 
@@ -1323,10 +1393,24 @@ export class AdapterSandbox {
 
     return problem ? { status: "unsupported", reason: problem } : caps.fork;
   }
-  capabilities(): Promise<AdapterCapabilities> {
-    return internalMethod(this.client.capabilities)({
+  async capabilities(): Promise<AdapterCapabilities> {
+    const capabilities = await internalMethod(this.client.capabilities)({
       sandbox: sandboxInput(this.id, this.reference),
     });
+
+    if (!hasSandboxCredentials(this.client, this)) return capabilities;
+
+    return {
+      ...capabilities,
+      fork: { status: "unsupported", reason: "Sandbox credentials cannot be carried into a fork" },
+      snapshots: {
+        ...capabilities.snapshots,
+        capture: {
+          status: "unsupported",
+          reason: "Sandbox credentials cannot be carried into a snapshot",
+        },
+      },
+    };
   }
   async checkSnapshot(request: SnapshotRequest = {}): Promise<Support<SnapshotPlan>> {
     return this.checkSnapshotWithSignal(request, this.client.signal);
@@ -1337,6 +1421,12 @@ export class AdapterSandbox {
   ): Promise<Support<SnapshotPlan>> {
     assertSignal(signal);
     request = validateResourceInput(SnapshotRequest, request, "Invalid snapshot request");
+
+    if (hasSandboxCredentials(this.client, this))
+      return {
+        status: "unsupported",
+        reason: "Sandbox credentials cannot be carried into a snapshot",
+      };
 
     const caps = await internalMethod(this.client.capabilities)(
       { sandbox: sandboxInput(this.id, this.reference) },
@@ -1547,7 +1637,7 @@ export class AdapterSandbox {
         sandbox: sandboxInput(this.id, this.reference),
         command: request.command,
         cwd: request.cwd,
-        env: request.env,
+        env: commandEnvironment(this.client, this, request.env),
         stdin: request.stdin,
         deadlineSeconds: request.deadlineSeconds,
         maxOutputBytes: request.maxOutputBytes,
@@ -1579,11 +1669,20 @@ export class AdapterSandbox {
       this.client.ensureOpen();
       const control = processControl(this.client, this.id);
 
+      let execution = input;
+
+      if (hasSandboxCredentials(this.client, this)) {
+        const request: ExecInput =
+          "command" in input ? input : { command: { kind: "argv", argv: [...input] } };
+
+        execution = { ...request, env: commandEnvironment(this.client, this, request.env) };
+      }
+
       return callbackExec(
         this.client,
         sandboxInput(this.id, this.reference),
         () => control.active,
-        input,
+        execution,
         options.onOutput ? options : { ...options, onOutput: () => undefined },
       );
     }
@@ -2064,26 +2163,50 @@ export class AdapterSandbox {
     assertSignal(options.signal);
     this.invalidateProcessControl();
 
-    const op = await this.client.submit<import("@beachside/adapter").DestroyValue>(
-      "destroy",
-      {
-        ...sandboxInput(this.id, this.reference),
-        storage: options.storage === undefined ? this.client.cleanupStorage : options.storage,
-      },
-      (result, ref) => {
-        if (
-          result.kind !== "completed" ||
-          !("computeStopped" in result.value) ||
-          !result.value.computeStopped
-        )
-          throw asUnknown(ref, "Compute termination was not confirmed");
+    const revocation = revokeSandboxCredentials(this.client, this);
 
-        return result.value;
-      },
-      { ...options, sandboxId: this.id, sandboxReference: this.reference ?? undefined },
-    );
+    try {
+      const op = await this.client.submit<DestroyValue>(
+        "destroy",
+        {
+          ...sandboxInput(this.id, this.reference),
+          storage: options.storage === undefined ? this.client.cleanupStorage : options.storage,
+        },
+        (result, ref) => {
+          if (
+            result.kind !== "completed" ||
+            !("computeStopped" in result.value) ||
+            !result.value.computeStopped
+          )
+            throw asUnknown(ref, "Compute termination was not confirmed");
 
-    return op;
+          return result.value;
+        },
+        { ...options, sandboxId: this.id, sandboxReference: this.reference ?? undefined },
+      );
+
+      if (revocation) credentialCleanup.set(op, revocation);
+
+      return op;
+    } catch (destroyError) {
+      if (!revocation || options.signal?.aborted || this.client.signal.aborted) throw destroyError;
+
+      const signal = options.signal
+        ? AbortSignal.any([options.signal, this.client.signal])
+        : this.client.signal;
+
+      const failure = await raceAbort(revocation, signal).catch(() => undefined);
+
+      if (failure)
+        throw new SandboxCredentialRevocationError(
+          failure,
+          this.id,
+          this.reference,
+          undefined,
+          destroyError,
+        );
+      throw destroyError;
+    }
   }
   async destroy(
     options: { signal?: AbortSignal; storage?: "require-durable" | "allow-unconfirmed" } = {},
@@ -2613,6 +2736,10 @@ export class AdapterDirectClient {
       checkCreate: (input) => this.checkCreate(input),
       create: async (input, options = {}) => {
         const { setupOptions, rest } = splitSetup(input);
+        const { credentials, request } = this.splitCredentials(rest);
+        const problem = credentials && this.credentialProblem(request);
+
+        if (problem) throw new UnsupportedFeatureError("sandbox credentials", [problem]);
 
         if (wantsSetup(setupOptions) && !this.session.exec)
           throw new BeachsideError("UNSUPPORTED", "Setup needs exec, which this adapter lacks");
@@ -2620,9 +2747,18 @@ export class AdapterDirectClient {
 
         const box = await waitFor(
           this.telemetry,
-          await internalMethod(this.submitCreate)(rest, options),
+          await internalMethod(this.submitCreate)(request, options),
           options,
         );
+
+        if (credentials)
+          return this.configureCredentialedSandbox(
+            box,
+            credentials,
+            resolved,
+            setupOptions,
+            options.signal,
+          );
 
         if (!wantsSetup(setupOptions)) return box;
 
@@ -2713,8 +2849,85 @@ export class AdapterDirectClient {
     });
   }
   async checkCreate(input?: CreateInput): Promise<Support<CreatePlan>> {
-    // Setup does not change what the provider is asked for.
-    return this.checkCreateWithSignal(splitSetup(input).rest, this.signal);
+    // Setup and credentials are local to the SDK.
+    const { credentials, request } = this.splitCredentials(splitSetup(input).rest);
+    const problem = credentials && this.credentialProblem(request);
+
+    if (problem) return { status: "unsupported", reason: problem };
+
+    return this.checkCreateWithSignal(request, this.signal);
+  }
+  private splitCredentials(input: CreateInput | undefined) {
+    if (!input || !z.record(z.string(), z.unknown()).safeParse(input).success)
+      return { request: input };
+    const { credentials, ...request } = input;
+
+    if (
+      credentials !== undefined &&
+      !z.object({ acquire: z.function() }).safeParse(credentials).success
+    )
+      throw new BeachsideError("INVALID_ARGUMENT", "Invalid sandbox credential configuration");
+
+    return { credentials, request };
+  }
+  private credentialProblem(input: CreateInput | undefined): string | undefined {
+    const checked = validateCreate(
+      input,
+      this.session.defaultImage,
+      this.session.defaultNetworkPolicy,
+      this.session.networkPolicyAliases,
+    );
+
+    if (!this.session.exec || !this.session.supports.exec)
+      return "Sandbox credentials require command execution";
+
+    if (checked.networkPolicy === "blocked") return "Sandbox credentials require broker egress";
+
+    if (checked.requirements?.snapshot)
+      return "Snapshot requirements are unavailable with sandbox credentials";
+  }
+  private async configureCredentialedSandbox(
+    box: AdapterSandbox,
+    credentials: SandboxCredentials,
+    setup: Awaited<ReturnType<typeof prepareSetup>>,
+    options: SetupCreateOptions,
+    signal?: AbortSignal,
+  ): Promise<AdapterSandbox> {
+    try {
+      await acquireSandboxCredentials(this, box, credentials, signal);
+    } catch (error) {
+      await cleanupOwnedSandbox(box, { status: "failed", error });
+      throw error;
+    }
+
+    if (!wantsSetup(options)) return box;
+
+    try {
+      // Keep ownership here so cancellation cannot cancel grant revocation or destruction.
+      return await applySetup(
+        box,
+        box.setupHost(),
+        setup,
+        { ...options, onSetupFailure: "keep" },
+        "created",
+        signal,
+      );
+    } catch (error) {
+      if (options.onSetupFailure === "keep") {
+        const failure = await revokeSandboxCredentials(this, box);
+
+        if (failure)
+          throw new SandboxCleanupError(
+            box,
+            { status: "failed", error },
+            new SandboxCredentialRevocationError(failure, box.id, box.reference),
+          );
+      } else {
+        await cleanupOwnedSandbox(box, { status: "failed", error });
+      }
+
+      throw error;
+    }
   }
   private async checkCreateWithSignal(
     input: CreateInput | undefined,
@@ -2783,6 +2996,11 @@ export class AdapterDirectClient {
         "INVALID_ARGUMENT",
         "Setup runs with sandboxes.create() or sandboxes.with(); after submitCreate(), call box.runSetup()",
       );
+
+    if (input?.credentials !== undefined)
+      throw new UnsupportedFeatureError("submitCreate credentials", [
+        "Configure credentials through sandboxes.create() or sandboxes.with()",
+      ]);
 
     const request = validateCreate(
       input,
@@ -3427,8 +3645,8 @@ export class AdapterDirectClient {
           undefined,
           "exec",
         );
-      case "destroy":
-        return new AdapterOperation(
+      case "destroy": {
+        const op = new AdapterOperation(
           this,
           reference,
           (result, ref) => {
@@ -3441,6 +3659,18 @@ export class AdapterDirectClient {
           undefined,
           "destroy",
         );
+
+        const revocation = destroyRevocation(
+          this,
+          reference.sandboxId!,
+          reference.sandboxReference ?? null,
+        );
+
+        if (revocation) credentialCleanup.set(op, revocation);
+
+        return op;
+      }
+
       case "file_mkdir":
       case "file_remove":
         return new AdapterOperation(

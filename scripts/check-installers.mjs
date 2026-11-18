@@ -28,6 +28,7 @@ const selected = new Map(
 for (const name of [
   "@beachside/adapter",
   "beachside",
+  "@beachside/credential-client",
   "@beachside/daytona",
   "@beachside/e2b",
   "@beachside/vercel",
@@ -63,6 +64,23 @@ import { adapterSuite } from ${JSON.stringify(`${adapterName}/testing`)};
 const definition: typeof defineAdapter = defineAdapter;
 const suite: typeof adapterSuite = adapterSuite;
 void [definition, suite];
+`,
+  },
+  {
+    name: "credential-client",
+    packageName: "@beachside/credential-client",
+    overrides: [],
+    runtime: `
+import { createCredentialBroker } from "@beachside/credential-client";
+const broker = createCredentialBroker({ url: "https://broker.example.invalid", auth: { apiKey: "fixture_credential_broker_control_key" } });
+if (typeof broker.sandbox({ github: "github" }).acquire !== "function") throw new Error("Packed credential client import failed");
+`,
+    types: `
+import { createCredentialBroker, type BrokerGrant, type CredentialBrokerOptions } from "@beachside/credential-client";
+async function issue(options: CredentialBrokerOptions): Promise<BrokerGrant> {
+  return createCredentialBroker(options).issue({ integrations: ["github"] });
+}
+void issue;
 `,
   },
   {

@@ -10,6 +10,11 @@ const target = fileURLToPath(
 
 const surfaces = [
   ["SDK", "beachside", "packages/sdk/dist/index.d.ts"],
+  [
+    "Credential broker client",
+    "@beachside/credential-client",
+    "packages/credential-client/dist/index.d.ts",
+  ],
   ["Daytona adapter", "@beachside/daytona", "packages/providers/daytona/dist/index.d.ts"],
   ["E2B adapter", "@beachside/e2b", "packages/providers/e2b/dist/index.d.ts"],
   ["Experimental Modal adapter", "@beachside/modal", "packages/providers/modal/dist/index.d.ts"],
