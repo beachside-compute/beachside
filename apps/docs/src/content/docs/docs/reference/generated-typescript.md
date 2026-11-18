@@ -168,17 +168,24 @@ Import from `beachside`.
 
 Import from `@beachside/credential-client`.
 
-| Export                    | Kind      |
-| ------------------------- | --------- |
-| `BrokerGrant`             | interface |
-| `BrokerGrantRequest`      | interface |
-| `createCredentialBroker`  | function  |
-| `CredentialBrokerAuth`    | type      |
-| `CredentialBrokerError`   | class     |
-| `CredentialBrokerOptions` | interface |
-| `githubActionsOidc`       | function  |
-| `SandboxGrant`            | interface |
-| `SandboxIntegrations`     | interface |
+| Export                         | Kind      |
+| ------------------------------ | --------- |
+| `BrokerGrant`                  | interface |
+| `BrokerGrantRequest`           | interface |
+| `BrokerIntegration`            | type      |
+| `BrokerIntegrationCredential`  | type      |
+| `BrokerIntegrationInput`       | type      |
+| `BrokerIntegrationKind`        | type      |
+| `BrokerRequestOptions`         | type      |
+| `createCredentialBroker`       | function  |
+| `createCredentialBrokerAdmin`  | re-export |
+| `CredentialBrokerAdminOptions` | type      |
+| `CredentialBrokerAuth`         | type      |
+| `CredentialBrokerError`        | re-export |
+| `CredentialBrokerOptions`      | interface |
+| `githubActionsOidc`            | function  |
+| `SandboxGrant`                 | interface |
+| `SandboxIntegrations`          | interface |
 
 ## Daytona adapter
 

@@ -1,5 +1,32 @@
 import type { BeachsideClient } from "beachside";
-import { createCredentialBroker, type CredentialBrokerOptions } from "@beachside/credential-client";
+import {
+  createCredentialBroker,
+  createCredentialBrokerAdmin,
+  type CredentialBrokerAdminOptions,
+  type CredentialBrokerOptions,
+} from "@beachside/credential-client";
+
+/** Prepare the two integrations used by runOpenCode on a new deployment. */
+export async function provisionOpenCodeBroker(
+  options: CredentialBrokerAdminOptions,
+  upstream: { github: string; openrouter: string },
+) {
+  const admin = createCredentialBrokerAdmin(options);
+
+  const github = await admin.integrations.create({
+    id: "github-work",
+    kind: "github",
+    credential: { source: "encrypted-store", value: upstream.github },
+  });
+
+  const openrouter = await admin.integrations.create({
+    id: "router-work",
+    kind: "openrouter",
+    credential: { source: "encrypted-store", value: upstream.openrouter },
+  });
+
+  return admin.issuerPermissions.set([github.id, openrouter.id]);
+}
 
 export async function runOpenCode(
   client: BeachsideClient,

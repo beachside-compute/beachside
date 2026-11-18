@@ -12,6 +12,7 @@ const endpoint = "https://collector.test/v1/traces";
 const collectorAuthorization = "Bearer collector-secret-canary";
 
 const apiKey = "orchestrator-secret-canary-123456789";
+const adminKey = "administrator-secret-canary-123456789";
 
 const upstreamKey = "upstream-secret-canary";
 
@@ -86,17 +87,10 @@ function fixture(bindings: TraceExportBindings, collectorStatus = 200) {
       compatibilityDate: "2026-09-25",
       durableObjects: { REGISTRY: { className: "GrantRegistry", useSQLite: true } },
       bindings: {
-        BROKER_API_KEY: apiKey,
-        BROKER_CONFIG: JSON.stringify({
-          integrations: [
-            {
-              kind: "openai",
-              id: "trace-canary",
-              credential: { source: "worker-secret", binding: "CREDENTIAL_OPENAI" },
-            },
-          ],
-        }),
-        CREDENTIAL_OPENAI: upstreamKey,
+        BROKER_ADMIN_KEY: adminKey,
+        BROKER_ISSUER_KEY: apiKey,
+        BROKER_ENCRYPTION_KEYS: JSON.stringify({ v1: Buffer.alloc(32, 42).toString("base64url") }),
+        BROKER_ENCRYPTION_KEY_VERSION: "v1",
         ...bindings,
       },
       async outboundService(request) {
@@ -122,11 +116,48 @@ function fixture(bindings: TraceExportBindings, collectorStatus = 200) {
     }),
   );
 
+  const provision = async () => {
+    const headers = {
+      authorization: `Bearer ${adminKey}`,
+      "content-type": "application/json",
+      traceparent: traceparent.replace(/01$/, "00"),
+    };
+
+    const created = await runtime.dispatchFetch("http://broker.test/v1/admin/integrations", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        id: "trace-canary",
+        kind: "openai",
+        credential: { source: "encrypted-store", value: upstreamKey },
+      }),
+    });
+
+    assert.equal(created.status, 201);
+    await created.text();
+
+    const permitted = await runtime.dispatchFetch(
+      "http://broker.test/v1/admin/issuer-permissions",
+      {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({ integrations: ["trace-canary"] }),
+      },
+    );
+
+    assert.equal(permitted.status, 200);
+    await permitted.text();
+  };
+
+  let provisioning: Promise<void> | undefined;
+
   return {
     exported,
     runtime,
     upstreamCalls: () => upstreamCalls,
     async issue(parent = traceparent) {
+      await (provisioning ??= provision());
+
       const response = await runtime.dispatchFetch("http://broker.test/v1/grants", {
         method: "POST",
         headers: {
@@ -198,6 +229,7 @@ test("exports safe sampled grant and gateway spans with the verified parent and 
 
       for (const canary of [
         apiKey,
+        adminKey,
         upstreamKey,
         collectorAuthorization,
         grant.token,
@@ -264,3 +296,45 @@ for (const [index, bindings] of [
     assert.equal(span, undefined);
   });
 }
+
+test("exports a static administrator span without integration IDs or request credentials", async () => {
+  const broker = fixture({ BROKER_OTLP_TRACES_ENDPOINT: endpoint });
+  const id = "admin-integration-canary";
+  const value = "admin-credential-canary";
+
+  const body = JSON.stringify({
+    id,
+    kind: "openai",
+    credential: { source: "encrypted-store", value },
+  });
+
+  try {
+    const response = await broker.runtime.dispatchFetch(
+      "http://broker.test/v1/admin/integrations",
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${adminKey}`,
+          "content-type": "application/json",
+          traceparent,
+        },
+        body,
+      },
+    );
+
+    assert.equal(response.status, 201);
+    await response.text();
+
+    const [span] = await broker.spans(1);
+    assert.equal(span.name, "beachside.broker.admin.integration.create");
+    assert.equal(span.traceId, traceId);
+    assert.equal(span.parentSpanId, parentSpanId);
+    assert.equal(span.attributes[0].value.intValue, 201);
+
+    for (const canary of [adminKey, id, value, "/v1/admin/integrations"]) {
+      assert.ok(!broker.exported[0].body.includes(canary));
+    }
+  } finally {
+    await broker.runtime.dispose();
+  }
+});

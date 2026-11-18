@@ -167,6 +167,53 @@ test("validates the token contract and sanitizes transport, auth, and HTTP failu
   });
 });
 
+test("classifies a broker grant HTTP 400 as invalid input and an OIDC HTTP 400 as authentication failure", async () => {
+  const integrations = ["github-work", "github-tools"];
+  const upstreamDetails = "fixture-error-detail-canary";
+
+  const broker = createCredentialBroker({
+    url,
+    auth: { apiKey: key },
+    async fetch(request) {
+      expect(await request.json()).toEqual({ integrations, ttlSeconds: 900 });
+
+      return new Response(upstreamDetails, { status: 400 });
+    },
+  });
+
+  await expect(broker.issue({ integrations })).rejects.toMatchObject({
+    code: "INVALID_ARGUMENT",
+    message: "Credential broker rejected the grant request",
+  });
+
+  let brokerCalls = 0;
+
+  const oidcBroker = createCredentialBroker({
+    url,
+    auth: githubActionsOidc({
+      audience: "beachside-broker",
+      env: {
+        ACTIONS_ID_TOKEN_REQUEST_URL: "https://runner.example.invalid/token",
+        ACTIONS_ID_TOKEN_REQUEST_TOKEN: "runner-token",
+      },
+      async fetch() {
+        return new Response(upstreamDetails, { status: 400 });
+      },
+    }),
+    async fetch() {
+      brokerCalls++;
+
+      return new Response(null, { status: 500 });
+    },
+  });
+
+  await expect(oidcBroker.issue({ integrations })).rejects.toMatchObject({
+    code: "UNAUTHENTICATED",
+    message: "Credential broker authentication failed",
+  });
+  expect(brokerCalls).toBe(0);
+});
+
 test("cancellation bounds a fetch or OIDC provider that ignores its signal", async () => {
   const never = () => new Promise<never>(() => undefined);
 

@@ -1,5 +1,5 @@
 import { bearer, grantTokenPattern } from "../grants/tokens";
-import type { BrokerConfig, Integration } from "../config";
+import type { IntegrationTarget } from "../integrations/types";
 
 const aiOrigins = {
   openai: "https://api.openai.com",
@@ -30,11 +30,15 @@ const sensitiveQuery =
 
 export interface Route {
   type: "api" | "git" | "ai";
-  integration: Integration;
+  integration: IntegrationTarget;
   url: URL;
 }
 
-export function route(requestUrl: URL, method: string, config: BrokerConfig): Route | undefined {
+export type RequestRoute =
+  | { type: "api" | "git"; url: URL }
+  | { type: "ai"; id: string; path: string; search: string; method: string };
+
+export function route(requestUrl: URL, method: string): RequestRoute | undefined {
   const { pathname, search } = requestUrl;
 
   for (const key of requestUrl.searchParams.keys()) {
@@ -45,25 +49,14 @@ export function route(requestUrl: URL, method: string, config: BrokerConfig): Ro
 
   if (ai) {
     const [, id, path] = ai;
-    const integration = config.integrations.find((value) => value.id === id);
 
-    if (!integration || integration.kind === "github" || !aiAllowed(integration.kind, path, method))
-      return;
-    const prefix = integration.kind === "openrouter" ? "/api" : "";
+    if (!aiAllowed("anthropic", path, method) && !aiAllowed("openai", path, method)) return;
 
-    return {
-      type: "ai",
-      integration,
-      url: new URL(`${prefix}${path}${search}`, aiOrigins[integration.kind]),
-    };
+    return { type: "ai", id, path, search, method };
   }
 
-  const github = config.integrations.find(({ kind }) => kind === "github");
-
-  if (!github) return;
-
   if (pathname === "/api/graphql" && method === "POST" && !search) {
-    return { type: "api", integration: github, url: new URL("https://api.github.com/graphql") };
+    return { type: "api", url: new URL("https://api.github.com/graphql") };
   }
 
   if (pathname === "/api/v3" || pathname.startsWith("/api/v3/")) {
@@ -73,7 +66,6 @@ export function route(requestUrl: URL, method: string, config: BrokerConfig): Ro
 
     return {
       type: "api",
-      integration: github,
       url: new URL(`https://api.github.com${path}${search}`),
     };
   }
@@ -94,9 +86,26 @@ export function route(requestUrl: URL, method: string, config: BrokerConfig): Ro
 
   return {
     type: "git",
-    integration: github,
     url: new URL(`https://github.com${remote}/${endpoint}${search}`),
   };
+}
+
+export function upstreamRoute(
+  request: RequestRoute,
+  integration: IntegrationTarget,
+): Route | undefined {
+  if (request.type !== "ai") {
+    return integration.kind === "github" ? { ...request, integration } : undefined;
+  }
+
+  const { kind } = integration;
+  const { path, search, method, id } = request;
+
+  if (kind === "github" || id !== integration.id || !aiAllowed(kind, path, method)) return;
+
+  const prefix = kind === "openrouter" ? "/api" : "";
+
+  return { type: "ai", integration, url: new URL(`${prefix}${path}${search}`, aiOrigins[kind]) };
 }
 
 function aiAllowed(kind: keyof typeof aiOrigins, path: string, method: string): boolean {
@@ -137,18 +146,18 @@ function githubAllowed(path: string, method: string): boolean {
   return ["POST", "PUT", "PATCH", "DELETE"].includes(method) && repoWrite.test(path);
 }
 
-export function sandboxToken(request: Request, target: Route): string | undefined {
+export function sandboxToken(request: Request, target: RequestRoute): string | undefined {
   const authorization = request.headers.get("authorization");
   const key = request.headers.get("x-api-key");
 
-  if (authorization && key) return;
+  if (authorization !== null && key !== null) return;
   let token = bearer(authorization);
 
   if (!token && target.type === "git") token = gitBasic(authorization);
 
   if (!token && target.type === "api") token = authorization?.match(/^token ([!-~]+)$/i)?.[1];
 
-  if (!authorization && target.integration.kind === "anthropic") token = key ?? undefined;
+  if (authorization === null && target.type === "ai") token = key ?? undefined;
 
   return token && grantTokenPattern.test(token) ? token : undefined;
 }
@@ -165,7 +174,7 @@ function gitBasic(authorization: string | null): string | undefined {
   }
 }
 
-export function brokerLink(value: string, target: Route, config: BrokerConfig): string | undefined {
+export function brokerLink(value: string, target: Route): string | undefined {
   const upstreamLink = URL.parse(value, target.url.href);
 
   if (
@@ -190,7 +199,8 @@ export function brokerLink(value: string, target: Route, config: BrokerConfig): 
   }
 
   const candidate = `${path}${upstreamLink.search}`;
-  const redirected = route(new URL(candidate, "https://broker.invalid"), "GET", config);
+  const parsed = route(new URL(candidate, "https://broker.invalid"), "GET");
+  const redirected = parsed && upstreamRoute(parsed, target.integration);
 
   return redirected?.url.href === upstreamLink.href && redirected.type === target.type
     ? candidate

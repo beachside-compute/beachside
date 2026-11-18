@@ -1,31 +1,21 @@
 import { Hono } from "hono";
-import type { Context } from "hono";
 import { z } from "zod";
 import { grantIdPattern, newGrantToken, tokenHash } from "./grants/tokens";
 import { orchestrator } from "./auth";
-import { integrationId, maxGrantTtlSeconds, parseConfig, permissionKey } from "./config";
-import type { Integration } from "./config";
+import { integrationId, maxGrantTtlSeconds, parseConfig } from "./config";
+import type { ResolvedCredential } from "./credentials/source";
 import { workerSecretSource } from "./credentials/sources/worker-secret";
-import type { WorkerSecretBindings } from "./credentials/sources/worker-secret";
+import { encryptedStoreSource } from "./credentials/sources/encrypted-store";
 import { failure, upstream, withCompletion } from "./proxy/forward";
 import { GrantRegistry } from "./grants/registry";
-import { route, sandboxToken } from "./proxy/routes";
-import type { TraceExportBindings } from "./observability/otlp";
+import { route, sandboxToken, upstreamRoute } from "./proxy/routes";
+import { managementKeyring, privateJson, privateNoContent, readJson, registry } from "./http";
+import type { Worker } from "./http";
+import { adminRoutes } from "./integrations/admin";
+import type { IntegrationSelector } from "./integrations/types";
 import { finishSpan, grantOrigin, parseTraceparent, startSpan } from "./observability/tracing";
 
 export { GrantRegistry };
-
-interface Env extends TraceExportBindings, WorkerSecretBindings {
-  BROKER_CONFIG: string;
-  BROKER_API_KEY?: string;
-  REGISTRY: DurableObjectNamespace<GrantRegistry>;
-}
-
-type Worker = { Bindings: Env };
-
-type WorkerContext = Context<Worker>;
-
-const registryName = "grant-registry";
 
 const issueRequest = z.strictObject({
   integrations: z.array(integrationId).min(1).max(16),
@@ -36,12 +26,16 @@ const app = new Hono<Worker>();
 
 app.onError(() => failure(503, "broker_unavailable"));
 
+app.route("/v1/admin", adminRoutes);
+
 app.post("/v1/grants", async (context) => {
-  const config = parseConfig(context.env.BROKER_CONFIG);
+  const config = parseConfig(context.env.BROKER_CONFIG ?? "{}");
   const request = context.req.raw;
-  const principal = await orchestrator(request, config, context.env.BROKER_API_KEY);
+  const principal = await orchestrator(request, config, context.env.BROKER_ISSUER_KEY);
 
   if (!principal) return failure(401, "orchestrator_authentication_required");
+
+  managementKeyring(context.env);
 
   const parent = parseTraceparent(request.headers.get("traceparent"));
 
@@ -55,7 +49,7 @@ app.post("/v1/grants", async (context) => {
   let status = 503;
 
   try {
-    const input = issueRequest.safeParse(await readGrantRequest(request));
+    const input = issueRequest.safeParse(await readJson(request, 4_096));
 
     if (
       !input.success ||
@@ -68,32 +62,35 @@ app.post("/v1/grants", async (context) => {
 
     const { integrations, ttlSeconds } = input.data;
 
-    if (integrations.some((id) => !principal.integrations.includes(id))) {
+    const token = newGrantToken();
+    const id = crypto.randomUUID();
+    const expiresAt = Date.now() + ttlSeconds * 1_000;
+
+    const result = await registry(context.env).create(
+      {
+        id,
+        hash: await tokenHash(token),
+        owner: principal.owner,
+        integrations,
+        expiresAt,
+        traceparent: grantOrigin(span, parent),
+      },
+      principal,
+    );
+
+    if (result === "forbidden") {
       status = 403;
 
       return failure(status, "integration_forbidden");
     }
 
-    const selected = config.integrations.filter(({ id }) => integrations.includes(id));
+    if (result === "ambiguous_github") {
+      status = 400;
 
-    if (!(await credentialsAvailable(context.env, selected))) {
-      return failure(status, "credential_unavailable");
+      return failure(status, "multiple_github_integrations");
     }
 
-    const token = newGrantToken();
-    const id = crypto.randomUUID();
-    const expiresAt = Date.now() + ttlSeconds * 1_000;
-
-    const ok = await registry(context).create({
-      id,
-      hash: await tokenHash(token),
-      owner: principal.owner,
-      permissions: selected.map(permissionKey),
-      expiresAt,
-      traceparent: grantOrigin(span, parent),
-    });
-
-    if (!ok) {
+    if (result === "limit") {
       status = 429;
 
       return failure(status, "grant_limit");
@@ -101,9 +98,9 @@ app.post("/v1/grants", async (context) => {
 
     status = 201;
 
-    return Response.json(
+    return privateJson(
       { id, token, expiresAt: new Date(expiresAt).toISOString(), integrations },
-      { status, headers: { "cache-control": "no-store" } },
+      status,
     );
   } finally {
     finishSpan(span, status);
@@ -111,10 +108,12 @@ app.post("/v1/grants", async (context) => {
 });
 
 app.delete("/v1/grants/:id", async (context) => {
-  const config = parseConfig(context.env.BROKER_CONFIG);
-  const principal = await orchestrator(context.req.raw, config, context.env.BROKER_API_KEY);
+  const config = parseConfig(context.env.BROKER_CONFIG ?? "{}");
+  const principal = await orchestrator(context.req.raw, config, context.env.BROKER_ISSUER_KEY);
 
   if (!principal) return failure(401, "orchestrator_authentication_required");
+
+  managementKeyring(context.env);
 
   const parent = parseTraceparent(context.req.header("traceparent") ?? null);
 
@@ -136,34 +135,38 @@ app.delete("/v1/grants/:id", async (context) => {
       return failure(status, "invalid_grant_id");
     }
 
-    await registry(context).revoke(id, principal.owner, principal.admin);
+    await registry(context.env).revoke(id, principal.owner);
     status = 204;
 
-    return new Response(null, { status, headers: { "cache-control": "no-store" } });
+    return privateNoContent();
   } finally {
     finishSpan(span, status);
   }
 });
 
 app.all("*", async (context) => {
-  const config = parseConfig(context.env.BROKER_CONFIG);
   const request = context.req.raw;
-  const target = route(new URL(request.url), request.method, config);
+  const incoming = route(new URL(request.url), request.method);
 
-  if (!target) return failure(404, "unsupported_route");
+  if (!incoming) return failure(404, "unsupported_route");
 
-  const token = sandboxToken(request, target);
+  const token = sandboxToken(request, incoming);
+  const isGit = incoming.type === "git";
 
-  if (!token) return failure(401, "grant_authentication_required", target.type === "git");
+  if (!token) return failure(401, "grant_authentication_required", isGit);
 
-  const store = registry(context);
+  const store = registry(context.env);
+
+  const selector: IntegrationSelector =
+    incoming.type === "ai" ? { type: "ai", id: incoming.id } : { type: "github" };
 
   const authorized = await store.authorize(
     await tokenHash(token),
-    permissionKey(target.integration),
+    selector,
+    request.headers.has("x-api-key"),
   );
 
-  if (authorized.status === "invalid") return failure(401, "grant_invalid", target.type === "git");
+  if (authorized.status === "invalid") return failure(401, "grant_invalid", isGit);
 
   if (authorized.status === "forbidden") return failure(403, "integration_forbidden");
 
@@ -189,16 +192,39 @@ app.all("*", async (context) => {
     context.executionCtx.waitUntil(store.release(authorized.leaseId).catch(() => {}));
   };
 
+  const { integration } = authorized;
+  const target = upstreamRoute(incoming, integration);
+
+  if (!target) {
+    complete(404);
+
+    return failure(404, "unsupported_route");
+  }
+
+  let credential: ResolvedCredential | undefined;
+
   try {
-    const credential = await workerSecretSource(context.env).resolve(target.integration.credential);
+    const reference = integration.credential;
+    credential =
+      reference.source === "worker-secret"
+        ? await workerSecretSource(context.env).resolve(reference)
+        : await encryptedStoreSource(integration, managementKeyring(context.env)).resolve(
+            reference,
+          );
+  } catch {
+    complete(503);
 
-    if (!credential || (credential.expiresAt !== undefined && credential.expiresAt <= Date.now())) {
-      complete(503);
+    return failure(503, "credential_unavailable");
+  }
 
-      return failure(503, "credential_unavailable");
-    }
+  if (!credential || (credential.expiresAt !== undefined && credential.expiresAt <= Date.now())) {
+    complete(503);
 
-    const response = await upstream(request, target, credential, config);
+    return failure(503, "credential_unavailable");
+  }
+
+  try {
+    const response = await upstream(request, target, credential);
 
     return withCompletion(response, (failed) => complete(response.status, failed));
   } catch {
@@ -207,54 +233,5 @@ app.all("*", async (context) => {
     return failure(502, "upstream_unavailable");
   }
 });
-
-async function credentialsAvailable(env: Env, integrations: Integration[]): Promise<boolean> {
-  const source = workerSecretSource(env);
-
-  const resolved = await Promise.all(
-    integrations.map(({ credential }) => source.resolve(credential)),
-  );
-
-  return resolved.every(
-    (credential) =>
-      credential && (credential.expiresAt === undefined || credential.expiresAt > Date.now()),
-  );
-}
-
-async function readGrantRequest(request: Request) {
-  if (!request.headers.get("content-type")?.match(/^application\/json(?:;|$)/i)) return;
-  const reader = request.body?.getReader();
-
-  if (!reader) return;
-  const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: false });
-  const maxBytes = 4_096;
-  let size = 0;
-  let text = "";
-
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-
-      if (done) return JSON.parse(text + decoder.decode());
-      size += value.byteLength;
-
-      if (size > maxBytes) {
-        await reader.cancel();
-
-        return;
-      }
-
-      text += decoder.decode(value, { stream: true });
-    }
-  } catch {
-    // Malformed UTF-8 and JSON share the same client-facing error.
-  } finally {
-    reader.releaseLock();
-  }
-}
-
-function registry(context: WorkerContext) {
-  return context.env.REGISTRY.getByName(registryName);
-}
 
 export default app;

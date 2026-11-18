@@ -1,4 +1,3 @@
-import type { BrokerConfig } from "../config";
 import type { ResolvedCredential } from "../credentials/source";
 import { brokerLink } from "./routes";
 import type { Route } from "./routes";
@@ -42,7 +41,6 @@ export async function upstream(
   request: Request,
   target: Route,
   credential: ResolvedCredential,
-  config: BrokerConfig,
 ): Promise<Response> {
   const headers = copyHeaders(request.headers, clientHeaders);
   headers.set("user-agent", "Beachside-Credential-Broker/0.0.0");
@@ -83,7 +81,7 @@ export async function upstream(
 
     const safe =
       location && ["GET", "HEAD"].includes(request.method)
-        ? brokerLink(location, target, config)
+        ? brokerLink(location, target)
         : undefined;
 
     await response.body?.cancel();
@@ -102,7 +100,7 @@ export async function upstream(
       const links = [];
 
       for (const link of pagination.matchAll(/<([^>]+)>;\s*rel="(next|prev|first|last)"/g)) {
-        const safe = brokerLink(link[1], target, config);
+        const safe = brokerLink(link[1], target);
 
         if (safe) links.push(`<${new URL(safe, request.url).href}>; rel="${link[2]}"`);
       }

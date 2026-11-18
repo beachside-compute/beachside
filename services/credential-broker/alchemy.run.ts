@@ -1,25 +1,41 @@
 import alchemy from "alchemy";
 import { DurableObjectNamespace, Worker } from "alchemy/cloudflare";
+import { assertSeparateRoleKeys } from "./src/auth";
 import { isBrokerApiKey } from "./src/auth/api-key";
 import { parseConfig } from "./src/config";
+import { encryptionKeyring } from "./src/credentials/sources/encrypted-store";
 import { traceAuthorization, traceEndpoint } from "./src/observability/otlp";
 import type { TraceExportBindings } from "./src/observability/otlp";
 
 const compatibilityDate = "2026-11-18";
 
-const config = parseConfig(alchemy.env("BROKER_CONFIG"));
+const config = parseConfig(process.env.BROKER_CONFIG ?? "{}");
 
-const key = process.env.BROKER_API_KEY;
+const adminKey = alchemy.env("BROKER_ADMIN_KEY");
+const issuerKey = process.env.BROKER_ISSUER_KEY;
 
-if (key !== undefined && !isBrokerApiKey(key)) {
+if (!isBrokerApiKey(adminKey) || (issuerKey !== undefined && !isBrokerApiKey(issuerKey))) {
   throw new Error(
-    "BROKER_API_KEY must be a random 32–256 character base64url value outside the reserved grant-token format",
+    "Broker role keys must be random 32–256 character base64url values outside the reserved grant-token format",
   );
 }
 
-if (!key && !config.githubActions) {
-  throw new Error("Configure a broker API key, GitHub Actions OIDC, or both");
+if (!issuerKey && !config.githubActions) {
+  throw new Error("Configure a broker issuer key, GitHub Actions OIDC, or both");
 }
+
+const encryptionKeys = alchemy.env("BROKER_ENCRYPTION_KEYS");
+const activeKeyVersion = alchemy.env("BROKER_ENCRYPTION_KEY_VERSION");
+
+const keyring = encryptionKeyring({
+  BROKER_ENCRYPTION_KEYS: encryptionKeys,
+  BROKER_ENCRYPTION_KEY_VERSION: activeKeyVersion,
+});
+
+assertSeparateRoleKeys(
+  { BROKER_ADMIN_KEY: adminKey, BROKER_ISSUER_KEY: issuerKey },
+  keyring.keys.values(),
+);
 
 const traceUrl = process.env.BROKER_OTLP_TRACES_ENDPOINT;
 
@@ -40,13 +56,14 @@ const registry = DurableObjectNamespace("grant-registry", {
 });
 
 const secretBindings = Object.fromEntries(
-  config.integrations.map(({ credential }) => [
-    credential.binding,
-    alchemy.secret.env(credential.binding),
-  ]),
+  config.workerSecretBindings.map((binding) => [binding, alchemy.secret.env(binding)]),
 );
 
-if (key) secretBindings.BROKER_API_KEY = alchemy.secret(key, "BROKER_API_KEY");
+secretBindings.BROKER_ADMIN_KEY = alchemy.secret(adminKey, "BROKER_ADMIN_KEY");
+
+secretBindings.BROKER_ENCRYPTION_KEYS = alchemy.secret(encryptionKeys, "BROKER_ENCRYPTION_KEYS");
+
+if (issuerKey) secretBindings.BROKER_ISSUER_KEY = alchemy.secret(issuerKey, "BROKER_ISSUER_KEY");
 
 if (tracesEndpoint && collectorAuthorization !== undefined) {
   secretBindings.BROKER_OTLP_AUTHORIZATION = alchemy.secret(
@@ -75,6 +92,7 @@ export const worker = await Worker("broker", {
     ...secretBindings,
     ...traceVars,
     BROKER_CONFIG: JSON.stringify(config),
+    BROKER_ENCRYPTION_KEY_VERSION: activeKeyVersion,
     REGISTRY: registry,
   },
 });

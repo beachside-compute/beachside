@@ -17,15 +17,31 @@ import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { convertV4MiniflareOptions, Miniflare, Response as RuntimeResponse } from "miniflare";
 import type { V4MiniflareOptions } from "miniflare";
 import { z } from "zod";
-import { createCredentialBroker } from "../../../packages/credential-client/src/index";
+import {
+  createCredentialBroker,
+  createCredentialBrokerAdmin,
+  CredentialBrokerError,
+} from "../../../packages/credential-client/src/index";
+import { assertSeparateRoleKeys } from "../src/auth";
 import { isBrokerApiKey, matchesKey } from "../src/auth/api-key";
 import { parseConfig } from "../src/config";
+import {
+  encryptedStoreSource,
+  encryptionKeyring,
+  sealCredential,
+} from "../src/credentials/sources/encrypted-store";
+import type { CredentialInput } from "../src/credentials/source";
+import type { IntegrationKind } from "../src/integrations/types";
 import { workerSecretSource } from "../src/credentials/sources/worker-secret";
 import { tokenHash } from "../src/grants/tokens";
 
 const execute = promisify(execFile);
 
 const apiKey = "orchestration-fixture-key-1234567890";
+const adminKey = "administration-fixture-key-1234567890";
+const rootKeyA = Buffer.alloc(32, 42).toString("base64url");
+const rootKeyB = Buffer.alloc(32, 73).toString("base64url");
+const encryptionKeys = JSON.stringify({ first: rootKeyA, second: rootKeyB });
 
 const issuer = "https://token.actions.githubusercontent.com";
 
@@ -33,12 +49,14 @@ const audience = "https://broker.test/github-actions";
 
 const secret = {
   github: "github_upstream_fixture_key",
+  githubSecondary: "github_secondary_fixture_key",
   openai: "openai_upstream_fixture_key",
   anthropic: "anthropic_upstream_fixture_key",
   openrouter: "openrouter_upstream_fixture_key",
 };
 
 const kinds = ["github", "openai", "anthropic", "openrouter"] as const;
+const defaultNames = [...kinds, "github-secondary"];
 
 const policy = {
   repositoryId: "100",
@@ -57,11 +75,10 @@ const reusablePolicy = {
 };
 
 const config = {
-  integrations: kinds.map((kind) => ({
-    kind,
-    id: kind,
-    credential: { source: "worker-secret", binding: `CREDENTIAL_${kind.toUpperCase()}` },
-  })),
+  workerSecretBindings: [
+    ...kinds.map((kind) => `CREDENTIAL_${kind.toUpperCase()}`),
+    "CREDENTIAL_MISSING",
+  ],
   githubActions: { audience, workflows: [policy, reusablePolicy] },
 };
 
@@ -89,6 +106,7 @@ const wrongKeys = await generateKeyPair("RS256");
 const jwk = { ...(await exportJWK(keys.publicKey)), kid: "fixture" };
 
 const seen: { url: URL; method: string; headers: Headers; body: string }[] = [];
+const gitAuthorizations: string[] = [];
 
 let runtime: Miniflare;
 
@@ -125,7 +143,10 @@ const options: V4MiniflareOptions = {
     REGISTRY: { className: "GrantRegistry", useSQLite: true },
   },
   bindings: {
-    BROKER_API_KEY: apiKey,
+    BROKER_ADMIN_KEY: adminKey,
+    BROKER_ISSUER_KEY: apiKey,
+    BROKER_ENCRYPTION_KEYS: encryptionKeys,
+    BROKER_ENCRYPTION_KEY_VERSION: "first",
     BROKER_CONFIG: JSON.stringify(config),
     CREDENTIAL_GITHUB: secret.github,
     CREDENTIAL_OPENAI: secret.openai,
@@ -144,10 +165,9 @@ const options: V4MiniflareOptions = {
     }
 
     if (url.hostname === "github.com") {
-      assert.equal(
-        request.headers.get("authorization"),
-        `Basic ${btoa(`x-access-token:${secret.github}`)}`,
-      );
+      const authorization = request.headers.get("authorization");
+      assert.ok(authorization);
+      gitAuthorizations.push(authorization);
 
       return gitHttpBackend(
         url,
@@ -226,6 +246,7 @@ const options: V4MiniflareOptions = {
 before(async () => {
   gitRoot = await mkdtemp(join(tmpdir(), "beachside-broker-"));
   runtime = startRuntime();
+  await seedIntegrations();
 });
 
 after(async () => {
@@ -233,6 +254,42 @@ after(async () => {
 
   if (gitRoot) await rm(gitRoot, { recursive: true, force: true });
 });
+
+function admin(path: string, method = "GET", body?: string, authority = adminKey) {
+  return runtime.dispatchFetch(`https://broker.test/v1/admin${path}`, {
+    method,
+    headers: { authorization: `Bearer ${authority}`, "content-type": "application/json" },
+    body,
+  });
+}
+
+async function createIntegration(id: string, kind: IntegrationKind, credential: CredentialInput) {
+  const response = await admin("/integrations", "POST", JSON.stringify({ id, kind, credential }));
+  assert.equal(response.status, 201);
+
+  return response.json();
+}
+
+async function eligible(integrations: string[]) {
+  const response = await admin("/issuer-permissions", "PUT", JSON.stringify({ integrations }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { integrations: [...integrations].sort() });
+}
+
+async function seedIntegrations() {
+  for (const kind of kinds) {
+    await createIntegration(kind, kind, {
+      source: "worker-secret",
+      binding: `CREDENTIAL_${kind.toUpperCase()}`,
+    });
+  }
+
+  await createIntegration("github-secondary", "github", {
+    source: "encrypted-store",
+    value: secret.githubSecondary,
+  });
+  await eligible(defaultNames);
+}
 
 async function issue(integrations: string[], authority = apiKey, ttlSeconds = 60) {
   return runtime.dispatchFetch("https://broker.test/v1/grants", {
@@ -619,7 +676,9 @@ test("git clone and push use the GitHub smart HTTPS gateway", async () => {
 
   try {
     const { port } = z.object({ port: z.number() }).parse(relay.address());
-    const issued = await clientGrant(`https://127.0.0.1:${port}`);
+    const brokerUrl = `https://127.0.0.1:${port}`;
+    const issued = await clientGrant(brokerUrl);
+    const startGit = gitAuthorizations.length;
     const remote = "https://github.com/org/demo";
     const gitEnv = { ...issued.env, GIT_SSL_CAINFO: cert };
     await cli(["git", "clone", remote, "work"], gitRoot, gitEnv);
@@ -647,6 +706,23 @@ test("git clone and push use the GitHub smart HTTPS gateway", async () => {
       "broker git fixture\n",
     );
     assert.equal(await cli(["git", "remote", "get-url", "origin"], checkout), `${remote}\n`);
+    const first = gitAuthorizations.slice(startGit);
+    assert.ok(first.length > 0);
+    assert.ok(first.every((value) => value === `Basic ${btoa(`x-access-token:${secret.github}`)}`));
+
+    const secondary = await clientGrant(brokerUrl, "github-secondary");
+    const startSecondary = gitAuthorizations.length;
+    await cli(["git", "clone", remote, "secondary"], gitRoot, {
+      ...secondary.env,
+      GIT_SSL_CAINFO: cert,
+    });
+    const second = gitAuthorizations.slice(startSecondary);
+    assert.ok(second.length > 0);
+    assert.ok(
+      second.every(
+        (value) => value === `Basic ${btoa(`x-access-token:${secret.githubSecondary}`)}`,
+      ),
+    );
   } finally {
     await relay[Symbol.asyncDispose]();
   }
@@ -779,19 +855,29 @@ test("gh calls GitHub REST and GraphQL through the broker host", async () => {
       "41\n42\n",
     );
     assert.equal(seen.at(-1)?.headers.get("authorization"), `Bearer ${secret.github}`);
+
+    const secondary = await clientGrant("https://broker.test", "github-secondary");
+    assert.equal(
+      await cli(["gh", "api", "repos/org/demo", "--jq", ".full_name"], gitRoot, {
+        ...secondary.env,
+        GH_CONFIG_DIR: ghConfig,
+      }),
+      "org/demo\n",
+    );
+    assert.equal(seen.at(-1)?.headers.get("authorization"), `Bearer ${secret.githubSecondary}`);
   } finally {
     await relay[Symbol.asyncDispose]();
   }
 });
 
-function clientGrant(url: string) {
+function clientGrant(url: string, github = "github") {
   const broker = createCredentialBroker({
     url,
     auth: { apiKey },
     fetch: relayRequest,
   });
 
-  return broker.sandbox({ github: "github" }).acquire(new AbortController().signal);
+  return broker.sandbox({ github }).acquire(new AbortController().signal);
 }
 
 async function relayRequest(request: Request): Promise<Response> {
@@ -928,14 +1014,13 @@ test("streams data before completion and reclaims concurrency leases", async () 
       const pending = await access(path, issued.token, "POST", body);
       assert.equal(pending.status, 200);
       assert.equal(pending.headers.get("content-type"), "text/event-stream");
-      requests.push({ pending, finish: sendStreamTail! });
+      requests.push({ reader: pending.body!.getReader(), finish: sendStreamTail! });
     }
 
     const rejected = await access(path, issued.token, "POST", body);
     assert.equal(rejected.status, 429);
 
-    const { pending: first, finish } = requests.shift()!;
-    const reader = first.body!.getReader();
+    const { reader, finish } = requests.shift()!;
     const head = await reader.read();
     assert.equal(new TextDecoder().decode(head.value), 'data: {"first":true}\n\n');
     finish();
@@ -969,9 +1054,14 @@ test("streams data before completion and reclaims concurrency leases", async () 
       [{ count: 0 }],
     );
   } finally {
-    for (const { pending, finish } of requests) {
+    for (const { reader, finish } of requests) {
       finish();
-      await pending.text();
+
+      while (!(await reader.read()).done) {
+        // Drain fixture data before closing its loopback connection.
+      }
+
+      reader.releaseLock();
     }
   }
 });
@@ -984,6 +1074,7 @@ test(
     runtime = startRuntime("restart-fixture");
 
     try {
+      await seedIntegrations();
       const record = await grant(["openai"]);
 
       const previousStorage = await runtime.unsafeGetDurableObjectStorage(
@@ -1013,7 +1104,7 @@ test(
       });
 
       assert.deepEqual(await storage.exec("SELECT COUNT(*) AS count FROM __drizzle_migrations"), [
-        { count: 1 },
+        { count: 2 },
       ]);
 
       const path = "/gateway/openai/v1/models";
@@ -1053,6 +1144,7 @@ test(
     runtime = startRuntime("capacity-fixture");
 
     try {
+      await seedIntegrations();
       await grant(["openai"]);
 
       const storage = await runtime.unsafeGetDurableObjectStorage("broker", "GrantRegistry", {
@@ -1093,3 +1185,313 @@ test(
     }
   },
 );
+
+test("separates administration, issuance, OIDC and sandbox access", async () => {
+  const sample = JSON.stringify({
+    id: "new-ai",
+    kind: "openai",
+    credential: { source: "encrypted-store", value: "admin-fixture-value" },
+  });
+
+  const oidc = await githubToken();
+  const sandbox = (await grant(["openai"])).token;
+
+  for (const denied of [apiKey, oidc, sandbox, rootKeyA]) {
+    assert.equal((await admin("/integrations", "GET", undefined, denied)).status, 401);
+    assert.equal((await admin("/integrations", "POST", "x".repeat(20_000), denied)).status, 401);
+  }
+
+  assert.equal((await issue(["openai"], adminKey)).status, 401);
+  assert.equal((await issue(["openai"], rootKeyA)).status, 401);
+  assert.equal((await access("/gateway/openai/v1/models", adminKey)).status, 401);
+  assert.equal((await access("/gateway/openai/v1/models", apiKey)).status, 401);
+  assert.equal((await access("/api/v3/user", sandbox)).status, 403);
+  assert.equal((await admin("/integrations", "POST", "x".repeat(20_000))).status, 400);
+  assert.equal(
+    (
+      await admin(
+        "/integrations",
+        "POST",
+        JSON.stringify({
+          id: "empty-secret",
+          kind: "openai",
+          credential: { source: "worker-secret", binding: "CREDENTIAL_MISSING" },
+        }),
+      )
+    ).status,
+    503,
+  );
+  assert.throws(
+    () =>
+      assertSeparateRoleKeys({ BROKER_ADMIN_KEY: apiKey, BROKER_ISSUER_KEY: apiKey }, [rootKeyA]),
+    /must differ/,
+  );
+  assert.throws(
+    () => assertSeparateRoleKeys({ BROKER_ADMIN_KEY: rootKeyA }, [rootKeyA]),
+    /must differ/,
+  );
+
+  try {
+    const created = await admin("/integrations", "POST", sample);
+    assert.equal(created.status, 201);
+    await created.text();
+    assert.equal((await admin("/integrations", "POST", sample)).status, 409);
+    assert.equal((await issue(["new-ai"])).status, 403);
+
+    await eligible([...defaultNames, "new-ai"]);
+    assert.equal((await issue(["new-ai"], oidc)).status, 403);
+    assert.equal((await issue(["github", "github-secondary"])).status, 400);
+
+    await eligible([]);
+    assert.equal((await issue(["github"], oidc)).status, 403);
+    assert.equal((await issue(["openai"])).status, 403);
+    const existing = await access("/gateway/openai/v1/models", sandbox);
+    assert.equal(existing.status, 200);
+    await existing.text();
+  } finally {
+    await admin("/integrations/new-ai", "DELETE");
+    await eligible(defaultNames);
+  }
+});
+
+test("stores only sealed material, keeps rotation scope, and revokes on disable or deletion", async () => {
+  const id = "managed-ai";
+  const other = "managed-alternate";
+  const item = `/integrations/${id}`;
+  const path = `/gateway/${id}/v1/models`;
+  const initial = "managed-credential-first-canary";
+  const replacement = "managed-credential-rotated-canary";
+
+  const url = "https://broker.test";
+  const adminClient = createCredentialBrokerAdmin({ url, apiKey: adminKey, fetch: relayRequest });
+  const issuerClient = createCredentialBroker({ url, auth: { apiKey }, fetch: relayRequest });
+
+  const meta = z.strictObject({
+    id: z.string(),
+    kind: z.literal("openai"),
+    enabled: z.boolean(),
+    credentialSource: z.literal("encrypted-store"),
+    credentialVersion: z.number(),
+    createdAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime(),
+  });
+
+  const storage = await runtime.unsafeGetDurableObjectStorage("broker", "GrantRegistry", {
+    name: "grant-registry",
+  });
+
+  const readSealed = async (name: string) => {
+    const [row] = await storage.exec(
+      "SELECT identity, credential FROM integrations WHERE id = ?",
+      name,
+    );
+
+    return {
+      identity: z.string().parse(row.identity),
+      credential: z.string().parse(row.credential),
+    };
+  };
+
+  const envelope = z.strictObject({
+    source: z.literal("encrypted-store"),
+    keyVersion: z.string(),
+    nonce: z.string(),
+    ciphertext: z.string(),
+  });
+
+  const rotate = (value: string) =>
+    adminClient.integrations.rotate(id, { source: "encrypted-store", value });
+
+  const enabled = async (value: boolean) => {
+    const response = await admin(item, "PATCH", JSON.stringify({ enabled: value }));
+    assert.equal(response.status, 200);
+    assert.equal(meta.parse(await response.json()).enabled, value);
+  };
+
+  const proxy = async (token: string, value: string) => {
+    const response = await access(path, token);
+    assert.equal(response.status, 200);
+    await response.text();
+    assert.equal(seen.at(-1)?.headers.get("authorization"), `Bearer ${value}`);
+  };
+
+  try {
+    const created = meta.parse(
+      await createIntegration(id, "openai", { source: "encrypted-store", value: initial }),
+    );
+
+    const initialStored = await readSealed(id);
+    assert.equal(created.credentialVersion, 1);
+    assert.ok(!initialStored.credential.includes(initial));
+    const sealed = envelope.parse(JSON.parse(initialStored.credential));
+    assert.equal(sealed.keyVersion, "first");
+    assert.equal(Buffer.from(sealed.nonce, "base64url").length, 12);
+
+    const details = await admin(item);
+    assert.equal(details.status, 200);
+    assert.deepEqual(meta.parse(await details.json()), created);
+    const catalog = await admin("/integrations");
+    assert.equal(catalog.status, 200);
+    const catalogJson = await catalog.text();
+
+    for (const value of [
+      initial,
+      sealed.ciphertext,
+      sealed.nonce,
+      initialStored.identity,
+      rootKeyA,
+    ]) {
+      assert.ok(!catalogJson.includes(value));
+    }
+
+    await createIntegration(other, "openai", {
+      source: "encrypted-store",
+      value: "unrelated-credential-canary",
+    });
+    const allowedNames = [...defaultNames, id, other];
+    assert.deepEqual(await adminClient.issuerPermissions.set(allowedNames), {
+      integrations: allowedNames.sort(),
+    });
+    const first = await issuerClient.issue({ integrations: [id, "openai"] });
+    await proxy(first.token, initial);
+    assert.equal((await access(`/gateway/${other}/v1/models`, first.token)).status, 403);
+
+    assert.equal((await rotate(replacement)).credentialVersion, 2);
+    await proxy(first.token, replacement);
+    assert.equal((await rotate(replacement)).credentialVersion, 3);
+    const rotatedStored = await readSealed(id);
+    const rotated = envelope.parse(JSON.parse(rotatedStored.credential));
+    assert.equal(rotatedStored.identity, initialStored.identity);
+    assert.notEqual(rotated.nonce, sealed.nonce);
+    assert.notEqual(rotated.ciphertext, sealed.ciphertext);
+    assert.ok(!rotatedStored.credential.includes(replacement));
+
+    const sibling = await readSealed(other);
+    const beforeTamper = seen.length;
+    await storage.exec(
+      "UPDATE integrations SET credential = ? WHERE id = ?",
+      sibling.credential,
+      id,
+    );
+    assert.equal((await access(path, first.token)).status, 503);
+    assert.equal(seen.length, beforeTamper);
+    await storage.exec(
+      "UPDATE integrations SET credential = ? WHERE id = ?",
+      rotatedStored.credential,
+      id,
+    );
+    await proxy(first.token, replacement);
+
+    const concurrentValues = ["concurrent-rotation-a", "concurrent-rotation-b"];
+    const writes = await Promise.allSettled(concurrentValues.map(rotate));
+    const confirmed = [];
+
+    for (const [index, write] of writes.entries()) {
+      if (write.status === "fulfilled") {
+        confirmed.push({ version: write.value.credentialVersion, value: concurrentValues[index] });
+      } else {
+        assert.ok(write.reason instanceof CredentialBrokerError);
+        assert.equal(write.reason.code, "CONFLICT");
+      }
+    }
+
+    const current = confirmed.sort((a, b) => b.version - a.version)[0];
+    assert.ok(current);
+    assert.equal(current.version, 3 + confirmed.length);
+    assert.equal((await adminClient.integrations.get(id)).credentialVersion, current.version);
+    await proxy(first.token, current.value);
+
+    await enabled(false);
+    assert.equal((await access(path, first.token)).status, 401);
+    assert.equal((await access("/gateway/openai/v1/models", first.token)).status, 401);
+    assert.equal((await issue([id])).status, 403);
+    await enabled(true);
+    assert.equal((await access(path, first.token)).status, 401);
+    const second = await grant([id]);
+    await proxy(second.token, current.value);
+
+    assert.equal((await admin(item, "DELETE")).status, 204);
+    assert.equal((await admin(item, "DELETE")).status, 204);
+    assert.equal((await admin(item)).status, 404);
+    assert.equal((await access(path, second.token)).status, 401);
+    await createIntegration(id, "openai", { source: "encrypted-store", value: initial });
+    assert.notEqual((await readSealed(id)).identity, initialStored.identity);
+    assert.equal((await issue([id])).status, 403);
+    await eligible([...defaultNames, id, other]);
+    await proxy((await grant([id])).token, initial);
+    assert.equal((await access(path, second.token)).status, 401);
+  } finally {
+    await admin(item, "DELETE");
+    await admin(`/integrations/${other}`, "DELETE");
+    await eligible(defaultNames);
+  }
+});
+
+test("AES-GCM rejects tampering and binds identity, credential version and key version", async () => {
+  const first = encryptionKeyring({
+    BROKER_ENCRYPTION_KEYS: encryptionKeys,
+    BROKER_ENCRYPTION_KEY_VERSION: "first",
+  });
+
+  const rotated = encryptionKeyring({
+    BROKER_ENCRYPTION_KEYS: encryptionKeys,
+    BROKER_ENCRYPTION_KEY_VERSION: "second",
+  });
+
+  const integration = {
+    id: "managed-ai",
+    kind: "openai",
+    identity: crypto.randomUUID(),
+    credentialVersion: 1,
+  } as const;
+
+  const value = "encryption-fixture-value";
+  const record = await sealCredential(value, integration, first);
+  const repeated = await sealCredential(value, integration, first);
+  assert.notEqual(record.nonce, repeated.nonce);
+  assert.notEqual(record.ciphertext, repeated.ciphertext);
+  assert.deepEqual(await encryptedStoreSource(integration, rotated).resolve(record), { value });
+
+  const newRecord = await sealCredential(value, integration, rotated);
+  assert.equal(newRecord.keyVersion, "second");
+  assert.deepEqual(await encryptedStoreSource(integration, rotated).resolve(newRecord), { value });
+
+  const secondOnly = encryptionKeyring({
+    BROKER_ENCRYPTION_KEYS: JSON.stringify({ second: rootKeyB }),
+    BROKER_ENCRYPTION_KEY_VERSION: "second",
+  });
+
+  assert.equal(await encryptedStoreSource(integration, secondOnly).resolve(record), undefined);
+
+  for (const revision of [
+    { ...integration, identity: crypto.randomUUID() },
+    { ...integration, credentialVersion: 2 },
+  ]) {
+    assert.equal(await encryptedStoreSource(revision, first).resolve(record), undefined);
+  }
+
+  const wrong = record.ciphertext.startsWith("A") ? "B" : "A";
+  const ciphertext = wrong + record.ciphertext.slice(1);
+  assert.equal(
+    await encryptedStoreSource(integration, first).resolve({ ...record, ciphertext }),
+    undefined,
+  );
+
+  const equalKeys = encryptionKeyring({
+    BROKER_ENCRYPTION_KEYS: JSON.stringify({ first: rootKeyA, second: rootKeyA }),
+    BROKER_ENCRYPTION_KEY_VERSION: "second",
+  });
+
+  assert.equal(
+    await encryptedStoreSource(integration, equalKeys).resolve({ ...record, keyVersion: "second" }),
+    undefined,
+  );
+  assert.throws(
+    () =>
+      encryptionKeyring({
+        BROKER_ENCRYPTION_KEYS: JSON.stringify({ first: rootKeyA.slice(1) }),
+        BROKER_ENCRYPTION_KEY_VERSION: "first",
+      }),
+    /Invalid broker encryption keyring configuration/,
+  );
+});

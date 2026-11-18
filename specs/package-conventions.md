@@ -17,7 +17,7 @@
 | Archil adapter (experimental) | `@beachside/archil` | `@beachside/archil` |
 | exe.dev adapter (experimental) | `@beachside/exe-dev` | `@beachside/exe-dev` |
 | Official Vercel adapter | `@beachside/vercel` | `@beachside/vercel` |
-| Credential broker client | `@beachside/credential-client` | `@beachside/credential-client` |
+| Credential broker client and administration (`beachside-broker` binary) | `@beachside/credential-client` | `@beachside/credential-client` |
 | Command line (`beachside` binary) | `@beachside/cli` | none; run `beachside` |
 | Custom adapter authoring | `@beachside/adapter` | `@beachside/adapter` |
 | Adapter conformance tests | included in `@beachside/adapter` | `@beachside/adapter/testing` |

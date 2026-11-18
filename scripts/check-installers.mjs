@@ -71,7 +71,10 @@ void [definition, suite];
     packageName: "@beachside/credential-client",
     overrides: [],
     runtime: `
+import { execFileSync } from "node:child_process";
 import { createCredentialBroker } from "@beachside/credential-client";
+const help = execFileSync("node_modules/.bin/beachside-broker", ["--help"], { encoding: "utf8" });
+if (!help.includes("integration create")) throw new Error("Packed broker CLI help failed");
 const broker = createCredentialBroker({ url: "https://broker.example.invalid", auth: { apiKey: "fixture_credential_broker_control_key" } });
 if (typeof broker.sandbox({ github: "github" }).acquire !== "function") throw new Error("Packed credential client import failed");
 `,

@@ -1,27 +1,75 @@
 # Beachside credential broker
 
-The broker lets a sandbox clone and push GitHub repositories, use GitHub CLI, and call model APIs with expiring grants. You deploy the broker in your Cloudflare account. The Worker injects the upstream credentials from its secret bindings after authorizing each request against a SQLite-backed Durable Object. A sandbox receives only a grant, along with instructions for reaching the broker.
+The broker lets a sandbox use GitHub over HTTPS or call model APIs with expiring grants. Deploy it in your Cloudflare account. A SQLite-backed Durable Object stores the integration catalog, encrypted credentials, issuer permissions, and the grant registry. The Worker authorizes every request and supplies the selected credential to the fixed upstream. A sandbox receives only a grant and instructions for reaching the broker.
 
 ## Deploy
 
-Use Bun 1.4.4, a Cloudflare account with Workers, and credentials for provisioning a Worker, its secrets, and a SQLite Durable Object namespace. From the repository root, run `bun install --frozen-lockfile`. Change into `services/credential-broker` before running Alchemy.
+Use Bun 1.4.4 and a Cloudflare account with permission to provision a Worker, Worker secrets, and a SQLite Durable Object namespace. From the repository root, run `bun install --frozen-lockfile`. Change into `services/credential-broker` before running Alchemy.
 
-Save an operator-owned JSON configuration somewhere outside version control. Integration IDs are the names used in grant requests. The binding names below identify secrets and can be included in configuration files.
+Supply the following values to Alchemy from your secret manager or an ignored environment file.
+
+| Variable | Value |
+| --- | --- |
+| `BROKER_ADMIN_KEY` | Required management bearer key. Generate it from at least 32 random bytes and encode it as base64url. |
+| `BROKER_ISSUER_KEY` | Optional static grant-issuance bearer key. Generate it independently of the admin key. |
+| `BROKER_ENCRYPTION_KEYS` | Required JSON object mapping encryption key versions to unpadded base64url encodings of 32 independently generated random bytes each. Provisioned as a Worker secret. |
+| `BROKER_ENCRYPTION_KEY_VERSION` | Required active encryption key version. Use a 1–32 character label made of letters, digits, hyphens, or underscores, starting with a letter or digit. |
+| `BROKER_CONFIG` | Optional JSON for GitHub Actions trust policies and declared Worker secret bindings. Defaults to an empty object. |
+| `CREDENTIAL_…` | Upstream keys for optional Worker-secret integrations named in `BROKER_CONFIG.workerSecretBindings`. |
+| `ALCHEMY_PASSWORD` | Passphrase that encrypts secrets in Alchemy state. Keep it and the state directory private and available for updates. |
+| `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` | Cloudflare provisioning credentials. |
+
+Configure a static issuer key, GitHub Actions OIDC, or both. The admin key, issuer key, and encryption keys must be distinct. The API keys use 32–256 base64url characters and exclude the reserved sandbox grant token format.
+
+Run `bun run alchemy deploy`. Use the resulting HTTPS origin for the client. Keep the same Alchemy stage and state directory when updating this deployment. The Durable Object applies pending migrations on startup. After schema changes, run `bun run db:generate --name your_change` and commit its SQL, journal, snapshot, and bundled migration index.
+
+### Upgrading the deployment
+
+The previous `BROKER_API_KEY` no longer authorizes management or issuance. Provision separate keys and a keyring, and use the admin API to recreate the previous integrations. For existing Worker-secret credentials, move their binding names from the old `BROKER_CONFIG.integrations` array to `BROKER_CONFIG.workerSecretBindings` and create Worker-secret references in the registry. Replace the issuer allowlist and reissue sandbox grants. Grants from the previous registry schema cannot authorize the new integration identities.
+
+## Manage integrations
+
+Run `npm install --global @beachside/credential-client` on the operator host. Set `BEACHSIDE_BROKER_URL` and `BEACHSIDE_BROKER_ADMIN_KEY` there. Pipe a credential from the operator's secret store to the CLI and approve its integration ID for issuance. For example, with an upstream credential in a protected file:
+
+```sh
+beachside-broker integration create github-work --provider github --secret-stdin < /secure/path/github-token
+beachside-broker issuer set github-work
+beachside-broker integration list
+```
+
+Create integrations with kind `github`, `anthropic`, `openai`, or `openrouter`. Kind and upstream destination are fixed for an integration's lifetime. The broker supports up to 100 names per deployment and multiple GitHub integrations. One grant can use at most one GitHub integration. A GitHub grant delegates the upstream token's Git and GraphQL access. Use upstream tokens with the repository scope and operations the sandbox needs.
+
+Encrypted-store credentials are encrypted before the Worker sends their envelopes to SQLite. AES-256-GCM uses a fresh nonce for every write and authenticates the integration identity, credential version, and encryption key version. Use `integration rotate <id> --secret-stdin` with a replacement credential. Subsequent requests using an existing grant see the replacement. Requests that already passed authorization may finish with the prior credential.
+
+For a declared Worker secret, use `integration create <id> --provider <kind> --worker-secret CREDENTIAL_NAME`. The registry stores its reference. If you update that Worker secret through Alchemy, subsequent requests resolve the new value.
+
+`integration disable <id>` and `integration delete <id>` revoke every grant that includes the integration. Re-enabling can admit fresh grants. Deleting and recreating a name creates a new identity and requires setting issuer permissions again. The admin API returns integration metadata, including the source kind and credential version. There is no API to retrieve plaintext or ciphertext.
+
+| Admin request | Input and result |
+| --- | --- |
+| `GET /v1/admin/integrations` | Returns `{ "integrations": [...] }` containing integration metadata. |
+| `POST /v1/admin/integrations` | Body `{ "id": "...", "kind": "...", "credential": {...} }` returns metadata with `201`. |
+| `GET /v1/admin/integrations/:id` | Returns integration metadata. |
+| `PATCH /v1/admin/integrations/:id` | Body `{ "enabled": true }` or `{ "enabled": false }` returns updated metadata. |
+| `PUT /v1/admin/integrations/:id/credential` | Body is a credential object. Returns updated metadata. An overlapping rotation can return `409`. |
+| `DELETE /v1/admin/integrations/:id` | Returns `204`, including if the name is absent. |
+| `GET /v1/admin/issuer-permissions` | Returns `{ "integrations": ["..."] }`. |
+| `PUT /v1/admin/issuer-permissions` | Replaces the allowlist with `{ "integrations": ["..."] }`. An empty list disables new issuance. |
+
+A credential object is `{ "source": "encrypted-store", "value": "..." }` or `{ "source": "worker-secret", "binding": "CREDENTIAL_NAME" }`. Supply the admin key as a bearer token. The admin key cannot issue grants or access gateways.
+
+### Rotate an encryption key
+
+Deploy `BROKER_ENCRYPTION_KEYS` with both the previous and new keys while keeping the old version active. After that deployment has rolled out, switch `BROKER_ENCRYPTION_KEY_VERSION` to the new version and deploy again. Rotate each encrypted integration using its upstream credential from the original source or a new upstream credential. Every successful rotation writes with the active version and a fresh nonce. Remove a previous key from the Worker only after rotating the integrations encrypted with it. Keep secure recovery copies for as long as database backups may contain those ciphertexts. Losing an old key makes records written with it unrecoverable. Always use a new label for new key material.
+
+## Authenticate grant issuance
+
+A static issuer passes `BROKER_ISSUER_KEY` as a bearer token. It can issue grants only for the administrator's allowlist and revoke grants issued under the static issuer role. The allowlist begins empty. Changing it gates new issuance. Existing grants remain authorized until expiry, explicit revocation, integration disable, or integration deletion.
+
+GitHub Actions jobs must match both the administrator's current allowlist and an exact integration ID listed in the job's deployment policy. For example:
 
 ```json
 {
-  "integrations": [
-    {
-      "id": "github",
-      "kind": "github",
-      "credential": { "source": "worker-secret", "binding": "CREDENTIAL_GITHUB" }
-    },
-    {
-      "id": "openai",
-      "kind": "openai",
-      "credential": { "source": "worker-secret", "binding": "CREDENTIAL_OPENAI" }
-    }
-  ],
   "githubActions": {
     "audience": "https://broker.example.com/github-actions",
     "workflows": [
@@ -32,52 +80,34 @@ Save an operator-owned JSON configuration somewhere outside version control. Int
         "ref": "refs/heads/main",
         "workflowRef": "example-org/review-service/.github/workflows/review.yml@refs/heads/main",
         "event": "pull_request_target",
-        "integrations": ["github", "openai"]
+        "integrations": ["github-work"]
       }
     ]
   }
 }
 ```
 
-The supported integration kinds are `github`, `anthropic`, `openai`, and `openrouter`. Configure up to 16 integrations. Git and GitHub CLI use the broker hostname, so each broker has at most one GitHub integration. Adding GitHub to a grant delegates the repository access and GraphQL permissions of its upstream token. Use a token scoped to the repositories and operations the sandbox needs.
+Give the trusted orchestration job `id-token: write` and request a token for the configured audience. Pick an audience unique to the deployment. The [credential client](../../packages/credential-client/README.md) can request the token from the runner. The broker verifies GitHub's signature, issuer, exact audience, expiry, token age, repository and owner IDs, repository name, workflow path and ref, and event. A matching workflow can revoke grants issued within its repository workflow run.
 
-Provide the following environment values to Alchemy through your secret manager or a local environment file kept out of version control.
-
-| Variable | Value |
-| --- | --- |
-| `BROKER_CONFIG` | Operator configuration JSON |
-| `CREDENTIAL_…` | One upstream API credential for each named binding |
-| `BROKER_API_KEY` | Optional base64url management key generated with at least 32 random bytes |
-| `ALCHEMY_PASSWORD` | Passphrase that encrypts secrets in Alchemy state. Keep it and the state directory private and available for updates. |
-| `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` | Cloudflare provisioning credentials |
-
-Configure an API key, GitHub Actions OIDC, or both. Run `bun run alchemy deploy` from this directory. Use the resulting Worker HTTPS origin as the broker URL. Preserve the Alchemy stage and its state when updating the service so the deployment keeps its grant registry. Each deployment has its own registry. Run `bun run db:generate -- --name your_change` after editing the Drizzle schema, and commit the generated SQL, journal, snapshot and bundled migration index. The Durable Object applies pending migrations when it starts.
-
-## Authenticate the orchestrator
-
-For API key authentication, provide `BROKER_API_KEY` as a bearer token on management requests. The key can issue grants for any configured integration and revoke any grant on that deployment. Keep it in the orchestrator process. The broker reserves the format `bsg_` followed by 64 lowercase hexadecimal characters for sandbox grant tokens.
-
-For GitHub Actions, give the trusted orchestration job `id-token: write` and request a GitHub Actions identity token for the exact configured audience. The [credential client](../../packages/credential-client/README.md) provides a helper that uses the runner's identity token endpoint. Pick an audience unique to this deployment. The broker verifies GitHub's signature, issuer, exact audience, expiry, token age, immutable repository and owner IDs, repository name, workflow path and ref, and event. Each workflow may grant its listed integrations and revoke grants issued within the same repository workflow run.
-
-Supported workflow events are `push`, `schedule`, `workflow_dispatch`, `workflow_run`, and `pull_request_target`. For reusable workflows, set `jobWorkflowRef` to the exact ref of the called workflow. For a direct job, omit it. The broker then accepts a token whose `job_workflow_ref` claim is absent or matches the configured `workflowRef`. Only trust a ref controlled by the operators of the broker. For `pull_request_target` and `workflow_run`, keep PR-controlled code, actions, scripts, and artifacts out of the orchestration job. Pass untrusted work into the sandbox after issuing its limited grant. A fork's `pull_request` job cannot satisfy the policy.
+Supported events are `push`, `schedule`, `workflow_dispatch`, `workflow_run`, and `pull_request_target`. For a reusable workflow, configure the called workflow's exact `jobWorkflowRef`. For a direct job, omit it. The broker accepts an absent `job_workflow_ref` or one that matches `workflowRef`. Trust refs controlled by your operators. For `pull_request_target` and `workflow_run`, keep PR-controlled code, actions, scripts, and artifacts out of the orchestration job. Run untrusted work inside the sandbox after issuing its limited grant.
 
 ## Grant API
 
 | Request | Result |
 | --- | --- |
-| `POST /v1/grants` | Create a grant with body `{ "integrations": ["github"], "ttlSeconds": 900 }`. The response is `201` and has `id`, `token`, `expiresAt` (ISO 8601), and `integrations`. |
-| `DELETE /v1/grants/:id` | Revoke under the issuing workflow run or the management key. Repeated requests return `204`. |
+| `POST /v1/grants` | Create a grant with body `{ "integrations": ["github-work"], "ttlSeconds": 900 }`. The response is `201` and has `id`, `token`, `expiresAt` (ISO 8601), and `integrations`. |
+| `DELETE /v1/grants/:id` | Revoke under the issuing workflow run or static issuer key. Repeated requests return `204`. |
 
 Grants last between 1 and 3,600 seconds. A grant can use its selected integrations immediately and cannot manage grants. The operation is authorized again for every gateway request. Revocation and expiry reject new requests. Requests that have already passed authorization, including active model streams and writes, may finish. A lost response to grant creation may leave a record until its expiry, and the broker cannot recover the raw grant token.
 
-By default the registry admits up to 1,000 active grants and up to 100 per issuing authority (one management key or one workflow run). Each grant allows 120 requests per UTC minute and eight concurrent gateway requests, including streams. A lost lease release can occupy a slot until expiry. A request over a bound receives HTTP `429`. Set provider-side token scopes, spend limits, and quotas to constrain delegated use.
+By default the registry admits up to 1,000 active grants and up to 100 per issuing authority (one static issuer role or one workflow run). Each grant allows 120 requests per UTC minute and eight concurrent gateway requests, including streams. A lost lease release can occupy a slot until expiry. A request over a bound receives HTTP `429`. Set provider-side token scopes, spend limits, and quotas to constrain delegated use.
 
 ## Use the gateways
 
 Use the [credential client](../../packages/credential-client/README.md) for Beachside-managed environment variables and revocation. It gives each opted-in sandbox a distinct grant. The client also works outside Beachside, where its caller owns revocation.
 
 - **Git HTTPS** uses the broker remote `https://<broker-host>/<owner>/<repo>.git` and the grant password with username `x-access-token`. The client configures Git to rewrite `https://github.com/` remotes in the sandbox's command environment. Clone, fetch and push are supported over smart HTTP. SSH, Git LFS, and submodules on unrelated hosts use their own access paths.
-- **GitHub CLI** uses `GH_HOST=<broker-host>` and `GH_ENTERPRISE_TOKEN=<grant>`. Give commands an explicit `--repo <broker-host>/<owner>/<repo>` if local remotes might resolve to another host. The broker maps GHES-style REST and GraphQL URLs to GitHub.com. Repo view, issue list/create, and PR list/create/comment have CLI fixtures. Canonical links returned by GitHub still point to GitHub.com. Browser views, auth login, workflows, releases, downloads, and endpoints outside the REST allowlist may require direct access. REST branch and commit reads accept single-component refs. Use GraphQL for refs containing slashes, such as `feature/login`. GraphQL forwards the queries and mutations allowed by the GitHub token.
+- **GitHub CLI** uses `GH_HOST=<broker-host>` and `GH_ENTERPRISE_TOKEN=<grant>`. Give commands an explicit `--repo <broker-host>/<owner>/<repo>` if local remotes might resolve to another host. The broker maps GHES-style REST and GraphQL URLs to GitHub.com using the grant's single GitHub integration. Repo view, issue list/create, and PR list/create/comment have CLI fixtures. Canonical links returned by GitHub still point to GitHub.com. Browser views, auth login, workflows, releases, downloads, and endpoints outside the REST allowlist may require direct access. REST branch and commit reads accept single-component refs. Use GraphQL for refs containing slashes, such as `feature/login`. GraphQL forwards the queries and mutations allowed by the GitHub token.
 - **Anthropic** uses `ANTHROPIC_BASE_URL=https://<broker-host>/gateway/<integration>` and `ANTHROPIC_API_KEY=<grant>`. The gateway supports messages, token counts, and model metadata.
 - **OpenAI** and **OpenRouter** use `OPENAI_BASE_URL` or `OPENROUTER_BASE_URL` ending in `/gateway/<integration>/v1`. Supply the grant in the respective `*_API_KEY`. The gateway forwards model metadata, chat completions, responses creation, and embeddings where the upstream provider supports them. Files, key management, account endpoints, realtime WebSockets, and retrieval of stored responses are outside this gateway.
 
@@ -106,9 +136,9 @@ Use the corresponding environment variables for Anthropic or OpenRouter. In Open
 
 ## Observability and trust
 
-Set `BROKER_OTLP_TRACES_ENDPOINT` to a trusted HTTPS OTLP/HTTP traces endpoint, such as `https://collector.example.com/v1/traces`, to export safe broker spans. If the collector needs authentication, supply the complete Authorization value in `BROKER_OTLP_AUTHORIZATION` as a Worker secret. Management requests can propagate trusted W3C trace context. Authorized gateway requests link to the issuing trace when available. The broker discards guest trace context and does not propagate broker trace headers to upstreams. Telemetry delivery is best effort. The deployment disables automatic invocation logging and native HTTP tracing to keep caller-supplied paths, query strings, and payloads out of telemetry.
+Set `BROKER_OTLP_TRACES_ENDPOINT` to a trusted HTTPS OTLP/HTTP traces endpoint, such as `https://collector.example.com/v1/traces`, to export safe broker spans. If the collector needs authentication, supply the complete Authorization value in `BROKER_OTLP_AUTHORIZATION` as a Worker secret. Admin and issuer requests can propagate trusted W3C trace context. Admin spans use static operation names and status codes. Authorized gateway requests link to the issuing trace when available. The broker discards guest trace context and does not propagate broker trace headers to upstreams. Telemetry delivery is best effort. The deployment disables automatic invocation logging and native HTTP tracing to keep caller-supplied paths, query strings, and payloads out of telemetry.
 
-Any sandbox workload or provider infrastructure able to read a grant can use it until expiry or revocation. Grants are bearer credentials scoped to integrations and are not bound to an IP address, sandbox identity, or private network. Keep them out of logs, artifacts, environment dumps, and persistent sandbox files. The registry records token digests, expiry, grant scope, and optional trace correlation. It keeps upstream credentials in Worker secret bindings and uses them only at the configured services. This deployment trusts its operators, Cloudflare, and the upstream providers.
+Any sandbox workload or provider infrastructure able to read a grant can use it until expiry or revocation. Grants are bearer credentials scoped to integrations and are not bound to an IP address, sandbox identity, or private network. Keep them out of logs, artifacts, environment dumps, and persistent sandbox files. The registry stores token digests, expiry, grant scope, optional trace correlation, credential envelopes, and Worker-secret references. Root encryption keys and role keys are Worker secret bindings. The Worker uses resolved upstream credentials only at the fixed provider endpoints. This deployment trusts its operators, Cloudflare, and the upstream providers.
 
 ## Validate locally
 

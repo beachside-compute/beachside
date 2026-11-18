@@ -149,7 +149,21 @@ async function checkTypes(directory, mode) {
   if (mode === "credential-client")
     source = `
 import { type BeachsideClient } from "beachside";
-import { createCredentialBroker, githubActionsOidc, type BrokerGrant } from "@beachside/credential-client";
+import { createCredentialBroker, createCredentialBrokerAdmin, githubActionsOidc, type BrokerGrant, type BrokerIntegration } from "@beachside/credential-client";
+
+async function provision(): Promise<BrokerIntegration> {
+  const admin = createCredentialBrokerAdmin({
+    url: "https://broker.example.invalid",
+    apiKey: "fixture_separate_admin_control_key",
+  });
+  const integration = await admin.integrations.create({
+    id: "github", kind: "github",
+    credential: { source: "worker-secret", binding: "CREDENTIAL_GITHUB" },
+  });
+  await admin.issuerPermissions.set([integration.id]);
+  return integration;
+}
+void provision;
 
 async function workflow(client: BeachsideClient) {
   const broker = createCredentialBroker({
@@ -1316,8 +1330,18 @@ console.log("Packed exe.dev imports and local validation passed without provider
   await checkTypes(credentialClient, "credential-client");
   inspectGraph(credentialClient, ["beachside", "@beachside/credential-client"]);
 
-  for (const runtime of ["node", "bun"])
+  await writeFile(
+    join(credentialClient, "broker-cli.mjs"),
+    await readFile(
+      join(root, "packages/sdk-qualification/credential-client-cli-packed.mjs"),
+      "utf8",
+    ),
+  );
+
+  for (const runtime of ["node", "bun"]) {
     console.log(`${runtime}: ${run(runtime, ["consumer.mjs"], credentialClient)}`);
+    console.log(`${runtime}: ${run(runtime, ["broker-cli.mjs"], credentialClient)}`);
+  }
 
   const e2bDeps = { ...sdkDeps, "@beachside/e2b": archiveOverrides["@beachside/e2b"] };
 

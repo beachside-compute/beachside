@@ -3,20 +3,50 @@ title: Credential broker
 description: Give sandbox commands short-lived GitHub and model access through a self-hosted credential broker.
 ---
 
-The [Beachside credential broker](https://github.com/beachside-compute/beachside/tree/main/services/credential-broker) holds upstream GitHub and model credentials. Set up the Worker and its integrations first, then install the client alongside Beachside.
+The Beachside credential broker stores upstream GitHub and model credentials and issues short-lived grants for sandbox workloads. After deployment, use the admin client or CLI to manage runtime integrations. Each integration selects a fixed provider and its upstream credential.
+
+## Deploy the broker
+
+Configure three Worker secrets. `BROKER_ADMIN_KEY` authorizes integration and issuance settings. `BROKER_ISSUER_KEY` authorizes grant requests. `BROKER_ENCRYPTION_KEYS` maps version labels to base64url-encoded 32-byte encryption keys. The `BROKER_ENCRYPTION_KEY_VERSION` setting selects the active version for writes. Keep prior encryption versions configured until their stored credentials have been rotated. [Worker deployment and bootstrap](https://github.com/beachside-compute/beachside/tree/main/services/credential-broker).
+
+When upgrading from a deployment with `BROKER_API_KEY` and integrations defined in `BROKER_CONFIG`, create the integrations and set the allowlist on the new version, then issue fresh grants.
+
+## Set up runtime integrations
 
 ```sh
 npm install beachside @beachside/credential-client
 ```
 
-Create the broker client on the trusted host. This example assumes the connected Beachside client has a Linux image with Git and GitHub CLI, and that the Worker has integrations named `github-work` and `router-work`.
+Set `BEACHSIDE_BROKER_URL` to the Worker HTTPS origin and `BEACHSIDE_BROKER_ADMIN_KEY` to its `BROKER_ADMIN_KEY` on the operator host. The installed `beachside-broker` CLI reads upstream values from stdin and sends them over HTTPS for encrypted storage. Its output contains integration metadata.
+
+```sh
+printf '%s' "$WORK_GITHUB_TOKEN" |
+  npx beachside-broker integration create github-work --provider github --secret-stdin
+printf '%s' "$TOOLS_GITHUB_TOKEN" |
+  npx beachside-broker integration create github-tools --provider github --secret-stdin
+printf '%s' "$ANTHROPIC_KEY" |
+  npx beachside-broker integration create claude-work --provider anthropic --secret-stdin
+printf '%s' "$OPENROUTER_KEY" |
+  npx beachside-broker integration create router-work --provider openrouter --secret-stdin
+
+npx beachside-broker issuer set github-work github-tools claude-work router-work
+npx beachside-broker integration list
+```
+
+The issuance allowlist starts empty. Adding an integration leaves issuance eligibility unchanged. `issuer set` replaces the whole allowlist, and `issuer set` with no IDs clears it. A GitHub Actions job also needs permission for the integration in its deployed workflow policy.
+
+For deployments holding the upstream value in a Worker secret binding, declare the binding name in `BROKER_CONFIG.workerSecretBindings` and pass `--worker-secret CREDENTIAL_EXAMPLE` in place of `--secret-stdin` to create or rotate a reference. The admin API accepts the same source choices through `createCredentialBrokerAdmin()` from `@beachside/credential-client`.
+
+## Give a sandbox a grant
+
+On the trusted orchestrator host, use `BROKER_ISSUER_KEY` as the issuer API key. This example assumes the connected Beachside client has a Linux image with Git and GitHub CLI.
 
 ```ts
 import { createCredentialBroker } from "@beachside/credential-client";
 
 const broker = createCredentialBroker({
   url: process.env.BEACHSIDE_BROKER_URL!,
-  auth: { apiKey: process.env.BEACHSIDE_BROKER_KEY! },
+  auth: { apiKey: process.env.BEACHSIDE_BROKER_ISSUER_KEY! },
 });
 
 await client.sandboxes.with(
@@ -37,9 +67,11 @@ await client.sandboxes.with(
 
 Git uses the broker for HTTPS URLs under `https://github.com/`. For `gh`, the environment sets `GH_HOST` to the broker hostname and `GH_ENTERPRISE_TOKEN` to the grant. An explicitly selected `github.com` GitHub CLI host takes precedence over `GH_HOST`. Use `gh api --hostname "$GH_HOST"` or `gh ... --repo "$GH_HOST/owner/repo"` to explicitly select the broker. The Worker accepts supported GitHub routes. The configured upstream GitHub credential determines repository access and write permissions. See the [broker route and permission reference](https://github.com/beachside-compute/beachside/tree/main/services/credential-broker).
 
+A broker can hold multiple GitHub integrations. Choose one per grant, such as `github: "github-tools"` for a sandbox working with the tools account. Git and GitHub CLI use that grant's selected GitHub credential on the shared broker host. A grant can include model integrations alongside GitHub.
+
 ## GitHub Actions
 
-Set `permissions: { id-token: write }` in the job and configure the Workflow's exact identity and audience in the broker's OIDC rules. Request the token on the runner hosting Beachside.
+Set `permissions: { id-token: write }` in the job and configure the workflow's exact identity, audience, and integration names in the broker's OIDC rules. The requested integrations must also be on the admin issuance allowlist. Request the token on the runner hosting Beachside.
 
 ```ts
 import { createCredentialBroker, githubActionsOidc } from "@beachside/credential-client";
@@ -95,6 +127,19 @@ For OpenCode V2, add these settings for the providers your grant includes in the
 
 The [compiled OpenCode example](https://github.com/beachside-compute/beachside/blob/main/apps/docs/examples/credential-broker.ts) clones a project, writes the OpenRouter settings through the SDK, and starts OpenCode with the grant environment.
 
+## Rotate or retire integrations
+
+```sh
+printf '%s' "$REPLACEMENT_GITHUB_TOKEN" |
+  npx beachside-broker integration rotate github-work --secret-stdin
+npx beachside-broker integration show github-work
+npx beachside-broker integration disable github-tools
+```
+
+Rotation increments the credential version. Grants keep their scope and newly authorized requests use the replacement, while in-flight requests may finish with the previous credential. Disabling an integration revokes grants that selected it, and enabling it again allows new grants subject to issuance permissions. Deleting an integration revokes its grants and clears its eligibility. Recreating the same ID requires explicit authorization again.
+
+The client sends each admin write once. If the call times out or you cancel it, the write may already have applied. Check the integration metadata and credential version with `integration show`, or check the issuance allowlist with `issuer show`, before retrying.
+
 ## Grant lifetime and cleanup
 
 Beachside acquires the grant after it confirms sandbox creation and before setup runs. The grant goes into commands, processes, and terminals started through the creating connection. This includes verified handles reopened on that connection. Native SSH sessions and handles reopened through a new connection need independent configuration.
@@ -107,4 +152,4 @@ Use `sandboxes.with()` for automatic cleanup or call `box.destroy()` yourself. D
 
 If you stop waiting for revocation after compute destruction is confirmed, `WaitAbortedError.destroyOutcome` contains the confirmed compute result. The revocation attempt continues within its original budget. Use `submitDestroy()` to retain the operation handle and wait again.
 
-Credentialed handles reject snapshots and forks. Restore and advanced `submitCreate()` do not accept `credentials`. Keep upstream keys in the Worker's secret store and the broker management credential on the trusted host. Sandbox code can read and use its own scoped grant until revocation or expiry.
+Credentialed handles reject snapshots and forks. Use `sandboxes.create()` or `sandboxes.with()` to request a grant. Keep upstream keys in the broker, the admin key on the operator host, and the issuer key on the orchestrator. Sandbox code can read and use its own scoped grant until revocation or expiry.

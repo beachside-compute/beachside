@@ -98,6 +98,9 @@
     "packages/credential-client": {
       "name": "@beachside/credential-client",
       "version": "0.17.1",
+      "bin": {
+        "beachside-broker": "./dist/cli.js",
+      },
     },
     "packages/provider-spi": {
       "name": "@beachside-internal/provider-spi",

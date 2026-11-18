@@ -4,14 +4,10 @@ export const integrationId = z.string().regex(/^[a-z][a-z0-9-]{0,31}$/);
 
 export const maxGrantTtlSeconds = 3_600;
 
-const integration = z.strictObject({
-  id: integrationId,
-  kind: z.enum(["github", "anthropic", "openai", "openrouter"]),
-  credential: z.strictObject({
-    source: z.literal("worker-secret"),
-    binding: z.templateLiteral(["CREDENTIAL_", z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/)]),
-  }),
-});
+export const workerSecretBinding = z.templateLiteral([
+  "CREDENTIAL_",
+  z.string().regex(/^[A-Z][A-Z0-9_]{0,79}$/),
+]);
 
 const id = z.string().regex(/^[1-9][0-9]{0,19}$/);
 
@@ -40,43 +36,15 @@ const workflowPolicy = z
     }
   });
 
-const configuration = z
-  .strictObject({
-    integrations: z.array(integration).min(1).max(16),
-    githubActions: z
-      .strictObject({
-        audience: z.string().min(1).max(256),
-        workflows: z.array(workflowPolicy).min(1).max(32),
-      })
-      .optional(),
-  })
-  .superRefine((value, ctx) => {
-    const ids = new Set(value.integrations.map(({ id }) => id));
-
-    if (ids.size !== value.integrations.length) {
-      ctx.addIssue({ code: "custom", message: "Integration IDs must be unique" });
-    }
-
-    if (value.integrations.filter(({ kind }) => kind === "github").length > 1) {
-      ctx.addIssue({
-        code: "custom",
-        message: "Configure at most one GitHub integration per host",
-      });
-    }
-
-    for (const workflow of value.githubActions?.workflows ?? []) {
-      if (workflow.integrations.some((name) => !ids.has(name))) {
-        ctx.addIssue({
-          code: "custom",
-          message: "Workflow integrations must exist in integrations",
-        });
-      }
-    }
-  });
-
-export type Integration = z.infer<typeof integration>;
-
-export type CredentialReference = Integration["credential"];
+const configuration = z.strictObject({
+  workerSecretBindings: z.array(workerSecretBinding).max(100).default([]),
+  githubActions: z
+    .strictObject({
+      audience: z.string().min(1).max(256),
+      workflows: z.array(workflowPolicy).min(1).max(32),
+    })
+    .optional(),
+});
 
 export type BrokerConfig = z.infer<typeof configuration>;
 
@@ -92,10 +60,4 @@ export function parseConfig(raw: string): BrokerConfig {
   cachedConfig = { raw, config: result.data };
 
   return result.data;
-}
-
-export function permissionKey(integration: Integration): string {
-  const { id, kind, credential } = integration;
-
-  return `${id}:${kind}:${credential.source}:${credential.binding}`;
 }

@@ -26,7 +26,17 @@ export function parseTraceparent(value: string | null): SpanContext | undefined 
   };
 }
 
-type Operation = "grant.create" | "grant.revoke" | "gateway";
+export type AdminOperation =
+  | "admin.integration.list"
+  | "admin.integration.create"
+  | "admin.integration.read"
+  | "admin.integration.update"
+  | "admin.integration.rotate"
+  | "admin.integration.delete"
+  | "admin.issuer_permissions.read"
+  | "admin.issuer_permissions.update";
+
+type Operation = "grant.create" | "grant.revoke" | "gateway" | AdminOperation;
 
 export function startSpan(
   env: TraceExportBindings,
