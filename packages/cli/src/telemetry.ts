@@ -69,6 +69,7 @@ const commandNames = [
   "providers",
   "skill",
   "gc",
+  "init",
 ] as const;
 
 /** Rebuild every payload from allowed scalar fields; never spread command data into an event. */
@@ -90,6 +91,8 @@ export const CommandEvent = z.strictObject({
       "cache ls",
       "cache rm",
       "cache prune",
+      "guided",
+      "flags",
     ])
     .optional(),
   provider: provider.optional(),

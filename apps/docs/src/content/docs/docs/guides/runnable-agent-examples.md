@@ -14,7 +14,7 @@ The [examples README](https://github.com/beachside-compute/beachside/blob/main/e
 
 ## Set up and run
 
-Use **Bun 1.3.14** on the host. These examples live in the repository, so run them from a checkout:
+Use **Bun 1.4.4** on the host. These examples live in the repository, so run them from a checkout:
 
 ```sh
 git clone https://github.com/beachside-compute/beachside.git

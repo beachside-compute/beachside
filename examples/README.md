@@ -9,7 +9,7 @@ Both use Beachside's public SDK. Provider selection changes setup; the workflows
 
 ## Setup
 
-Use **Bun 1.3.14** from the repository root:
+Use **Bun 1.4.4** from the repository root:
 
 ```sh
 bun install --frozen-lockfile

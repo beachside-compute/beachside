@@ -367,13 +367,13 @@ esac
 }
 
 test.skipIf(process.platform === "darwin")(
-  "a pasted key goes to the OS keychain and the profile keeps only a reference",
+  "with --store keychain, a pasted key goes to the OS keychain and the profile keeps only a reference",
   async () => {
     const bin = await fakeSecretTool();
     const env = { PATH: `${bin}:${process.env.PATH ?? ""}` };
 
     const result = await cli(
-      [...fake, "--api-key", "-", "--set", "region=north", "--json"],
+      [...fake, "--api-key", "-", "--set", "region=north", "--store", "keychain", "--json"],
       env,
       token,
     );
@@ -404,7 +404,7 @@ test.skipIf(process.platform === "darwin")(
 
     // Piping the same key again keeps the item it is already in.
     const again = await cli(
-      [...fake, "--api-key", "-", "--set", "region=north", "--json"],
+      [...fake, "--api-key", "-", "--set", "region=north", "--store", "keychain", "--json"],
       env,
       token,
     );
@@ -419,7 +419,17 @@ test.skipIf(process.platform === "darwin")(
     await writeFile(join(dir, "keyring", account), "an-older-key");
 
     const replaced = await cli(
-      [...fake, "--api-key", "-", "--set", "region=north", "--force", "--json"],
+      [
+        ...fake,
+        "--api-key",
+        "-",
+        "--set",
+        "region=north",
+        "--store",
+        "keychain",
+        "--force",
+        "--json",
+      ],
       env,
       token,
     );
@@ -433,7 +443,17 @@ test.skipIf(process.platform === "darwin")(
 
     // A rejected key leaves the keychain and the profile as they were.
     const rejected = await cli(
-      [...fake, "--api-key", "-", "--set", "region=north", "--force", "--json"],
+      [
+        ...fake,
+        "--api-key",
+        "-",
+        "--set",
+        "region=north",
+        "--store",
+        "keychain",
+        "--force",
+        "--json",
+      ],
       env,
       "wrong",
     );
@@ -443,6 +463,22 @@ test.skipIf(process.platform === "darwin")(
     expect((await config()).profiles.fk.credentials.token).toBe(next);
   },
 );
+
+test("a pasted key goes to beachside.json by default, even when a keychain is available", async () => {
+  // macOS always has `security`; elsewhere a fake secret-tool makes a keychain available.
+  const bin = await fakeSecretTool();
+  const env = { PATH: `${bin}:${process.env.PATH ?? ""}` };
+
+  const result = await cli(
+    [...fake, "--api-key", "-", "--set", "region=north", "--json"],
+    env,
+    token,
+  );
+
+  expect(result).toMatchObject({ code: 0 });
+  expect((await config()).profiles.fk.credentials.token).toBe(token);
+  expect(await readdir(join(dir, "keyring")).catch(() => [])).toEqual([]);
+});
 
 test("a key kept in an existing beachside.json makes the file readable only by you", async () => {
   await mkdir(join(dir, "beachside"), { recursive: true });
@@ -554,8 +590,8 @@ test("the wizard asks for the key and settings, checks, tries a sandbox and save
 
   expect(code).toBe(0);
   expect(asked).toHaveLength(4);
-  // No keychain on this PATH, so the key is kept in beachside.json and the person is told.
-  expect(said.some((line) => line.includes("No OS keychain found"))).toBe(true);
+  // New keys go in beachside.json without asking, and the person is told how to opt in.
+  expect(said.some((line) => line.includes("New keys go in beachside.json"))).toBe(true);
   expect(said).toContain("Get your fk token at https://fake.example/keys");
   expect(said.join("\n")).not.toContain(token);
 
@@ -690,7 +726,7 @@ test("the repeat command never prints a key kept in beachside.json", () => {
   expect(command).not.toContain("secret");
   // Several piped keys are read one per line, --api-key first; a string that looks like JSON stays one.
   expect(command).toBe(
-    `beachside init --module @acme/adapter --export acme --profile work --api-key - --credential other=op://vault/item/field --credential extra=- --store config --set org=org-1 --set 'flag="true"' --set 'environment={"kind":"prepared","value":"x y"}' --default`,
+    `beachside init --module @acme/adapter --export acme --profile work --api-key - --credential other=op://vault/item/field --credential extra=- --set org=org-1 --set 'flag="true"' --set 'environment={"kind":"prepared","value":"x y"}' --default`,
   );
 });
 

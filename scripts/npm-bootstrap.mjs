@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 
-const repository = "pandemicsyn/beachside";
+const repository = "beachside-compute/beachside";
 
 const workflow = "release-npm.yml";
 
@@ -115,8 +115,8 @@ function report(rows) {
 
 const mode = process.argv[2] ?? "plan";
 
-if (!["plan", "publish", "trust"].includes(mode))
-  throw new Error(`Unknown bootstrap mode: ${mode}; use plan, publish or trust`);
+if (!["plan", "publish", "trust", "retrust"].includes(mode))
+  throw new Error(`Unknown bootstrap mode: ${mode}; use plan, publish, trust or retrust`);
 
 if (mode === "plan") {
   const directory = join(tmpdir(), `beachside-npm-bootstrap-${process.pid}`);
@@ -164,7 +164,33 @@ if (mode === "publish") {
   console.log("Placeholders published. Next: bun run release:bootstrap trust");
 }
 
-if (mode === "trust") {
+function trustEntries(name) {
+  const list = () => npm(["trust", "list", name, "--json"]);
+  let result = list();
+
+  // npm only asks for 2FA in a terminal, and --json output is piped here, so on EOTP run the
+  // same list interactively to authenticate (choose to skip 2FA for 5 minutes), then retry.
+  if (result.status !== 0 && /EOTP/.test(result.stderr)) {
+    interactive(["trust", "list", name]);
+    result = list();
+  }
+
+  if (result.error || result.status !== 0)
+    throw new Error(`npm trust list ${name} failed: ${result.stderr || result.error}`);
+
+  // npm prints one JSON object per trust entry, back to back.
+  const text = result.stdout.trim();
+
+  return text ? JSON.parse(`[${text.replace(/}\s*{/g, "},{")}]`) : [];
+}
+
+function matches(entry) {
+  return (
+    entry.repository === repository && entry.file === workflow && entry.environment === environment
+  );
+}
+
+if (mode === "trust" || mode === "retrust") {
   requireNpm();
   whoami();
 
@@ -182,6 +208,22 @@ if (mode === "trust") {
 
   for (const [index, { manifest }] of selected.entries()) {
     if (index > 0) await new Promise((done) => setTimeout(done, 2000));
+
+    if (mode === "retrust") {
+      // A package holds one trust entry, so a moved repository needs the old one revoked first.
+      const entries = trustEntries(manifest.name);
+
+      if (entries.some(matches)) {
+        console.log(`${manifest.name} already trusts ${repository}; skipping`);
+        continue;
+      }
+
+      for (const entry of entries) {
+        console.log(`${manifest.name}: revoking ${entry.repository ?? entry.type} (${entry.id})`);
+        interactive(["trust", "revoke", manifest.name, `--id=${entry.id}`]);
+      }
+    }
+
     interactive([
       "trust",
       "github",

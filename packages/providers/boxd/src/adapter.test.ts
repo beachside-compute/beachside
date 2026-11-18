@@ -5,6 +5,7 @@ import { AdapterError } from "@beachside/adapter";
 import { adapterSuite, snapshotSuite } from "@beachside/adapter/testing";
 import { Beachside, OutcomeUnknownError, Preserve } from "beachside";
 import { createBoxdAdapter } from "./adapter";
+import { expectRejection } from "./expect-rejection.test-support";
 import { boxdFixture } from "./fixture.test-support";
 import { regionTarget, type CallContext } from "./transport";
 
@@ -71,14 +72,16 @@ test("boxd setup offers blocked and internet egress and takes the network once, 
     { org: "main", network: "internet", networkPolicy: "internet" },
     { org: "main", network: "allowlist" },
   ])
-    await expect(
-      // SAFETY: Invalid setups are the point; the adapter must refuse them at connect.
-      Beachside.connect({
-        adapter,
-        config: config as never,
-        credentials: { apiKey: "fixture-main" },
-      }),
-    ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+    (
+      await expectRejection(
+        // SAFETY: Invalid setups are the point; the adapter must refuse them at connect.
+        Beachside.connect({
+          adapter,
+          config: config as never,
+          credentials: { apiKey: "fixture-main" },
+        }),
+      )
+    ).toMatchObject({ code: "INVALID_ARGUMENT" });
 });
 
 test("boxd resources pick the smallest size class and inspect reports the real size", async () => {
@@ -105,25 +108,29 @@ test("boxd resources pick the smallest size class and inspect reports the real s
   }
 
   const before = fixture.calls.length;
-  await expect(
-    Beachside.connect({
-      adapter,
-      config: { org: "main", network: "internet", resources: { memoryMiB: 65536 } },
-      credentials: { apiKey: "fixture-main" },
-    }),
-  ).rejects.toMatchObject({
+  (
+    await expectRejection(
+      Beachside.connect({
+        adapter,
+        config: { org: "main", network: "internet", resources: { memoryMiB: 65536 } },
+        credentials: { apiKey: "fixture-main" },
+      }),
+    )
+  ).toMatchObject({
     code: "UNSUPPORTED",
     message: expect.stringContaining("largest is 8 vCPU / 32768 MiB"),
   });
   expect(fixture.calls).toHaveLength(before);
 
-  await expect(
-    Beachside.connect({
-      adapter,
-      config: { org: "main", network: "internet", size: 2, resources: { vcpus: 2 } },
-      credentials: { apiKey: "fixture-main" },
-    }),
-  ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+  (
+    await expectRejection(
+      Beachside.connect({
+        adapter,
+        config: { org: "main", network: "internet", size: 2, resources: { vcpus: 2 } },
+        credentials: { apiKey: "fixture-main" },
+      }),
+    )
+  ).toMatchObject({ code: "INVALID_ARGUMENT" });
 });
 
 test("native token exchange accepts user_id and additive response fields", async () => {
@@ -227,7 +234,9 @@ test("setup default policy and image produce an ordinary create; unmet snapshot 
     });
     // Internet egress leaves the native allowlist empty, so nothing is set after create.
     expect(fixture.calls.some((call) => call.method === "SetVmEgressAllow")).toBe(false);
-    await expect(box.snapshot({ requirements: { preserve: "filesystem" } })).rejects.toMatchObject({
+    (
+      await expectRejection(box.snapshot({ requirements: { preserve: "filesystem" } }))
+    ).toMatchObject({
       code: "UNSUPPORTED",
     });
     expect(fixture.calls.some((call) => call.method === "CreateSnapshot")).toBe(false);
@@ -275,12 +284,12 @@ test("boxd create UNAVAILABLE and oversized-response RESOURCE_EXHAUSTED stay unk
 
   try {
     fixture.rejectNextCreate(status.UNAVAILABLE, "connection reset");
-    await expect(client.sandboxes.create()).rejects.toMatchObject({ code: "OUTCOME_UNKNOWN" });
+    (await expectRejection(client.sandboxes.create())).toMatchObject({ code: "OUTCOME_UNKNOWN" });
     fixture.rejectNextCreate(
       status.RESOURCE_EXHAUSTED,
       "Received message larger than max (9 vs. 4)",
     );
-    await expect(client.sandboxes.create()).rejects.toMatchObject({ code: "OUTCOME_UNKNOWN" });
+    (await expectRejection(client.sandboxes.create())).toMatchObject({ code: "OUTCOME_UNKNOWN" });
   } finally {
     await client.close();
   }
@@ -314,13 +323,13 @@ test("byte fidelity, bounded exec collection and raw upload acknowledgement", as
     await box.writeFile("/empty", new Uint8Array(), { overwrite: true });
     expect(await box.readFile("/empty")).toEqual(new Uint8Array());
     fixture.uploadCount(0);
-    await expect(box.writeFile("/file", bytes, { overwrite: true })).rejects.toBeInstanceOf(
+    (await expectRejection(box.writeFile("/file", bytes, { overwrite: true }))).toBeInstanceOf(
       OutcomeUnknownError,
     );
     fixture.downloadChunks([Uint8Array.of(0, 255), Uint8Array.of(128), Uint8Array.of(3, 7)]);
     expect(await box.readFile("/file")).toEqual(Uint8Array.of(0, 255, 128, 3, 7));
     fixture.downloadChunks([new Uint8Array(700000), new Uint8Array(700000)]);
-    await expect(box.readFile("/file")).rejects.toMatchObject({ code: "CAPACITY" });
+    (await expectRejection(box.readFile("/file"))).toMatchObject({ code: "CAPACITY" });
     await box.destroy();
   } finally {
     await client.close();
@@ -335,12 +344,14 @@ test("independent block disks mount exclusively, survive destroy and can be expl
     const volume = await client.volumes.create({ name: "workspace" });
     expect((await volume.inspect()).filesystem).toBe("block-backed");
     const box = await client.sandboxes.create({ mounts: [volume.at("/workspace")] });
-    await expect(volume.delete()).rejects.toMatchObject({ code: "CONFLICT" });
-    await expect(client.sandboxes.create({ mounts: [volume.at("/other")] })).rejects.toMatchObject({
+    (await expectRejection(volume.delete())).toMatchObject({ code: "CONFLICT" });
+    (
+      await expectRejection(client.sandboxes.create({ mounts: [volume.at("/other")] }))
+    ).toMatchObject({
       code: "CONFLICT",
     });
     expect(fixture.effects.create).toBe(1);
-    await expect(box.destroy()).rejects.toMatchObject({ code: "UNSUPPORTED" });
+    (await expectRejection(box.destroy())).toMatchObject({ code: "UNSUPPORTED" });
     const cleanup = await box.destroy({ storage: "allow-unconfirmed" });
     expect(cleanup.retainedResources).toContain(volume.reference.nativeId);
 
@@ -404,18 +415,20 @@ test("boxd expiry comes from lifecycle, the deprecated top-level key or a per-cr
     await client.close();
   }
 
-  await expect(
-    Beachside.connect({
-      adapter,
-      config: {
-        org: "main",
-        network: "internet",
-        lifetimeSeconds: 600,
-        lifecycle: { lifetimeSeconds: 600 },
-      },
-      credentials: { apiKey: "fixture-main" },
-    }),
-  ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+  (
+    await expectRejection(
+      Beachside.connect({
+        adapter,
+        config: {
+          org: "main",
+          network: "internet",
+          lifetimeSeconds: 600,
+          lifecycle: { lifetimeSeconds: 600 },
+        },
+        credentials: { apiKey: "fixture-main" },
+      }),
+    )
+  ).toMatchObject({ code: "INVALID_ARGUMENT" });
 });
 
 test("fresh credentials reopen saved references; warm lifecycle and renewal report native effects", async () => {
@@ -489,13 +502,13 @@ test("expiry failure preserves an acknowledged UUID and observation never create
     const readsBefore = fixture.calls.filter((call) => call.method === "GetVm").length;
     const probesBefore = fixture.calls.filter((call) => call.method === "Exec").length;
 
-    await expect((await client.recover(operation.reference)).observe()).rejects.toMatchObject({
+    (await expectRejection((await client.recover(operation.reference)).observe())).toMatchObject({
       code: "OUTCOME_UNKNOWN",
       outcome: { kind: "create", status: "partial", sandbox: saved },
     });
     expect(fixture.calls.filter((call) => call.method === "GetVm")).toHaveLength(readsBefore + 1);
     fixture.failNextGet();
-    await expect((await client.recover(operation.reference)).observe()).rejects.toMatchObject({
+    (await expectRejection((await client.recover(operation.reference)).observe())).toMatchObject({
       code: "OUTCOME_UNKNOWN",
       outcome: { kind: "create", status: "partial", sandbox: saved },
     });
@@ -541,9 +554,9 @@ test("foreign native orgs and truncated directories fail rather than fabricating
   try {
     const box = await client.sandboxes.create();
     fixture.truncateListing();
-    await expect(box.readDirectory("/")).rejects.toMatchObject({ code: "OUTPUT_CAPACITY" });
+    (await expectRejection(box.readDirectory("/"))).toMatchObject({ code: "OUTPUT_CAPACITY" });
     fixture.badOrg();
-    await expect(box.inspect()).rejects.toMatchObject({ code: "CONFLICT" });
+    (await expectRejection(box.inspect())).toMatchObject({ code: "CONFLICT" });
   } finally {
     await client.close();
   }
@@ -556,9 +569,11 @@ test("native exec without an exit receipt is unknown", async () => {
   try {
     const box = await client.sandboxes.create();
     fixture.omitExit();
-    await expect(
-      box.exec({ command: { kind: "argv", argv: ["true"] }, deadlineSeconds: 1 }),
-    ).rejects.toBeInstanceOf(OutcomeUnknownError);
+    (
+      await expectRejection(
+        box.exec({ command: { kind: "argv", argv: ["true"] }, deadlineSeconds: 1 }),
+      )
+    ).toBeInstanceOf(OutcomeUnknownError);
     await box.destroy();
   } finally {
     await client.close();
@@ -692,11 +707,11 @@ test("confirmed pause and wake acknowledgements survive failed observations with
   try {
     const box = await client.sandboxes.create();
     fixture.failLifecycleRead();
-    await expect(box.suspend()).rejects.toMatchObject({
+    (await expectRejection(box.suspend())).toMatchObject({
       outcome: { kind: "sandbox_suspend", status: "partial", acknowledged: true },
     });
     expect((await box.inspect()).state).toBe("suspended");
-    await expect(box.resume()).rejects.toMatchObject({
+    (await expectRejection(box.resume())).toMatchObject({
       outcome: { kind: "sandbox_resume", status: "partial", acknowledged: true },
     });
     expect((await box.inspect()).state).toBe("running");
@@ -738,7 +753,7 @@ test("native terminal readiness failure retains expiry acknowledgement and norma
     }
 
     expect(fixture.observedStates).toEqual(["pending", "pending", "failed"]);
-    await expect((await client.recover(operation.reference)).observe()).rejects.toMatchObject({
+    (await expectRejection((await client.recover(operation.reference)).observe())).toMatchObject({
       outcome: { kind: "create", status: "partial", sandbox: saved },
     });
     expect(fixture.effects.create).toBe(1);
@@ -833,7 +848,7 @@ test("public preview pins configured routes at create, verifies identity and nev
     const box = await protectedClient.sandboxes.create();
     expect(fixture.machines.get(box.id)?.botProtection).toBe(true);
     const before = fixture.calls.length;
-    await expect(box.preview(3000)).rejects.toMatchObject({ code: "UNSUPPORTED" });
+    (await expectRejection(box.preview(3000))).toMatchObject({ code: "UNSUPPORTED" });
     expect(fixture.calls).toHaveLength(before);
     await box.destroy();
   } finally {
@@ -877,11 +892,11 @@ test("public preview pins configured routes at create, verifies identity and nev
     ]);
     fixture.machines.get(box.id)?.proxies.push({ name: "beachside-9000", port: 9000 });
     const unconfigured = fixture.calls.length;
-    await expect(box.preview(9000)).rejects.toMatchObject({ code: "UNSUPPORTED" });
+    (await expectRejection(box.preview(9000))).toMatchObject({ code: "UNSUPPORTED" });
     expect(fixture.calls).toHaveLength(unconfigured);
     await box.suspend();
     const sleeping = fixture.calls.length;
-    await expect(box.preview(3000)).rejects.toMatchObject({ code: "CONFLICT" });
+    (await expectRejection(box.preview(3000))).toMatchObject({ code: "CONFLICT" });
     expect(fixture.calls.slice(sleeping).map((call) => call.method)).toEqual(["GetVm"]);
     await box.destroy();
   } finally {
@@ -932,13 +947,15 @@ test("public preview rejects empty/duplicate ports before connecting", async () 
   const { adapter, fixture } = await setup();
 
   for (const ports of [[], [3000, 3000]])
-    await expect(
-      Beachside.connect({
-        adapter,
-        config: { org: "main", networkPolicy: "internet", preview: { access: "public", ports } },
-        credentials: { apiKey: "fixture-main" },
-      }),
-    ).rejects.toBeDefined();
+    (
+      await expectRejection(
+        Beachside.connect({
+          adapter,
+          config: { org: "main", networkPolicy: "internet", preview: { access: "public", ports } },
+          credentials: { apiKey: "fixture-main" },
+        }),
+      )
+    ).toBeDefined();
   expect(fixture.calls).toHaveLength(0);
 });
 
@@ -973,15 +990,17 @@ test("exec retains confirmed exit and captured bytes after a transport failure",
   try {
     const box = await client.sandboxes.create();
 
-    await expect(box.exec({ command: { kind: "argv", argv: ["false"] } })).rejects.toMatchObject({
-      code: "NONZERO_EXIT",
-      result: {
-        exitCode: 7,
-        truncated: true,
-        stdout: Uint8Array.of(0, 255),
-        stderr: Uint8Array.of(128),
+    (await expectRejection(box.exec({ command: { kind: "argv", argv: ["false"] } }))).toMatchObject(
+      {
+        code: "NONZERO_EXIT",
+        result: {
+          exitCode: 7,
+          truncated: true,
+          stdout: Uint8Array.of(0, 255),
+          stderr: Uint8Array.of(128),
+        },
       },
-    });
+    );
   } finally {
     await client.close();
   }
@@ -1030,7 +1049,7 @@ test("boxd lists org machines with unknown-ownership references that reopen", as
     expect(listed.reference?.receipt).toBeUndefined();
     expect((await client.sandboxes.get(listed.reference!)).id).toBe(external);
 
-    await expect(client.sandboxes.list({ cursor: "-1" })).rejects.toMatchObject({
+    (await expectRejection(client.sandboxes.list({ cursor: "-1" }))).toMatchObject({
       code: "INVALID_ARGUMENT",
     });
   } finally {
@@ -1047,7 +1066,7 @@ test("boxd declares create env unsupported and rejects it before any native call
     const calls = fixture.calls.length;
 
     for (const create of [client.sandboxes.create, client.sandboxes.submitCreate])
-      await expect(create({ env: { API_TOKEN: "fixture-env-value" } })).rejects.toMatchObject({
+      (await expectRejection(create({ env: { API_TOKEN: "fixture-env-value" } }))).toMatchObject({
         name: "UnsupportedFeatureError",
         code: "UNSUPPORTED",
         effect: "none",
@@ -1117,7 +1136,9 @@ test("boxd labels and blocked egress reach the machine before it is handed out",
       ["-edge", "x"],
       ["ok", "bad\u0001value"],
     ])
-      await expect(client.sandboxes.create({ labels: { [key!]: value! } })).rejects.toMatchObject({
+      (
+        await expectRejection(client.sandboxes.create({ labels: { [key!]: value! } }))
+      ).toMatchObject({
         code: "INVALID_ARGUMENT",
       });
     expect(fixture.effects.create).toBe(before);
@@ -1244,13 +1265,13 @@ test("a configured region sends machine calls to its endpoint and binds referenc
     });
 
     // A reference made in one region does not open from another.
-    await expect(home.sandboxes.get(box.reference!)).rejects.toMatchObject({ code: "CONFLICT" });
+    (await expectRejection(home.sandboxes.get(box.reference!))).toMatchObject({ code: "CONFLICT" });
 
     for (const region of ["fra", "sgp"] as const)
-      await expect(nyc.sandboxes.create({ region })).rejects.toMatchObject({
+      (await expectRejection(nyc.sandboxes.create({ region }))).toMatchObject({
         code: "UNSUPPORTED",
       });
-    await expect(home.sandboxes.create({ region: "nyc" })).rejects.toMatchObject({
+    (await expectRejection(home.sandboxes.create({ region: "nyc" }))).toMatchObject({
       code: "UNSUPPORTED",
     });
   } finally {
@@ -1263,8 +1284,8 @@ test("a configured region sends machine calls to its endpoint and binds referenc
   await fra.close();
   expect(fixture.dialed).toEqual(["nyc.boxd.sh:9443"]);
 
-  await expect(connect("sgp")).rejects.toMatchObject({ code: "FORBIDDEN" });
-  await expect(connect("syd")).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+  (await expectRejection(connect("sgp"))).toMatchObject({ code: "FORBIDDEN" });
+  (await expectRejection(connect("syd"))).toMatchObject({ code: "INVALID_ARGUMENT" });
 });
 
 const snapshotCalls = (fixture: Awaited<ReturnType<typeof boxdFixture>>, method: string) =>
@@ -1354,7 +1375,7 @@ test("snapshots capture memory under a unique name and restore that exact versio
 
     await snapshot.delete();
     expect(fixture.snapshots.size).toBe(0);
-    await expect(snapshot.inspect()).rejects.toMatchObject({ code: "NOT_FOUND" });
+    (await expectRejection(snapshot.inspect())).toMatchObject({ code: "NOT_FOUND" });
   } finally {
     await client.close();
   }
@@ -1369,9 +1390,9 @@ test("a snapshot saved again outside Beachside no longer restores or deletes by 
     const { snapshot } = await source.snapshot();
     fixture.resaveSnapshot(snapshot.reference.nativeId);
 
-    await expect(snapshot.inspect()).rejects.toMatchObject({ code: "CONFLICT" });
-    await expect(snapshot.restore()).rejects.toMatchObject({ code: "CONFLICT" });
-    await expect(snapshot.delete()).rejects.toMatchObject({ code: "CONFLICT" });
+    (await expectRejection(snapshot.inspect())).toMatchObject({ code: "CONFLICT" });
+    (await expectRejection(snapshot.restore())).toMatchObject({ code: "CONFLICT" });
+    (await expectRejection(snapshot.delete())).toMatchObject({ code: "CONFLICT" });
     expect(snapshotCalls(fixture, "CreateVmFromSnapshot")).toHaveLength(0);
     expect(snapshotCalls(fixture, "DeleteSnapshot")).toHaveLength(0);
     expect(fixture.snapshots.size).toBe(1);
@@ -1459,21 +1480,21 @@ test("capture and restore reject what boxd cannot do before any native mutation"
       { requirements: { maxInterruption: "none" as const } },
       { retention: { cleanupAfterSeconds: 3600 } },
     ])
-      await expect(source.snapshot(request)).rejects.toMatchObject({ code: "UNSUPPORTED" });
+      (await expectRejection(source.snapshot(request))).toMatchObject({ code: "UNSUPPORTED" });
 
     const volume = await client.volumes.create({ name: "workspace" });
     const mounted = await client.sandboxes.create({ mounts: [volume.at("/workspace")] });
-    await expect(mounted.snapshot()).rejects.toMatchObject({ code: "UNSUPPORTED" });
+    (await expectRejection(mounted.snapshot())).toMatchObject({ code: "UNSUPPORTED" });
     expect(snapshotCalls(fixture, "CreateSnapshot")).toHaveLength(0);
 
     const { snapshot } = await source.snapshot();
-    await expect(snapshot.restore({ env: { A: "b" } })).rejects.toMatchObject({
+    (await expectRejection(snapshot.restore({ env: { A: "b" } }))).toMatchObject({
       code: "UNSUPPORTED",
     });
-    await expect(snapshot.restore({ labels: { "boxd/owner": "x" } })).rejects.toMatchObject({
+    (await expectRejection(snapshot.restore({ labels: { "boxd/owner": "x" } }))).toMatchObject({
       code: "INVALID_ARGUMENT",
     });
-    await expect(snapshot.restore({ resources: { vcpu: 4 } })).rejects.toMatchObject({
+    (await expectRejection(snapshot.restore({ resources: { vcpu: 4 } }))).toMatchObject({
       code: "UNSUPPORTED",
     });
     expect(snapshotCalls(fixture, "CreateVmFromSnapshot")).toHaveLength(0);
@@ -1504,9 +1525,11 @@ test("boxd setup accepts memory-keeping depth and rejects filesystem-only before
     { ...base, snapshots: { preserve: Preserve.FILESYSTEM } },
     { ...base, lifecycle: { suspension: { preserve: Preserve.FILESYSTEM } } },
   ])
-    await expect(
-      Beachside.connect({ adapter, config, credentials: { apiKey: "fixture-main" } }),
-    ).rejects.toMatchObject({ code: "UNSUPPORTED" });
+    (
+      await expectRejection(
+        Beachside.connect({ adapter, config, credentials: { apiKey: "fixture-main" } }),
+      )
+    ).toMatchObject({ code: "UNSUPPORTED" });
   expect(fixture.calls).toHaveLength(before);
 });
 
@@ -1541,7 +1564,7 @@ test("boxd forks a running machine natively, keeping its egress and merging labe
     expect(machine.deleteAtMs).toBeGreaterThan(0);
     expect((await box.inspect()).state).toBe("running");
 
-    await expect(box.fork({ labels: { "boxd/owner": "me" } })).rejects.toMatchObject({
+    (await expectRejection(box.fork({ labels: { "boxd/owner": "me" } }))).toMatchObject({
       code: "INVALID_ARGUMENT",
     });
 
@@ -1551,7 +1574,7 @@ test("boxd forks a running machine natively, keeping its egress and merging labe
     expect(await box.checkFork({ labels: { branch: "b" } })).toMatchObject({
       status: "unsupported",
     });
-    await expect(box.fork({ labels: { branch: "b" } })).rejects.toMatchObject({
+    (await expectRejection(box.fork({ labels: { branch: "b" } }))).toMatchObject({
       code: "INVALID_ARGUMENT",
     });
     expect((await box.checkFork({ labels: { team: "ops" } })).status).toBe("supported");
@@ -1561,7 +1584,7 @@ test("boxd forks a running machine natively, keeping its egress and merging labe
     // and checkFork() reports that from the source before anything is sent.
     fixture.machines.get(box.id)!.egressAllow = ["api.example.com"];
     expect(await box.checkFork()).toMatchObject({ status: "unsupported" });
-    await expect(box.fork()).rejects.toMatchObject({ code: "UNSUPPORTED" });
+    (await expectRejection(box.fork())).toMatchObject({ code: "UNSUPPORTED" });
     expect(forks()).toBe(1);
   } finally {
     await client.close();
@@ -1589,7 +1612,7 @@ test("a lost boxd fork response is unknown and never forks again", async () => {
     expect(lost.reference.kind).toBe("sandbox_fork");
 
     // The fork UUID never reached the adapter, so recovery reports it unknown and never forks again.
-    await expect((await client.recover(lost.reference)).observe()).rejects.toBeInstanceOf(
+    (await expectRejection((await client.recover(lost.reference)).observe())).toBeInstanceOf(
       OutcomeUnknownError,
     );
     expect(forks()).toBe(1);
@@ -1612,7 +1635,7 @@ test("a boxd allowlist connection creates, restores and forks with its list and 
   try {
     expect((await client.capabilities()).network).toEqual(["allow"]);
     const creates = fixture.effects.create;
-    await expect(client.sandboxes.create({ network: "internet" })).rejects.toMatchObject({
+    (await expectRejection(client.sandboxes.create({ network: "internet" }))).toMatchObject({
       code: "UNSUPPORTED",
     });
     expect(fixture.effects.create).toBe(creates);
@@ -1627,11 +1650,11 @@ test("a boxd allowlist connection creates, restores and forks with its list and 
 
     // A source whose list changed outside Beachside would hand its list to the fork.
     fixture.machines.get(box.id)!.egressAllow = ["example.com"];
-    await expect(box.fork()).rejects.toMatchObject({ code: "UNSUPPORTED" });
+    (await expectRejection(box.fork())).toMatchObject({ code: "UNSUPPORTED" });
     fixture.machines.get(box.id)!.egressAllow = [...sent];
 
     const { snapshot } = await box.snapshot();
-    await expect(snapshot.restore({ network: "blocked" })).rejects.toMatchObject({
+    (await expectRejection(snapshot.restore({ network: "blocked" }))).toMatchObject({
       code: "UNSUPPORTED",
     });
     const restored = await snapshot.restore();
@@ -1647,13 +1670,15 @@ test("boxd allowlists take public IPv4 ranges only and refuse at connect", async
 
   for (const entry of ["10.1.0.0/16", "192.168.1.1", "100.64.0.0/10", "8.0.0.0/4"]) {
     const calls = fixture.calls.length;
-    await expect(
-      Beachside.connect({
-        adapter,
-        config: { org: "main", network: { allow: ["github.com", entry] } },
-        credentials: { apiKey: "fixture-main" },
-      }),
-    ).rejects.toMatchObject({ code: "UNSUPPORTED" });
+    (
+      await expectRejection(
+        Beachside.connect({
+          adapter,
+          config: { org: "main", network: { allow: ["github.com", entry] } },
+          credentials: { apiKey: "fixture-main" },
+        }),
+      )
+    ).toMatchObject({ code: "UNSUPPORTED" });
     expect(fixture.calls.length).toBe(calls);
   }
 });
@@ -1698,7 +1723,7 @@ test("file operations without python3 fail cleanly instead of reporting an unkno
   try {
     const box = await client.sandboxes.create();
 
-    await expect(box.makeDirectory("/work/a")).rejects.toMatchObject({
+    (await expectRejection(box.makeDirectory("/work/a"))).toMatchObject({
       code: "UNSUPPORTED",
       effect: "none",
     });
@@ -1716,10 +1741,10 @@ test("guest access on a suspended machine is refused instead of waking it", asyn
     await box.suspend();
     const before = fixture.calls.filter((call) => call.method === "Exec").length;
 
-    await expect(box.exec({ command: { kind: "argv", argv: ["true"] } })).rejects.toMatchObject({
+    (await expectRejection(box.exec({ command: { kind: "argv", argv: ["true"] } }))).toMatchObject({
       code: "UNAVAILABLE",
     });
-    await expect(box.readFile("/etc/hostname")).rejects.toMatchObject({ code: "UNAVAILABLE" });
+    (await expectRejection(box.readFile("/etc/hostname"))).toMatchObject({ code: "UNAVAILABLE" });
     expect(fixture.calls.filter((call) => call.method === "Exec")).toHaveLength(before);
     expect((await box.inspect()).state).toBe("suspended");
   } finally {

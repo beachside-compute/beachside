@@ -1,6 +1,6 @@
 {
   "name": "@beachside/daytona",
-  "version": "0.16.0",
+  "version": "0.17.1",
   "private": false,
   "type": "module",
   "files": [
@@ -29,11 +29,11 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/pandemicsyn/beachside.git",
+    "url": "git+https://github.com/beachside-compute/beachside.git",
     "directory": "packages/providers/daytona"
   },
   "bugs": {
-    "url": "https://github.com/pandemicsyn/beachside/issues"
+    "url": "https://github.com/beachside-compute/beachside/issues"
   },
   "publishConfig": {
     "access": "public"

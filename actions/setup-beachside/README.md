@@ -3,7 +3,7 @@
 Installs the Beachside CLI and provider adapters in a GitHub Actions job, and removes the sandboxes the job created when it ends.
 
 ```yaml
-- uses: pandemicsyn/beachside/actions/setup-beachside@main
+- uses: beachside-compute/beachside/actions/setup-beachside@main
   with:
     version: 0.8.0
     adapters: e2b

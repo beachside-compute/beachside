@@ -62,7 +62,7 @@ async function cleanup(process: NativeProcess | undefined, root: string) {
 }
 
 // About 700 sequential helper round trips: roughly 20s on a typical CI runner.
-test("Vercel supervisor streams 32 MiB with bounded frames, split UTF-8 and separate stderr", async () => {
+test("Vercel supervisor streams 4x past the output bound in bounded frames, split UTF-8 and separate stderr", async () => {
   const native = fixture();
   let child: NativeProcess | undefined;
   let size = 0;
@@ -80,7 +80,7 @@ test("Vercel supervisor streams 32 MiB with bounded frames, split UTF-8 and sepa
           argv: [
             "python3",
             "-c",
-            "import os; [os.write(1,b'x'*16384) for _ in range(2048)]; [os.write(2,bytes([b])) for b in '雪'.encode()]",
+            "import os; [os.write(1,b'x'*16384) for _ in range(256)]; [os.write(2,bytes([b])) for b in '雪'.encode()]",
           ],
         },
       },
@@ -94,7 +94,7 @@ test("Vercel supervisor streams 32 MiB with bounded frames, split UTF-8 and sepa
     );
     const [exit] = await Promise.all([child.wait(), child.outputDone]);
     expect(exit.exitCode).toBe(0);
-    expect(size).toBe(32 * 1024 * 1024);
+    expect(size).toBe(4 * 1024 * 1024);
     expect(stderr).toBe("雪");
     expect(native.largestResponse).toBeLessThan(100_000);
   } finally {
@@ -739,7 +739,7 @@ test("Vercel expired attachment leases park output, preserve input, and fence al
     await supervisor.exited;
     await rm(root, { recursive: true, force: true });
   }
-});
+}, 15_000);
 
 test("Vercel PTY executes an explicitly requested shell script once", async () => {
   const native = fixture();

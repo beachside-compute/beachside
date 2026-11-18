@@ -54,7 +54,7 @@ function load() {
         `${manifest.name} lockfile version is stale; regenerate bun.lock after Changesets versioning`,
       );
 
-    if (manifest.repository?.url !== "git+https://github.com/pandemicsyn/beachside.git")
+    if (manifest.repository?.url !== "git+https://github.com/beachside-compute/beachside.git")
       throw new Error(
         `${manifest.name} needs the exact Beachside repository URL for npm provenance`,
       );

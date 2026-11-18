@@ -1,6 +1,7 @@
 ---
 import DefaultFooter from "@astrojs/starlight/components/Footer.astro";
 import AnalyticsConsent from "./AnalyticsConsent.astro";
+import MadeIn from "./MadeIn.astro";
 
 const year = new Date().getFullYear();
 
@@ -8,7 +9,7 @@ const isDocs = Astro.url.pathname === "/docs" || Astro.url.pathname.startsWith("
 ---
 
 <DefaultFooter />
-<p class="docs-copyright">© {year} Beachside Compute</p>
+<p class="docs-copyright">© {year} Beachside Compute · <MadeIn /></p>
 <style>
   .docs-copyright {
     margin-top: 1.5rem;

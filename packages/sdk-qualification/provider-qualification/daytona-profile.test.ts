@@ -180,7 +180,8 @@ async function fixture(
         const script = String(body.command)
           .replaceAll("/tmp/", `${directory}/`)
           .replaceAll("'/tmp'", `'${directory}'`)
-          .replaceAll("ln -T --", `${process.platform === "darwin" ? "gln" : "ln"} -T --`);
+          // Fixture files are never directories, so plain POSIX ln has the same no-clobber result.
+          .replaceAll("ln -T --", "ln --");
 
         const output = Bun.spawnSync({
           cmd: ["/bin/sh", "-c", script],

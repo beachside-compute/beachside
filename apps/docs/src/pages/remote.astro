@@ -3,6 +3,7 @@ import Logo from "../components/Logo.astro";
 import ThemeToggle from "../components/ThemeToggle.astro";
 import "../styles/tokens.css";
 import AnalyticsConsent from "../components/AnalyticsConsent.astro";
+import MadeIn from "../components/MadeIn.astro";
 
 // One landing page for Rex and Herdr users. `?for=`, `utm_campaign=` or `#rex` / `#herdr` picks the view, so each
 // ad can land on its own copy; the toggle switches in place and keeps the rest of the query.
@@ -408,6 +409,7 @@ const year = new Date().getFullYear();
 
     <footer class="wrap footer">
       <span>© {year} Beachside Compute · Apache-2.0 · beachside.run · <a href="https://github.com/beachside-compute/beachside">GitHub</a> · <a href="https://x.com/pandemicsyn">X</a></span>
+      <MadeIn />
       <span>Product names and trademarks are the property of their respective owners. <a href="/docs/privacy/">Privacy</a></span>
       <AnalyticsConsent ads />
     </footer>

@@ -4,7 +4,7 @@ This workspace builds the development documentation at the canonical origin `htt
 
 ## Work locally
 
-From the repository root, install Bun 1.3.14 and run:
+From the repository root, install Bun 1.4.4 and run:
 
 ```sh
 bun install --frozen-lockfile
