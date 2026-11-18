@@ -126,7 +126,9 @@ linuxGuest("a no-clobber move onto an existing file conflicts and keeps both fil
     const destination = join(f.root, "destination");
     await f.box.writeFile(source, Uint8Array.of(0, 255, 128));
     await f.box.writeFile(destination, Uint8Array.of(7));
-    await expect(f.box.moveFile(source, destination)).rejects.toMatchObject({ code: "CONFLICT" });
+    (await expectRejection(f.box.moveFile(source, destination))).toMatchObject({
+      code: "CONFLICT",
+    });
     expect(readFileSync(source)).toEqual(Buffer.from([0, 255, 128]));
     expect(readFileSync(destination)).toEqual(Buffer.from([7]));
   } finally {
