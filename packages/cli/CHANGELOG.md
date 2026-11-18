@@ -1,5 +1,27 @@
 # @beachside/cli
 
+## 0.17.1
+
+### Patch Changes
+
+- [#242](https://github.com/beachside-compute/beachside/pull/242) [`e7e09ea`](https://github.com/beachside-compute/beachside/commit/e7e09ea9bc5367539584de25adf84a2f17e232c7) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - The command `beachside init` prints to repeat a setup no longer adds `--store config`, which is now the default.
+- Updated dependencies []:
+  - @beachside/adapter@0.17.1
+  - beachside@0.17.1
+
+## 0.17.0
+
+### Minor Changes
+
+- [#240](https://github.com/beachside-compute/beachside/pull/240) [`34cb393`](https://github.com/beachside-compute/beachside/commit/34cb393984e456ddd1be126829db01e16f906ccd) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - `beachside init` now keeps pasted or piped keys in `beachside.json` (mode 0600) by default on every platform, and the guided setup no longer asks where to store them. The OS keychain is still available with `--store keychain`, and existing `keychain://` references keep working.
+
+### Patch Changes
+
+- [#239](https://github.com/beachside-compute/beachside/pull/239) [`699767e`](https://github.com/beachside-compute/beachside/commit/699767e231438d07da53dba3c914129297205d19) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - `beachside init` now sends the same basic usage event as other commands, recording whether it ran as the guided setup or from flags. Provider keys, settings and other values are never sent.
+- Updated dependencies []:
+  - @beachside/adapter@0.17.0
+  - beachside@0.17.0
+
 ## 0.16.1
 
 ### Patch Changes

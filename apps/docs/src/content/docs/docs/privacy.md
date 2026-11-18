@@ -15,7 +15,7 @@ To change your choice, use **Analytics preferences** at the bottom of the page. 
 
 Telemetry is enabled by default outside CI. It helps us understand command and provider usage and identify failures.
 
-Events include the command, provider category, outcome, fixed error category, duration bucket, CLI version, operating system, architecture, runtime major version, and whether the command ran in CI or a terminal. A random, locally stored installation ID recognizes returning installations. Events go to a dedicated Beachside CLI PostHog project.
+Events include the command (for `init`, whether it ran as the guided setup or from flags), provider category, outcome, fixed error category, duration bucket, CLI version, operating system, architecture, runtime major version, and whether the command ran in CI or a terminal. A random, locally stored installation ID recognizes returning installations. Events go to a dedicated Beachside CLI PostHog project.
 
 We do not collect command arguments, input/output, file paths, environment variables, credentials, sandbox names or IDs, raw error messages, or stack traces. Help, version, completion, and telemetry controls send no events.
 
