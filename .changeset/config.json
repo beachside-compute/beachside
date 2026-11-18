@@ -19,6 +19,7 @@
       "@beachside/freestyle",
       "@beachside/archil",
       "@beachside/exe-dev",
+      "@beachside/upstash-box",
       "@beachside/modal",
       "@beachside/vercel",
       "@beachside/cli"
