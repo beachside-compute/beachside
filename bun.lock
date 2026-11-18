@@ -97,7 +97,7 @@
     },
     "packages/credential-client": {
       "name": "@beachside/credential-client",
-      "version": "0.16.1",
+      "version": "0.17.1",
     },
     "packages/provider-spi": {
       "name": "@beachside-internal/provider-spi",
