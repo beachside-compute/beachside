@@ -344,7 +344,9 @@ export async function boxdFixture() {
         const req = Request.parse(call.request);
         const key = String(call.metadata.get("authorization")[0] ?? "");
         const alternate = key.includes("alternate");
-        const org = alternate ? "org-alternate" : "org-main";
+        // A member key fenced to a team org that is not the user's default org.
+        const team = key.includes("team");
+        const org = alternate ? "org-alternate" : team ? "org-team" : "org-main";
         const ok = (value = {}) => callback(null, value);
         const missing = () => callback({ code: status.NOT_FOUND, message: "absent" });
 
@@ -356,10 +358,20 @@ export async function boxdFixture() {
             ok({ defaultImage: "ubuntu:24.04", zone: "boxd.sh" });
             break;
           case "ListOrgs":
-            ok({
-              orgs: [{ id: org, slug: alternate ? "alternate" : "main", name: org }],
-              defaultOrgId: org,
-            });
+            ok(
+              team
+                ? {
+                    orgs: [
+                      { id: "org-personal", slug: "personal", name: "org-personal" },
+                      { id: org, slug: "team", name: org },
+                    ],
+                    defaultOrgId: "org-personal",
+                  }
+                : {
+                    orgs: [{ id: org, slug: alternate ? "alternate" : "main", name: org }],
+                    defaultOrgId: org,
+                  },
+            );
             break;
           case "CreateVm": {
             if (rejectCreate) {

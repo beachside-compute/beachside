@@ -133,11 +133,8 @@ export interface ModalTransport {
   tunnelUrl?(sandboxId: string, port: number): Promise<string | null>;
   /** A connect token routing authenticated HTTP to one container port. */
   connectToken?(sandboxId: string, port: number): Promise<{ url: string; token: string }>;
-  findByName(
-    appName: string,
-    environment: string,
-    name: string,
-  ): Promise<ModalSandboxRecord | null>;
+  /** The sandbox in this App whose `beachside_submission` tag names the submission. */
+  findBySubmission(appId: string, submissionId: string): Promise<ModalSandboxRecord | null>;
   list(appId: string): AsyncIterable<ModalSandboxRecord>;
   terminate(sandboxId: string): Promise<boolean>;
   poll(sandboxId: string): Promise<"running" | "stopped" | "missing">;
@@ -424,15 +421,15 @@ export function createSdkTransport(input: {
 
       return { url: credentials.url, token: credentials.token };
     },
-    async findByName(appName, environment, name) {
-      try {
-        return await record(
-          await client.sandboxes.experimentalFromName(appName, name, { environment }),
-        );
-      } catch (error) {
-        if (error instanceof NotFoundError) return null;
-        throw error;
-      }
+    async findBySubmission(appId, submissionId) {
+      // Filtered by the App ID resolved at connect, so a renamed or remapped App never matches.
+      for await (const sandbox of client.sandboxes.experimentalList({
+        appId,
+        tags: { beachside_submission: submissionId },
+      }))
+        return await record(sandbox);
+
+      return null;
     },
     async *list(appId) {
       for await (const sandbox of client.sandboxes.experimentalList({ appId }))

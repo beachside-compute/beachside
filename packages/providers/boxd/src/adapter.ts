@@ -563,8 +563,9 @@ export function createBoxdAdapter(
         throw new AdapterError("UNSUPPORTED", "boxd currently requires a member API key");
       const org = orgs.find((value) => value.id === config.org || value.slug === config.org);
 
-      if (!org || !org.isDefault || !org.id || !cluster.zone)
-        throw new AdapterError("FORBIDDEN", "Select the authenticated default boxd org");
+      // Each key is fenced to one org; boxd authorizes every call, so any org the key can see works.
+      if (!org || !org.id || !cluster.zone)
+        throw new AdapterError("FORBIDDEN", "Select a boxd org this key belongs to");
 
       // A named region other than home's sends machine, disk and snapshot calls to its endpoint.
       const region = config.region

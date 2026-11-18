@@ -356,13 +356,7 @@ export function createModalAdapter(
       if (!/^ap-[A-Za-z0-9_-]+$/.test(appId))
         throw new AdapterError("UNAUTHENTICATED", "Modal App identity is invalid");
 
-      const verify = async () => {
-        if ((await transport.lookupApp(config.appName, config.environment)) !== appId)
-          throw new AdapterError("UNAUTHENTICATED", "Modal App identity changed");
-      };
-
       const listPage = async (input: { cursor?: string; limit: number }) => {
-        await verify();
         const offset = input.cursor === undefined ? 0 : Number(input.cursor);
 
         if (!Number.isSafeInteger(offset) || offset < 0)
@@ -399,8 +393,6 @@ export function createModalAdapter(
       };
 
       const find = async (id: string): Promise<RecordValue | null> => {
-        await verify();
-
         for await (const value of transport.list(appId)) {
           const record = RecordSchema.parse(value);
 
@@ -457,7 +449,6 @@ export function createModalAdapter(
 
       const requireSnapshot = async (ref: ResourceReference) => {
         checkSnapshot(ref);
-        await verify();
 
         if (!(await transport.imageExists(ref.nativeId)))
           throw new AdapterError("NOT_FOUND", "Modal snapshot image is unavailable or expired");
@@ -503,11 +494,7 @@ export function createModalAdapter(
           if (!/^[A-Za-z0-9_-]{1,128}$/.test(id))
             return ctx.unknown("Modal returned an invalid sandbox ID");
 
-          const record = await transport.findByName(
-            config.appName,
-            config.environment,
-            ctx.submissionId,
-          );
+          const record = await transport.findBySubmission(appId, ctx.submissionId);
 
           if (
             !record ||
@@ -532,13 +519,7 @@ export function createModalAdapter(
       };
 
       const observeCreate = async (attempt: { submissionId: string; operationId: string }) => {
-        await verify();
-
-        const record = await transport.findByName(
-          config.appName,
-          config.environment,
-          attempt.submissionId,
-        );
+        const record = await transport.findBySubmission(appId, attempt.submissionId);
 
         if (
           !record ||
@@ -633,7 +614,6 @@ export function createModalAdapter(
             )
               throw new AdapterError("INVALID_ARGUMENT", "Reserved Modal tag prefix");
             requirePolicy(input.networkPolicy);
-            await verify();
 
             if (
               input.image.kind === "prepared" &&
@@ -682,8 +662,6 @@ export function createModalAdapter(
 
             if (!token.success || token.data.id !== attempt.sandbox?.id)
               return ctx.unknown("Modal termination scope evidence is unavailable; do not replay");
-
-            await verify();
 
             try {
               const state = await transport.poll(token.data.id);
@@ -857,7 +835,6 @@ export function createModalAdapter(
             if (!attempt.resource)
               return ctx.unknown("Modal snapshot deletion identity is unavailable; do not replay");
             checkSnapshot(attempt.resource);
-            await verify();
 
             return (await transport.imageExists(attempt.resource.nativeId))
               ? ctx.unknown("Modal snapshot image still exists; deletion was not confirmed")

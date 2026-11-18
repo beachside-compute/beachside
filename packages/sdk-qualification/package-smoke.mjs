@@ -744,7 +744,7 @@ const transport = {
     records.set(input.name, { id: "sb-" + creates, tags: input.tags, running: true });
     return "sb-" + creates;
   },
-  async findByName(_app, _environment, name) { return records.get(name) ?? null; },
+  async findBySubmission(appId, name) { if (appId !== "ap-fixture") throw Error("Wrong correlation scope"); return records.get(name) ?? null; },
   async *list(appId) { if (appId !== "ap-fixture") throw Error("Wrong inventory scope"); for (const record of records.values()) if (record.running) yield record; },
   async readBytes(id, path, maxBytes) { if (!id.startsWith("sb-") || maxBytes !== 1048576) throw Error("Wrong read"); return files.get(path) ?? Uint8Array.from([0, 255, 128]); },
   async fileExists(_id, path) { return files.has(path); },
