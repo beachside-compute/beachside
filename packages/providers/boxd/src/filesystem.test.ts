@@ -9,6 +9,12 @@ import { createBoxdAdapter } from "./adapter";
 import { expectRejection } from "./expect-rejection.test-support";
 import { boxdFixture } from "./fixture.test-support";
 
+/**
+ * Tests of the guest helper's no-clobber moves, which need Linux `renameat2` as every
+ * boxd guest has. They run on Linux, as in CI, and are skipped elsewhere, such as macOS.
+ */
+const linuxGuest = test.skipIf(process.platform !== "linux");
+
 const roots: string[] = [];
 
 afterEach(() => {
@@ -104,10 +110,6 @@ test("guest filesystem preserves links, recursive opt-in, exact bytes and no-clo
       code: "CONFLICT",
     });
     await f.box.moveFile(join(dir, "copy"), join(dir, "moved"), { overwrite: true });
-    await expect(f.box.moveFile(path, join(dir, "moved"))).rejects.toMatchObject({
-      code: process.platform === "linux" ? "CONFLICT" : "UNSUPPORTED",
-    });
-    expect(readFileSync(path)).toEqual(Buffer.from([0, 255, 128]));
     await expect(f.box.removeFile(dir)).rejects.toMatchObject({ code: "CONFLICT" });
     await f.box.removeFile(dir, { recursive: true });
     await f.box.removeFile(dir);
@@ -115,6 +117,24 @@ test("guest filesystem preserves links, recursive opt-in, exact bytes and no-clo
     await f.close();
   }
 }, 60000);
+
+linuxGuest("a no-clobber move onto an existing file conflicts and keeps both files", async () => {
+  const f = await setup();
+
+  try {
+    const source = join(f.root, "source");
+    const destination = join(f.root, "destination");
+    await f.box.writeFile(source, Uint8Array.of(0, 255, 128));
+    await f.box.writeFile(destination, Uint8Array.of(7));
+    (await expectRejection(f.box.moveFile(source, destination))).toMatchObject({
+      code: "CONFLICT",
+    });
+    expect(readFileSync(source)).toEqual(Buffer.from([0, 255, 128]));
+    expect(readFileSync(destination)).toEqual(Buffer.from([7]));
+  } finally {
+    await f.close();
+  }
+});
 
 test("incremental transfers preserve bytes above buffered bound and retain interrupted staging", async () => {
   const f = await setup();
