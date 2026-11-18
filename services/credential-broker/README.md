@@ -23,9 +23,7 @@ Configure a static issuer key, GitHub Actions OIDC, or both. The admin key, issu
 
 Run `bun run alchemy deploy`. Use the resulting HTTPS origin for the client. Keep the same Alchemy stage and state directory when updating this deployment. The Durable Object applies pending migrations on startup. After schema changes, run `bun run db:generate --name your_change` and commit its SQL, journal, snapshot, and bundled migration index.
 
-### Upgrading the deployment
-
-The previous `BROKER_API_KEY` no longer authorizes management or issuance. Provision separate keys and a keyring, and use the admin API to recreate the previous integrations. For existing Worker-secret credentials, move their binding names from the old `BROKER_CONFIG.integrations` array to `BROKER_CONFIG.workerSecretBindings` and create Worker-secret references in the registry. Replace the issuer allowlist and reissue sandbox grants. Grants from the previous registry schema cannot authorize the new integration identities.
+The new deployment starts with no integrations or issuer permissions. Add integrations, approve them for issuance, then use the issuer client to launch credentialed sandboxes.
 
 ## Manage integrations
 

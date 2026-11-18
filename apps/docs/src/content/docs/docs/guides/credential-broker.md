@@ -9,7 +9,7 @@ The Beachside credential broker stores upstream GitHub and model credentials and
 
 Configure three Worker secrets. `BROKER_ADMIN_KEY` authorizes integration and issuance settings. `BROKER_ISSUER_KEY` authorizes grant requests. `BROKER_ENCRYPTION_KEYS` maps version labels to base64url-encoded 32-byte encryption keys. The `BROKER_ENCRYPTION_KEY_VERSION` setting selects the active version for writes. Keep prior encryption versions configured until their stored credentials have been rotated. [Worker deployment and bootstrap](https://github.com/beachside-compute/beachside/tree/main/services/credential-broker).
 
-When upgrading from a deployment with `BROKER_API_KEY` and integrations defined in `BROKER_CONFIG`, create the integrations and set the allowlist on the new version, then issue fresh grants.
+The new deployment starts with no integrations or issuer permissions. Add integrations and authorize issuance before launching a credentialed sandbox.
 
 ## Set up runtime integrations
 
