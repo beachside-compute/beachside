@@ -497,8 +497,7 @@ export function equivalentCommand(draft: Draft, storage: Storage, isDefault: boo
 
   for (const [key, value] of ordered) parts.push(...credentialFlag(key, value));
 
-  // Piped keys go back where they were: beachside.json.
-  if (ordered.some(([, value]) => value === "-")) parts.push("--store", "config");
+  // Piped keys go back to beachside.json, the default store, so no --store flag is needed.
 
   const defaults = draft.setup?.defaults ?? {};
 
