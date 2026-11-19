@@ -8,7 +8,8 @@ const provider = process.env.BEACHSIDE_QUAL_PROVIDER ?? "daytona";
 const upstash = provider === "upstash-box";
 
 const access =
-  provider === "daytona" || (upstash && process.env.BEACHSIDE_UPSTASH_PREVIEW === "protected")
+  ["daytona", "archil"].includes(provider) ||
+  (upstash && process.env.BEACHSIDE_UPSTASH_PREVIEW === "protected")
     ? "protected"
     : "public";
 
@@ -23,6 +24,7 @@ const enabled =
       featureSupported("previewPublic") &&
       process.env.BEACHSIDE_BOXD_PREVIEW_ACCESS === "public") ||
     (provider === "freestyle" && featureSupported("previewPublic")) ||
+    (provider === "archil" && featureSupported("previewProtected")) ||
     upstashRegular);
 
 describe("Beachside native HTTP preview", () => {
@@ -141,9 +143,10 @@ describe("Beachside native HTTP preview", () => {
       expect(ready).toBe(true);
 
       if (preview.access === "protected") {
+        // A wrong value under each header the provider returned, so the check covers its own token.
         const invalid: Record<string, string> = upstash
           ? { Authorization: "Bearer invalid-token" }
-          : { "x-daytona-preview-token": "invalid-token" };
+          : Object.fromEntries(Object.keys(preview.headers).map((name) => [name, "invalid-token"]));
 
         for (const auth of [undefined, invalid]) {
           const denied = await fetch(preview.url, {

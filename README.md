@@ -16,9 +16,9 @@ Each provider is a separately installed adapter, and you can bring your own.
 | Freestyle | `@beachside/freestyle` |
 | Daytona | `@beachside/daytona` |
 | E2B | `@beachside/e2b` |
+| Archil | `@beachside/archil` |
 | Boat (exp) | `@beachside/boat` |
 | Runloop (exp) | `@beachside/runloop` |
-| Archil (exp) | `@beachside/archil` |
 | exe.dev (exp) | `@beachside/exe-dev` |
 | Vercel (exp) | `@beachside/vercel` |
 | Modal (exp) | `@beachside/modal` |

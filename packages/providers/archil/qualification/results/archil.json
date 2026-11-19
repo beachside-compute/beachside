@@ -1,0 +1,569 @@
+{
+  "schemaVersion": 1,
+  "records": [
+    {
+      "provider": "archil",
+      "sdkCommit": "2f709022c1e578da2ce75b1c7d57a3d9e734f3cc",
+      "harnessCommit": "2f709022c1e578da2ce75b1c7d57a3d9e734f3cc",
+      "sdkVersion": "0.18.0",
+      "nativeVersion": "disk SDK 1.12.0",
+      "runtime": "Bun 1.4.2",
+      "platform": "darwin-arm64",
+      "timestamp": "2026-11-19T04:47:58.798Z",
+      "configuration": {
+        "imageClass": "oci",
+        "fileRoot": "/tmp",
+        "authorityClass": "api-key",
+        "network": "archil-managed-requested",
+        "regionClass": "aws-us-east-1",
+        "stateProbe": "volume-crud-v1",
+        "volumeOwnership": "created"
+      },
+      "schemaVersion": 1,
+      "mode": "live",
+      "scenario": "volume-crud",
+      "status": "passed",
+      "runCleanup": "confirmed",
+      "runner": {
+        "name": "bun:test",
+        "format": "junit",
+        "testName": "volume-crud"
+      },
+      "evidenceRef": "archil-live-bun-junit-20261119-2f70902-volumes"
+    },
+    {
+      "provider": "archil",
+      "sdkCommit": "2f709022c1e578da2ce75b1c7d57a3d9e734f3cc",
+      "harnessCommit": "2f709022c1e578da2ce75b1c7d57a3d9e734f3cc",
+      "sdkVersion": "0.18.0",
+      "nativeVersion": "disk SDK 1.12.0",
+      "runtime": "Bun 1.4.2",
+      "platform": "darwin-arm64",
+      "timestamp": "2026-11-19T04:47:58.798Z",
+      "configuration": {
+        "imageClass": "oci",
+        "fileRoot": "/tmp",
+        "authorityClass": "api-key",
+        "network": "archil-managed-requested",
+        "regionClass": "aws-us-east-1",
+        "stateProbe": "volume-persistence-v1",
+        "volumeOwnership": "created"
+      },
+      "schemaVersion": 1,
+      "mode": "live",
+      "scenario": "volume-persistence",
+      "status": "passed",
+      "runCleanup": "confirmed",
+      "runner": {
+        "name": "bun:test",
+        "format": "junit",
+        "testName": "volume-persistence"
+      },
+      "evidenceRef": "archil-live-bun-junit-20261119-2f70902-volumes"
+    },
+    {
+      "provider": "archil",
+      "sdkCommit": "a660cacb2a7d8ee6c6b91caf4ec9d51e30a92830",
+      "harnessCommit": "a660cacb2a7d8ee6c6b91caf4ec9d51e30a92830",
+      "sdkVersion": "0.18.0",
+      "nativeVersion": "disk SDK 1.12.0",
+      "runtime": "Bun 1.4.2",
+      "platform": "darwin-arm64",
+      "timestamp": "2026-11-19T04:58:38.507Z",
+      "configuration": {
+        "imageClass": "oci",
+        "fileRoot": "/tmp",
+        "authorityClass": "api-key",
+        "network": "archil-managed-requested",
+        "regionClass": "aws-us-east-1"
+      },
+      "schemaVersion": 1,
+      "mode": "live",
+      "scenario": "preview-protected",
+      "status": "passed",
+      "runCleanup": "confirmed",
+      "runner": {
+        "name": "bun:test",
+        "format": "junit",
+        "testName": "preview-protected"
+      },
+      "evidenceRef": "archil-live-bun-junit-20261119-a660cac-preview"
+    },
+    {
+      "provider": "archil",
+      "sdkCommit": "a660cacb2a7d8ee6c6b91caf4ec9d51e30a92830",
+      "harnessCommit": "a660cacb2a7d8ee6c6b91caf4ec9d51e30a92830",
+      "sdkVersion": "0.18.0",
+      "nativeVersion": "disk SDK 1.12.0",
+      "runtime": "Bun 1.4.2",
+      "platform": "darwin-arm64",
+      "timestamp": "2026-11-19T04:57:36.699Z",
+      "configuration": {
+        "imageClass": "oci",
+        "fileRoot": "/tmp",
+        "authorityClass": "api-key",
+        "network": "archil-managed-requested",
+        "regionClass": "aws-us-east-1"
+      },
+      "schemaVersion": 1,
+      "mode": "live",
+      "scenario": "sandbox-lifecycle",
+      "status": "passed",
+      "runCleanup": "confirmed",
+      "runner": {
+        "name": "bun:test",
+        "format": "junit",
+        "testName": "sandbox-lifecycle"
+      },
+      "evidenceRef": "archil-live-bun-junit-20261119-a660cac-sandbox"
+    },
+    {
+      "provider": "archil",
+      "sdkCommit": "a660cacb2a7d8ee6c6b91caf4ec9d51e30a92830",
+      "harnessCommit": "a660cacb2a7d8ee6c6b91caf4ec9d51e30a92830",
+      "sdkVersion": "0.18.0",
+      "nativeVersion": "disk SDK 1.12.0",
+      "runtime": "Bun 1.4.2",
+      "platform": "darwin-arm64",
+      "timestamp": "2026-11-19T04:57:36.699Z",
+      "configuration": {
+        "imageClass": "oci",
+        "fileRoot": "/tmp",
+        "authorityClass": "api-key",
+        "network": "archil-managed-requested",
+        "regionClass": "aws-us-east-1"
+      },
+      "schemaVersion": 1,
+      "mode": "live",
+      "scenario": "execution",
+      "status": "passed",
+      "runCleanup": "confirmed",
+      "runner": {
+        "name": "bun:test",
+        "format": "junit",
+        "testName": "execution"
+      },
+      "evidenceRef": "archil-live-bun-junit-20261119-a660cac-sandbox"
+    },
+    {
+      "provider": "archil",
+      "sdkCommit": "a660cacb2a7d8ee6c6b91caf4ec9d51e30a92830",
+      "harnessCommit": "a660cacb2a7d8ee6c6b91caf4ec9d51e30a92830",
+      "sdkVersion": "0.18.0",
+      "nativeVersion": "disk SDK 1.12.0",
+      "runtime": "Bun 1.4.2",
+      "platform": "darwin-arm64",
+      "timestamp": "2026-11-19T04:57:36.699Z",
+      "configuration": {
+        "imageClass": "oci",
+        "fileRoot": "/tmp",
+        "authorityClass": "api-key",
+        "network": "archil-managed-requested",
+        "regionClass": "aws-us-east-1"
+      },
+      "schemaVersion": 1,
+      "mode": "live",
+      "scenario": "execution-stdin",
+      "status": "passed",
+      "runCleanup": "confirmed",
+      "runner": {
+        "name": "bun:test",
+        "format": "junit",
+        "testName": "execution-stdin"
+      },
+      "evidenceRef": "archil-live-bun-junit-20261119-a660cac-sandbox"
+    },
+    {
+      "provider": "archil",
+      "sdkCommit": "a660cacb2a7d8ee6c6b91caf4ec9d51e30a92830",
+      "harnessCommit": "a660cacb2a7d8ee6c6b91caf4ec9d51e30a92830",
+      "sdkVersion": "0.18.0",
+      "nativeVersion": "disk SDK 1.12.0",
+      "runtime": "Bun 1.4.2",
+      "platform": "darwin-arm64",
+      "timestamp": "2026-11-19T04:57:36.699Z",
+      "configuration": {
+        "imageClass": "oci",
+        "fileRoot": "/tmp",
+        "authorityClass": "api-key",
+        "network": "archil-managed-requested",
+        "regionClass": "aws-us-east-1"
+      },
+      "schemaVersion": 1,
+      "mode": "live",
+      "scenario": "files",
+      "status": "passed",
+      "runCleanup": "confirmed",
+      "runner": {
+        "name": "bun:test",
+        "format": "junit",
+        "testName": "files"
+      },
+      "evidenceRef": "archil-live-bun-junit-20261119-a660cac-sandbox"
+    },
+    {
+      "provider": "archil",
+      "sdkCommit": "a660cacb2a7d8ee6c6b91caf4ec9d51e30a92830",
+      "harnessCommit": "a660cacb2a7d8ee6c6b91caf4ec9d51e30a92830",
+      "sdkVersion": "0.18.0",
+      "nativeVersion": "disk SDK 1.12.0",
+      "runtime": "Bun 1.4.2",
+      "platform": "darwin-arm64",
+      "timestamp": "2026-11-19T04:57:36.699Z",
+      "configuration": {
+        "imageClass": "oci",
+        "fileRoot": "/tmp",
+        "authorityClass": "api-key",
+        "network": "archil-managed-requested",
+        "regionClass": "aws-us-east-1"
+      },
+      "schemaVersion": 1,
+      "mode": "live",
+      "scenario": "file-directories",
+      "status": "passed",
+      "runCleanup": "confirmed",
+      "runner": {
+        "name": "bun:test",
+        "format": "junit",
+        "testName": "file-directories"
+      },
+      "evidenceRef": "archil-live-bun-junit-20261119-a660cac-sandbox"
+    },
+    {
+      "provider": "archil",
+      "sdkCommit": "a660cacb2a7d8ee6c6b91caf4ec9d51e30a92830",
+      "harnessCommit": "a660cacb2a7d8ee6c6b91caf4ec9d51e30a92830",
+      "sdkVersion": "0.18.0",
+      "nativeVersion": "disk SDK 1.12.0",
+      "runtime": "Bun 1.4.2",
+      "platform": "darwin-arm64",
+      "timestamp": "2026-11-19T04:57:36.699Z",
+      "configuration": {
+        "imageClass": "oci",
+        "fileRoot": "/tmp",
+        "authorityClass": "api-key",
+        "network": "archil-managed-requested",
+        "regionClass": "aws-us-east-1"
+      },
+      "schemaVersion": 1,
+      "mode": "live",
+      "scenario": "lifecycle-renew",
+      "status": "passed",
+      "runCleanup": "confirmed",
+      "runner": {
+        "name": "bun:test",
+        "format": "junit",
+        "testName": "lifecycle-renew"
+      },
+      "evidenceRef": "archil-live-bun-junit-20261119-a660cac-sandbox"
+    },
+    {
+      "provider": "archil",
+      "sdkCommit": "a660cacb2a7d8ee6c6b91caf4ec9d51e30a92830",
+      "harnessCommit": "a660cacb2a7d8ee6c6b91caf4ec9d51e30a92830",
+      "sdkVersion": "0.18.0",
+      "nativeVersion": "disk SDK 1.12.0",
+      "runtime": "Bun 1.4.2",
+      "platform": "darwin-arm64",
+      "timestamp": "2026-11-19T04:57:36.699Z",
+      "configuration": {
+        "imageClass": "oci",
+        "fileRoot": "/tmp",
+        "authorityClass": "api-key",
+        "network": "archil-managed-requested",
+        "regionClass": "aws-us-east-1"
+      },
+      "schemaVersion": 1,
+      "mode": "live",
+      "scenario": "lifecycle-suspend-resume",
+      "status": "failed",
+      "runCleanup": "confirmed",
+      "runner": {
+        "name": "bun:test",
+        "format": "junit",
+        "testName": "lifecycle-suspend-resume"
+      },
+      "evidenceRef": "archil-live-bun-junit-20261119-a660cac-sandbox"
+    },
+    {
+      "provider": "archil",
+      "sdkCommit": "a660cacb2a7d8ee6c6b91caf4ec9d51e30a92830",
+      "harnessCommit": "a660cacb2a7d8ee6c6b91caf4ec9d51e30a92830",
+      "sdkVersion": "0.18.0",
+      "nativeVersion": "disk SDK 1.12.0",
+      "runtime": "Bun 1.4.2",
+      "platform": "darwin-arm64",
+      "timestamp": "2026-11-19T04:57:36.699Z",
+      "configuration": {
+        "imageClass": "oci",
+        "fileRoot": "/tmp",
+        "authorityClass": "api-key",
+        "network": "archil-managed-requested",
+        "regionClass": "aws-us-east-1"
+      },
+      "schemaVersion": 1,
+      "mode": "live",
+      "scenario": "lifecycle-reopen",
+      "status": "passed",
+      "runCleanup": "confirmed",
+      "runner": {
+        "name": "bun:test",
+        "format": "junit",
+        "testName": "lifecycle-reopen"
+      },
+      "evidenceRef": "archil-live-bun-junit-20261119-a660cac-sandbox"
+    },
+    {
+      "provider": "archil",
+      "sdkCommit": "7e91cbd1aad810d368a22ae86600e76fb7e36728",
+      "harnessCommit": "7e91cbd1aad810d368a22ae86600e76fb7e36728",
+      "sdkVersion": "0.18.0",
+      "nativeVersion": "disk SDK 1.12.0",
+      "runtime": "Bun 1.4.2",
+      "platform": "darwin-arm64",
+      "timestamp": "2026-11-19T05:01:08.923Z",
+      "configuration": {
+        "imageClass": "oci",
+        "fileRoot": "/tmp",
+        "authorityClass": "api-key",
+        "network": "archil-managed-requested",
+        "regionClass": "aws-us-east-1"
+      },
+      "schemaVersion": 1,
+      "mode": "live",
+      "scenario": "sandbox-lifecycle",
+      "status": "passed",
+      "runCleanup": "confirmed",
+      "runner": {
+        "name": "bun:test",
+        "format": "junit",
+        "testName": "sandbox-lifecycle"
+      },
+      "evidenceRef": "archil-live-bun-junit-20261119-7e91cbd-sandbox"
+    },
+    {
+      "provider": "archil",
+      "sdkCommit": "7e91cbd1aad810d368a22ae86600e76fb7e36728",
+      "harnessCommit": "7e91cbd1aad810d368a22ae86600e76fb7e36728",
+      "sdkVersion": "0.18.0",
+      "nativeVersion": "disk SDK 1.12.0",
+      "runtime": "Bun 1.4.2",
+      "platform": "darwin-arm64",
+      "timestamp": "2026-11-19T05:01:08.923Z",
+      "configuration": {
+        "imageClass": "oci",
+        "fileRoot": "/tmp",
+        "authorityClass": "api-key",
+        "network": "archil-managed-requested",
+        "regionClass": "aws-us-east-1"
+      },
+      "schemaVersion": 1,
+      "mode": "live",
+      "scenario": "execution",
+      "status": "passed",
+      "runCleanup": "confirmed",
+      "runner": {
+        "name": "bun:test",
+        "format": "junit",
+        "testName": "execution"
+      },
+      "evidenceRef": "archil-live-bun-junit-20261119-7e91cbd-sandbox"
+    },
+    {
+      "provider": "archil",
+      "sdkCommit": "7e91cbd1aad810d368a22ae86600e76fb7e36728",
+      "harnessCommit": "7e91cbd1aad810d368a22ae86600e76fb7e36728",
+      "sdkVersion": "0.18.0",
+      "nativeVersion": "disk SDK 1.12.0",
+      "runtime": "Bun 1.4.2",
+      "platform": "darwin-arm64",
+      "timestamp": "2026-11-19T05:01:08.923Z",
+      "configuration": {
+        "imageClass": "oci",
+        "fileRoot": "/tmp",
+        "authorityClass": "api-key",
+        "network": "archil-managed-requested",
+        "regionClass": "aws-us-east-1"
+      },
+      "schemaVersion": 1,
+      "mode": "live",
+      "scenario": "execution-stdin",
+      "status": "passed",
+      "runCleanup": "confirmed",
+      "runner": {
+        "name": "bun:test",
+        "format": "junit",
+        "testName": "execution-stdin"
+      },
+      "evidenceRef": "archil-live-bun-junit-20261119-7e91cbd-sandbox"
+    },
+    {
+      "provider": "archil",
+      "sdkCommit": "7e91cbd1aad810d368a22ae86600e76fb7e36728",
+      "harnessCommit": "7e91cbd1aad810d368a22ae86600e76fb7e36728",
+      "sdkVersion": "0.18.0",
+      "nativeVersion": "disk SDK 1.12.0",
+      "runtime": "Bun 1.4.2",
+      "platform": "darwin-arm64",
+      "timestamp": "2026-11-19T05:01:08.923Z",
+      "configuration": {
+        "imageClass": "oci",
+        "fileRoot": "/tmp",
+        "authorityClass": "api-key",
+        "network": "archil-managed-requested",
+        "regionClass": "aws-us-east-1"
+      },
+      "schemaVersion": 1,
+      "mode": "live",
+      "scenario": "files",
+      "status": "passed",
+      "runCleanup": "confirmed",
+      "runner": {
+        "name": "bun:test",
+        "format": "junit",
+        "testName": "files"
+      },
+      "evidenceRef": "archil-live-bun-junit-20261119-7e91cbd-sandbox"
+    },
+    {
+      "provider": "archil",
+      "sdkCommit": "7e91cbd1aad810d368a22ae86600e76fb7e36728",
+      "harnessCommit": "7e91cbd1aad810d368a22ae86600e76fb7e36728",
+      "sdkVersion": "0.18.0",
+      "nativeVersion": "disk SDK 1.12.0",
+      "runtime": "Bun 1.4.2",
+      "platform": "darwin-arm64",
+      "timestamp": "2026-11-19T05:01:08.923Z",
+      "configuration": {
+        "imageClass": "oci",
+        "fileRoot": "/tmp",
+        "authorityClass": "api-key",
+        "network": "archil-managed-requested",
+        "regionClass": "aws-us-east-1"
+      },
+      "schemaVersion": 1,
+      "mode": "live",
+      "scenario": "file-directories",
+      "status": "passed",
+      "runCleanup": "confirmed",
+      "runner": {
+        "name": "bun:test",
+        "format": "junit",
+        "testName": "file-directories"
+      },
+      "evidenceRef": "archil-live-bun-junit-20261119-7e91cbd-sandbox"
+    },
+    {
+      "provider": "archil",
+      "sdkCommit": "7e91cbd1aad810d368a22ae86600e76fb7e36728",
+      "harnessCommit": "7e91cbd1aad810d368a22ae86600e76fb7e36728",
+      "sdkVersion": "0.18.0",
+      "nativeVersion": "disk SDK 1.12.0",
+      "runtime": "Bun 1.4.2",
+      "platform": "darwin-arm64",
+      "timestamp": "2026-11-19T05:01:08.923Z",
+      "configuration": {
+        "imageClass": "oci",
+        "fileRoot": "/tmp",
+        "authorityClass": "api-key",
+        "network": "archil-managed-requested",
+        "regionClass": "aws-us-east-1"
+      },
+      "schemaVersion": 1,
+      "mode": "live",
+      "scenario": "lifecycle-renew",
+      "status": "passed",
+      "runCleanup": "confirmed",
+      "runner": {
+        "name": "bun:test",
+        "format": "junit",
+        "testName": "lifecycle-renew"
+      },
+      "evidenceRef": "archil-live-bun-junit-20261119-7e91cbd-sandbox"
+    },
+    {
+      "provider": "archil",
+      "sdkCommit": "7e91cbd1aad810d368a22ae86600e76fb7e36728",
+      "harnessCommit": "7e91cbd1aad810d368a22ae86600e76fb7e36728",
+      "sdkVersion": "0.18.0",
+      "nativeVersion": "disk SDK 1.12.0",
+      "runtime": "Bun 1.4.2",
+      "platform": "darwin-arm64",
+      "timestamp": "2026-11-19T05:01:08.923Z",
+      "configuration": {
+        "imageClass": "oci",
+        "fileRoot": "/tmp",
+        "authorityClass": "api-key",
+        "network": "archil-managed-requested",
+        "regionClass": "aws-us-east-1"
+      },
+      "schemaVersion": 1,
+      "mode": "live",
+      "scenario": "lifecycle-suspend-resume",
+      "status": "passed",
+      "runCleanup": "confirmed",
+      "runner": {
+        "name": "bun:test",
+        "format": "junit",
+        "testName": "lifecycle-suspend-resume"
+      },
+      "evidenceRef": "archil-live-bun-junit-20261119-7e91cbd-sandbox"
+    },
+    {
+      "provider": "archil",
+      "sdkCommit": "7e91cbd1aad810d368a22ae86600e76fb7e36728",
+      "harnessCommit": "7e91cbd1aad810d368a22ae86600e76fb7e36728",
+      "sdkVersion": "0.18.0",
+      "nativeVersion": "disk SDK 1.12.0",
+      "runtime": "Bun 1.4.2",
+      "platform": "darwin-arm64",
+      "timestamp": "2026-11-19T05:01:08.923Z",
+      "configuration": {
+        "imageClass": "oci",
+        "fileRoot": "/tmp",
+        "authorityClass": "api-key",
+        "network": "archil-managed-requested",
+        "regionClass": "aws-us-east-1"
+      },
+      "schemaVersion": 1,
+      "mode": "live",
+      "scenario": "lifecycle-reopen",
+      "status": "passed",
+      "runCleanup": "confirmed",
+      "runner": {
+        "name": "bun:test",
+        "format": "junit",
+        "testName": "lifecycle-reopen"
+      },
+      "evidenceRef": "archil-live-bun-junit-20261119-7e91cbd-sandbox"
+    },
+    {
+      "provider": "archil",
+      "sdkCommit": "7e5f023cc1f6e08dc4717f82e0f90bf190cb39ff",
+      "harnessCommit": "7e5f023cc1f6e08dc4717f82e0f90bf190cb39ff",
+      "sdkVersion": "0.18.0",
+      "nativeVersion": "disk SDK 1.12.0",
+      "runtime": "Bun 1.4.2",
+      "platform": "darwin-arm64",
+      "timestamp": "2026-11-19T05:10:58.539Z",
+      "configuration": {
+        "imageClass": "oci",
+        "fileRoot": "/tmp",
+        "authorityClass": "api-key",
+        "network": "archil-managed-requested",
+        "regionClass": "aws-us-east-1"
+      },
+      "schemaVersion": 1,
+      "mode": "live",
+      "scenario": "preview-protected",
+      "status": "passed",
+      "runCleanup": "confirmed",
+      "runner": {
+        "name": "bun:test",
+        "format": "junit",
+        "testName": "preview-protected"
+      },
+      "evidenceRef": "archil-live-bun-junit-20261119-7e5f023-preview"
+    }
+  ]
+}

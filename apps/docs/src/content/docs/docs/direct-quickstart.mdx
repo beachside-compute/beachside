@@ -50,6 +50,13 @@ npm install beachside @beachside/e2b
 ```
 
   </TabItem>
+  <TabItem label="Archil">
+
+```sh
+npm install beachside @beachside/archil
+```
+
+  </TabItem>
   <TabItem label="Boat (experimental)">
 
 ```sh
@@ -61,13 +68,6 @@ npm install beachside @beachside/boat
 
 ```sh
 npm install beachside @beachside/runloop
-```
-
-  </TabItem>
-  <TabItem label="Archil (experimental)">
-
-```sh
-npm install beachside @beachside/archil
 ```
 
   </TabItem>
@@ -145,6 +145,15 @@ E2B_API_KEY="<your-e2b-api-key>"
 The example uses E2B's public `base` template. No team ID or custom template is required.
 
   </TabItem>
+  <TabItem label="Archil">
+
+```sh title=".env.local"
+ARCHIL_API_KEY="<your-archil-api-key>"
+```
+
+Create an API key in the [Archil console](https://console.archil.com). The example runs in `aws-us-east-1` with internet access, which needs a paid Archil plan. On the Free plan, add `network: "archil-managed"` to `config`.
+
+  </TabItem>
   <TabItem label="Boat (experimental)">
 
 ```sh title=".env.local"
@@ -161,15 +170,6 @@ RUNLOOP_API_KEY="<your-runloop-api-key>"
 ```
 
 Create an API key in the Runloop dashboard; sign-ups are by invitation. The example uses the default Devbox image with internet access.
-
-  </TabItem>
-  <TabItem label="Archil (experimental)">
-
-```sh title=".env.local"
-ARCHIL_API_KEY="<your-archil-api-key>"
-```
-
-Create an API key in the [Archil console](https://console.archil.com). The example runs in `aws-us-east-1` with internet access, which needs a paid Archil plan. On the Free plan, add `network: "archil-managed"` to `config`.
 
   </TabItem>
   <TabItem label="exe.dev (experimental)">
@@ -225,14 +225,14 @@ Choose a provider and save the example as `quickstart.ts`:
   <TabItem label="E2B">
     <Code code={e2b} lang="ts" title="quickstart.ts" />
   </TabItem>
+  <TabItem label="Archil">
+    <Code code={archil} lang="ts" title="quickstart.ts" />
+  </TabItem>
   <TabItem label="Boat (experimental)">
     <Code code={boat} lang="ts" title="quickstart.ts" />
   </TabItem>
   <TabItem label="Runloop (experimental)">
     <Code code={runloop} lang="ts" title="quickstart.ts" />
-  </TabItem>
-  <TabItem label="Archil (experimental)">
-    <Code code={archil} lang="ts" title="quickstart.ts" />
   </TabItem>
   <TabItem label="exe.dev (experimental)">
     <Code code={exeDev} lang="ts" title="quickstart.ts" />
@@ -276,6 +276,13 @@ bun --env-file=.env.local run quickstart.ts
 ```
 
   </TabItem>
+  <TabItem label="Archil">
+
+```sh
+bun --env-file=.env.local run quickstart.ts
+```
+
+  </TabItem>
   <TabItem label="Boat (experimental)">
 
 ```sh
@@ -284,13 +291,6 @@ bun --env-file=.env.local run quickstart.ts
 
   </TabItem>
   <TabItem label="Runloop (experimental)">
-
-```sh
-bun --env-file=.env.local run quickstart.ts
-```
-
-  </TabItem>
-  <TabItem label="Archil (experimental)">
 
 ```sh
 bun --env-file=.env.local run quickstart.ts

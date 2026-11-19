@@ -340,7 +340,8 @@ export class TestResources {
    * which keeps running after detach.
    */
   async background(box: AdapterSandbox, command: string) {
-    if (this.client.provider !== "boxd") {
+    // boxd ends an exec's background children with it; Archil documents detached processes.
+    if (!["boxd", "archil"].includes(this.client.provider)) {
       await this.exec(box, `nohup ${command} >/dev/null 2>&1 </dev/null &`);
 
       return;

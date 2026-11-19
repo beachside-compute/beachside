@@ -309,7 +309,7 @@ test("overview provider rows count live-passed features and mark experimental pr
   expect(liveFeatureHeader).toContain("Upstash Box");
   expect(
     providerStatus.filter((status) => !status.experimental).map((status) => status.id),
-  ).toEqual(["boxd", "freestyle", "daytona", "e2b", "upstash-box"]);
+  ).toEqual(["boxd", "freestyle", "daytona", "e2b", "archil", "upstash-box"]);
 });
 
 test("official declarations and caveats move to the evidence page with stable anchors", () => {
