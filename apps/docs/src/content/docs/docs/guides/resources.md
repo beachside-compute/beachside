@@ -101,7 +101,7 @@ if (info.expires.status === "known") console.log(info.expires.at, info.expires.s
 
 A missing or deleted sandbox returns `NOT_FOUND`. Other problems, such as denied access or a scope mismatch, have their own errors. A saved reference cannot move a sandbox to another provider.
 
-`box.reference` can be `null`, including when an adapter cannot verify identity during creation. Try `inspect()` and check its returned `reference`; do not construct one from `box.id`. For E2B credential rotation, configure the verified `teamId` when establishing the original connection. See the [reopening example](https://github.com/beachside-compute/beachside/blob/main/apps/docs/examples/sandbox-reopen.ts).
+`box.reference` can be `null`, including when an adapter cannot verify identity during creation. Try `inspect()` and check its returned `reference`; do not construct one from `box.id`. See the [reopening example](https://github.com/beachside-compute/beachside/blob/main/apps/docs/examples/sandbox-reopen.ts).
 
 Inspection reports state, provider state, observation time, expiry, idle-stop policy, retention policy, and execution identity when known. Unknown expiry does not mean unlimited lifetime. A past expiry time alone does not prove that the sandbox was deleted.
 
