@@ -144,6 +144,11 @@ Import from `beachside`.
 | `SnapshotRequest`             | re-export |
 | `SnapshotRequirements`        | re-export |
 | `SnapshotResult`              | type      |
+| `SshAuth`                     | type      |
+| `SshAuthMethod`               | type      |
+| `SshCapabilities`             | type      |
+| `SshProxy`                    | type      |
+| `SshTarget`                   | type      |
 | `StartProcessInput`           | type      |
 | `StartTerminalInput`          | type      |
 | `Support`                     | type      |

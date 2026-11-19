@@ -48,6 +48,7 @@ import {
   nativeFailure,
   refusedBeforeEffect,
   RUNLOOP_API,
+  RUNLOOP_SSH_GATEWAY,
   type CreateDevboxBody,
   type Devbox,
   type Execution,
@@ -1441,6 +1442,35 @@ export function createRunloopAdapter(options: RunloopAdapterOptions = {}) {
           url,
           headers: { "X-Runloop-Tunnel-Authorization": `Bearer ${tunnel.auth_token}` },
         };
+      },
+      ssh: {
+        supports: {
+          auth: "privateKey",
+          publicKey: "unused",
+          scope: "sandbox",
+          hostKeys: false,
+          expires: false,
+          proxy: "tls",
+        },
+        async target(input, ctx) {
+          await requireRunning(input.sandbox, ctx);
+          const key = await native.createSshKey(input.sandbox.id, signalFor(ctx));
+
+          if (
+            key.id !== input.sandbox.id ||
+            !/^[A-Za-z0-9_.-]+$/.test(key.url) ||
+            !/^[a-z_][a-z0-9_-]*$/.test(key.ssh_user)
+          )
+            throw new AdapterError("UNAVAILABLE", "Runloop returned an unusable SSH key");
+
+          return {
+            host: key.url,
+            port: 22,
+            username: key.ssh_user,
+            auth: { method: "privateKey" as const, privateKey: key.ssh_private_key },
+            proxy: { kind: "tls" as const, ...RUNLOOP_SSH_GATEWAY, serverName: key.url },
+          };
+        },
       },
       async suspensionCapabilities() {
         return {

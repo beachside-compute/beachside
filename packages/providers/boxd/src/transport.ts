@@ -12,7 +12,7 @@ const TOKEN_ENDPOINT = "https://app.boxd.sh/api/v1/auth/token";
 export const MAX_BYTES = 1_048_576;
 
 /** Account and org calls always go to the home endpoint; machines, disks and snapshots go to the region's. */
-const HOME_METHODS = new Set(["Whoami", "GetConfig", "ListOrgs", "ListRegions"]);
+const HOME_METHODS = new Set(["Whoami", "GetConfig", "ListOrgs", "ListRegions", "LinkSshKey"]);
 
 const CHANNEL_OPTIONS = {
   "grpc.enable_retries": 0,
@@ -56,6 +56,8 @@ export type CallContext = ReadContext & {
   /** Streaming process: every output frame, unbounded, as it arrives; the call has no deadline. */
   onOutput?: (stream: "stdout" | "stderr", bytes: Uint8Array) => void;
   onCreate?: (id: string) => Promise<void>;
+  /** Receives the proxy's SSH host key line from a `ListVms` answer, which the SDK's mapper drops. */
+  onSshHostKey?: (line: string) => void;
 };
 
 const context = new AsyncLocalStorage<CallContext>();
@@ -332,6 +334,13 @@ export function createNativeClient(
               ) {
                 const acknowledgement = z.object({ vmId: z.uuid() }).parse(response);
                 await ctx.onCreate(acknowledgement.vmId);
+              }
+
+              if (method.name === "ListVms" && ctx.onSshHostKey) {
+                const listed = z.object({ sshHostKey: z.string() }).safeParse(response);
+
+                if (listed.success && listed.data.sshHostKey)
+                  ctx.onSshHostKey(listed.data.sshHostKey);
               }
 
               resolve(response);

@@ -59,6 +59,10 @@ Everything below is tested on every change, using the real Boat client against a
 | Previews          | `preview(port)` hosts the port on an ungated Boat HTTPS URL; anyone holding the URL can open it. Boat's token-gated URLs are not used, because they carry the token in the query string. | No          |
 | Unsupported       | Fork, snapshot sharing, restore size overrides, volumes, protected previews, piped input, byte streaming, terminals, directory operations, blocked egress, regions and labels.           | —           |
 
+## SSH
+
+`box.sshTarget({ publicKey })` authorizes your OpenSSH public key on that sandbox and returns its address and SSH user, with the host key when Boat sends one. See [SSH access](/docs/guides/ssh-access/).
+
 ## Snapshots
 
 `box.snapshot()` saves the sandbox's disk as a Boat [named snapshot](https://docs.boat.dev/api/v1) and waits for it to be ready. A running sandbox takes a fresh capture first, which can take minutes; an archived one saves the disk its stop already captured and stays archived. Memory, processes and connections are not kept: `snapshot.restore()` creates a new sandbox from the snapshot on a fresh machine of the type it was saved from, with the same `environment` or `noEnv` setting as any other create.

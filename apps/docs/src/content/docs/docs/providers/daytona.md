@@ -49,6 +49,7 @@ The package also exports `daytona()`, which takes credentials and config in one 
 | `lifecycle.suspension.preserve` | class default     | `filesystem` stops a Linux VM instead of pausing it. `filesystem+memory` makes containers reject `UNSUPPORTED` before any change.                                                                                                                                        |
 | `preview.access`                | `protected`       | `protected` returns the URL plus an `x-daytona-preview-token` header. `public` returns a signed URL for that port alone, with no header, that expires; the sandbox stays private. See [preview access](/docs/guides/preview-access/#expiring-public-links-with-daytona). |
 | `preview.expiresInSeconds`      | `3600`            | Lifetime of each public (signed) preview URL, 1 to 86,400 seconds. Reported as `expiresAt` on the preview.                                                                                                                                                               |
+| `ssh.expiresInMinutes`          | `60`              | Lifetime of each SSH access token `box.sshTarget()` mints, 1 to 1,440 minutes. Reported as `expiresAt` on the target.                                                                                                                                                    |
 | `snapshots.restartAfterCapture` | `true`            | Restart a running source after `snapshot()`. `false` leaves it stopped.                                                                                                                                                                                                  |
 | `snapshots.preserve`            | `filesystem`      | `Preserve.FILESYSTEM_AND_MEMORY` takes hot snapshots of running Linux VMs. Containers and stopped VMs reject before any change.                                                                                                                                          |
 | `resources`                     | none              | Minimum `{ vcpus, memoryMiB }`. OCI builds use it; a prepared snapshot must already meet it.                                                                                                                                                                             |
@@ -76,6 +77,10 @@ Create-time `env` is sent as native sandbox environment variables, so it applies
 | Listing sandboxes and images | `sandboxes.list()` returns Beachside-created sandboxes only; `images.list()` returns all organization snapshots. | No          |
 
 Live results cover the tested image, region and network setting; see [Provider support](/docs/providers/support/). Live runs used the prepared `daytona-small` snapshot in `us` with `daytona-default`; other snapshots are not qualified.
+
+## SSH
+
+`box.sshTarget()` mints a Daytona SSH access token for a running sandbox and returns `ssh.app.daytona.io` with the token as the username; no key or password is needed. The token reaches this sandbox only and expires after `ssh.expiresInMinutes`. Daytona does not publish its gateway host key. See [SSH access](/docs/guides/ssh-access/).
 
 ## Network policy
 

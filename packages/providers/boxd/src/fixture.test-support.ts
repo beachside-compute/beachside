@@ -75,6 +75,8 @@ type MachineRecord = {
   sourceInfo?: { kind: string; name: string; version: number | null; id: string };
   /** Epoch seconds; boxd reports 0 for machines without a recorded creation time. */
   createdAt?: number;
+  sshPort?: number;
+  sshDisabled?: boolean;
 };
 
 type SnapshotRecord = {
@@ -178,6 +180,7 @@ async function methods() {
   await Promise.allSettled([
     account.get(),
     account.config(),
+    account.linkSshKey({ pubkey: "" }),
     orgs.list(),
     regions.list(),
     machines.setEgressAllow("id", []),
@@ -263,6 +266,11 @@ export async function boxdFixture() {
   };
 
   let defaultEgress: string[] = [];
+
+  let sshHostKey =
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl boxd-proxy";
+
+  const linkedKeys: string[] = [];
   const dialed: string[] = [];
   const definition: Record<string, MethodDefinition<unknown, unknown>> = {};
   const implementation: UntypedServiceImplementation = {};
@@ -399,6 +407,7 @@ export async function boxdFixture() {
               egressAllow: [...defaultEgress],
               labels: req.labels,
               createdAt: 1_800_000_000,
+              sshPort: 10000 + machines.size,
             });
 
             for (const volume of req.config?.volumes ?? []) {
@@ -740,7 +749,14 @@ export async function boxdFixture() {
           }
 
           case "ListVms":
-            ok({ vms: [...machines.values()].filter((machine) => machine.billingOrgId === org) });
+            ok({
+              vms: [...machines.values()].filter((machine) => machine.billingOrgId === org),
+              sshHostKey,
+            });
+            break;
+          case "LinkSshKey":
+            linkedKeys.push(z.object({ pubkey: z.string() }).parse(call.request).pubkey);
+            ok();
             break;
           case "SetDeleteAfter": {
             if (failExpiry) {
@@ -940,6 +956,10 @@ export async function boxdFixture() {
     machines,
     disks,
     restoreSpecs,
+    linkedKeys,
+    sshHostKey(value: string) {
+      sshHostKey = value;
+    },
     ignoreCreateTimers() {
       ignoreTimers = true;
     },

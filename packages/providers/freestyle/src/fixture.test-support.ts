@@ -187,6 +187,12 @@ export function freestyleFixture() {
   let startFault: Response | undefined;
   const background = new Map<string, Response>();
 
+  /** SSH identities: their VM grants and minted tokens. */
+  const identities = new Map<
+    string,
+    { account: string; grants: Set<string>; tokens: { token: string; expiresAt: string | null }[] }
+  >();
+
   /** The guest env file lives on the local disk too, because commands run through the local sh. */
   const ENV_FILE = "/etc/beachside.env";
   const localEnv = (vm: FixtureVm) => join(workdir, `${vm.id}.env`);
@@ -315,6 +321,56 @@ export function freestyleFixture() {
       }
 
       return result;
+    }
+
+    if (method === "POST" && path === "/v5/identities") {
+      const id = `ident-${++sequence}`;
+      identities.set(id, { account, grants: new Set(), tokens: [] });
+
+      return json(200, { id, managed: false });
+    }
+
+    const identityPath = path.match(/^\/v5\/identities\/([^/]+)(?:\/(.+))?$/);
+
+    if (identityPath) {
+      const id = identityPath[1] ?? "";
+      const identity = identities.get(id);
+
+      if (!identity || identity.account !== account) return error(404, "NOT_FOUND");
+
+      if (method === "DELETE" && identityPath[2] === undefined) {
+        identities.delete(id);
+
+        return json(200, {});
+      }
+
+      if (method === "POST" && identityPath[2] === "permissions/vm") {
+        const { vmId } = z.object({ vmId: z.string() }).parse(parsed);
+        const vm = vms.get(vmId);
+
+        if (!vm || vm.account !== account) return error(404, "NOT_FOUND");
+        identity.grants.add(vmId);
+
+        return json(200, {
+          id: `perm-${++sequence}`,
+          identityId: id,
+          vmId,
+          allowedLinuxUsers: null,
+          grantedAt: new Date().toISOString(),
+          grantedBy: account,
+        });
+      }
+
+      if (method === "POST" && identityPath[2] === "tokens") {
+        const { expiresAt } = z
+          .object({ expiresAt: z.string().nullable().optional() })
+          .parse(parsed ?? {});
+
+        const token = { token: `fs-token-${++sequence}`, expiresAt: expiresAt ?? null };
+        identity.tokens.push(token);
+
+        return json(200, { id: `tok-${sequence}`, ...token });
+      }
     }
 
     if (method === "POST" && path === "/v5/tls") {
@@ -677,6 +733,7 @@ export function freestyleFixture() {
   return {
     fetch,
     calls,
+    identities,
     effects,
     commands,
     vms,

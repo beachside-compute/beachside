@@ -516,3 +516,32 @@ test("Boat previews host the port on an ungated public URL", async () => {
     await client.close();
   }
 });
+
+test("Boat SSH targets authorize the caller's key on the sandbox and return its address", async () => {
+  const { fixture, connect } = setup();
+  const client = await connect();
+  const key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ6NmfFmPe5F6JfhlRYTwIlb4p6jMlX0E2wl0zyUjC2K";
+
+  try {
+    expect((await client.capabilities()).ssh).toMatchObject({
+      status: "supported",
+      value: { auth: "publicKey", publicKey: "required", scope: "sandbox" },
+    });
+    const box = await client.sandboxes.create();
+    await expect(box.sshTarget()).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+    expect(fixture.authorizedKeys).toEqual([]);
+
+    expect(await box.sshTarget({ publicKey: `${key} me@laptop` })).toEqual({
+      host: "203.0.113.10",
+      port: 22,
+      username: "user",
+      auth: { method: "publicKey" },
+      hostKeys: [
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl",
+      ],
+    });
+    expect(fixture.authorizedKeys).toEqual([key]);
+  } finally {
+    await client.close();
+  }
+});

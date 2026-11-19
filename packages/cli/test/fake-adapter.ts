@@ -55,6 +55,38 @@ export const withoutCreateEnv = bindAdapter(
   {},
 );
 
+/** The fake adapter with an SSH target hook, like boxd; the target is never minted by doctor. */
+export const withSsh = bindAdapter(
+  defineAdapter({
+    name: "fake",
+    displayName: "Fake test provider with SSH targets",
+    config: z.strictObject({}),
+    credentials: z.strictObject({}),
+    async connect({ host }) {
+      const session = await definition.connect({ config: {}, credentials: {}, host });
+
+      return {
+        ...session,
+        ssh: {
+          supports: {
+            auth: "password",
+            publicKey: "unused",
+            scope: "sandbox",
+            hostKeys: false,
+            expires: false,
+            proxy: "none",
+          },
+          async target() {
+            throw new Error("doctor must not request an SSH target");
+          },
+        },
+      };
+    },
+  }),
+  {},
+  {},
+);
+
 /** The fake adapter without image inspection, inventory or deletion, like boxd or Vercel. */
 export const plain = bindAdapter(
   defineAdapter({

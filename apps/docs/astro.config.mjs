@@ -109,6 +109,7 @@ export default defineConfig({
             { slug: "docs/guides/files-and-output" },
             { slug: "docs/guides/text-streaming", label: "Processes and streaming" },
             { slug: "docs/guides/preview-access", label: "HTTP previews" },
+            { slug: "docs/guides/ssh-access", label: "SSH access" },
             { slug: "docs/guides/images-and-networking" },
             { slug: "docs/guides/recovery" },
             { slug: "docs/observability" },

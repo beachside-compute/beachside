@@ -653,3 +653,41 @@ linuxGuest("a guest job past its deadline is stopped and reported unknown", asyn
     await client.close();
   }
 });
+
+test("SSH targets are the VM host name with the account's own keys", async () => {
+  const { fixture, connect } = setup();
+  const client = await connect();
+
+  try {
+    expect((await client.capabilities()).ssh).toEqual({
+      status: "supported",
+      value: {
+        auth: "publicKey",
+        publicKey: "unused",
+        scope: "account",
+        hostKeys: false,
+        expires: false,
+        proxy: "none",
+      },
+    });
+
+    const box = await client.sandboxes.create();
+    const before = fixture.commands("ssh-key").length;
+
+    expect(
+      await box.sshTarget({
+        publicKey:
+          "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl",
+      }),
+    ).toEqual({
+      host: `${box.id}.exe.xyz`,
+      port: 22,
+      username: "user",
+      auth: { method: "publicKey" },
+    });
+    // No key is added: the account's keys already reach every VM.
+    expect(fixture.commands("ssh-key")).toHaveLength(before);
+  } finally {
+    await client.close();
+  }
+});

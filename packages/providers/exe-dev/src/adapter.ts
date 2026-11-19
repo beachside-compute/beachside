@@ -123,6 +123,12 @@ const TOKEN_SECONDS = 3600;
 /** Lifetime of a signed preview token for one VM. */
 const PREVIEW_SECONDS = 3600;
 
+/**
+ * The name reported when exe.dev says any username works; its gateway maps every name to the
+ * VM's default user. exe.dev's own connector uses the same placeholder.
+ */
+const DEFAULT_SSH_USER = "user";
+
 /** Ports exe.dev's HTTPS proxy forwards on `https://<vm>.exe.xyz:<port>/`. */
 const ALTERNATE_PORTS = { min: 3000, max: 9999 };
 
@@ -1318,6 +1324,31 @@ export function createExeDevAdapter(options: ExeDevAdapterOptions = {}) {
             return input;
           },
           submit: (input, ctx) => runCommand(input, ctx),
+        },
+        ssh: {
+          // exe.dev's front door is SSH: the account's own keys reach every VM by host name.
+          supports: {
+            auth: "publicKey",
+            publicKey: "unused",
+            scope: "account",
+            hostKeys: false,
+            expires: false,
+            proxy: "none",
+          },
+          async target(input, ctx) {
+            const vm = await requireRunning(input.sandbox, ctx);
+
+            // `ssh_dest` is `host` when any username works, or `user@host` when one is needed.
+            const dest = (vm.sshDest ?? `${vm.name}.exe.xyz`).trim();
+            const at = dest.lastIndexOf("@");
+            const host = at === -1 ? dest : dest.slice(at + 1);
+            const username = at === -1 ? DEFAULT_SSH_USER : dest.slice(0, at);
+
+            if (!/^[a-z0-9-]+\.[a-z0-9.-]+$/i.test(host) || !/^[^\s@\0]{1,256}$/.test(username))
+              throw new AdapterError("UNAVAILABLE", "exe.dev reported an invalid SSH destination");
+
+            return { host, port: 22, username, auth: { method: "publicKey" as const } };
+          },
         },
         async preview(input, ctx) {
           const vm = await requireRunning(input.sandbox, ctx);

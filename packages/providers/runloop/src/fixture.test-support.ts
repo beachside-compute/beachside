@@ -141,6 +141,7 @@ export function runloopFixture() {
   const commands: string[] = [];
   const workdir = mkdtempSync(join(tmpdir(), "beachside-runloop-fixture-"));
   let sequence = 0;
+  let sshKeys = 0;
   let loseNextCreate = false;
   let holdNextCreate = false;
   /** Start the next devbox without the network policy its create requested. */
@@ -433,6 +434,18 @@ export function runloopFixture() {
       return json(200, view(box));
     }
 
+    // Runloop issues one key pair per devbox at creation and returns that same pair every time.
+    if (method === "POST" && rest === "create_ssh_key") {
+      sshKeys++;
+
+      return json(200, {
+        id,
+        ssh_private_key: `-----BEGIN OPENSSH PRIVATE KEY-----\nkey-${id}\n-----END OPENSSH PRIVATE KEY-----\n`,
+        ssh_user: "user",
+        url: `${id}.ssh.runloop.ai`,
+      });
+    }
+
     if (method === "POST" && rest === "suspend") {
       if (box.status !== "running") return error(400, "devbox not running");
       box.status = "suspending";
@@ -565,6 +578,7 @@ export function runloopFixture() {
   };
 
   return {
+    sshKeys: () => sshKeys,
     fetch,
     calls,
     effects,
