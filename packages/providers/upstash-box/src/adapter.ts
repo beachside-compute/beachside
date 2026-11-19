@@ -5,6 +5,16 @@ import {
   AdapterError,
   AllowNetworkSetting,
   DEFAULT_LIFETIME_SECONDS,
+  listedLabels,
+  listedTime,
+  validateResourceReference,
+  type InventoryInput,
+  type ReadContext,
+  type RecoveryAttempt,
+  type ObserveContext,
+  type SnapshotRestoreInput,
+  type RestoreCapabilities,
+  type Support,
   ResourceMinimums,
   allowlistConfig,
   allowlistFromCanonical,
@@ -21,7 +31,6 @@ import {
   type CreateInput,
   type DestroyInput,
   type ExecInput,
-  type FileWriteInput,
   type OperationOutcome,
   type Sandbox,
   type SandboxInfo,
@@ -29,13 +38,47 @@ import {
   type Scope,
 } from "@beachside/adapter";
 import { createExec, ExecLoss, MAX_OUTPUT_BYTES } from "./exec";
-import { boxFiles, boxPath, EXCLUSIVE_WRITE, MAX_FILE_BYTES } from "./files";
+import { boxFiles, boxPath } from "./files";
+import { createProcesses } from "./process";
+import { snapshotHooks } from "./snapshots";
+import { regularHooks } from "./regular";
 import { BoxHttpError, createTransport, definitiveRefusal, ORIGIN } from "./transport";
 
 const PROVIDER = "upstash-box";
 const REGION = "us-east-1";
 const IMAGE = "node";
-const LIFETIME = { minSeconds: 300, maxSeconds: 259_200 };
+
+// The shipped Upstash disposable execution example uses 120 seconds.
+const LIFETIME = { minSeconds: 120, maxSeconds: 259_200 };
+
+const Runtime = z.enum([
+  "node",
+  "python",
+  "golang",
+  "ruby",
+  "rust",
+  "node-alpine",
+  "python-alpine",
+  "golang-alpine",
+  "ruby-alpine",
+  "rust-alpine",
+]);
+
+const BoxKind = z.enum(["ephemeral", "regular"]);
+
+type BoxKind = z.infer<typeof BoxKind>;
+
+const RESERVED_ENV = new Set([
+  "PATH",
+  "HOME",
+  "LD_PRELOAD",
+  "LD_LIBRARY_PATH",
+  "NODE_OPTIONS",
+  "UPSTASH_BOX_ID",
+  "UPSTASH_BOX_NAME",
+  "UPSTASH_BOX_AGENT",
+  "UPSTASH_BOX_RUNTIME",
+]);
 
 const SIZES = [
   { name: "small", vcpus: 2, memoryMiB: 4096 },
@@ -46,7 +89,12 @@ const SIZES = [
 const Size = z.enum(["small", "medium", "large"]);
 
 const Setup = z.strictObject({
-  image: z.literal(IMAGE).default(IMAGE),
+  image: Runtime.default(IMAGE),
+  boxKind: BoxKind.default("ephemeral"),
+  keepAlive: z.boolean().default(false),
+  preview: z
+    .strictObject({ access: z.enum(["protected", "public"]).default("protected") })
+    .optional(),
   network: z.union([z.enum(["internet", "blocked"]), AllowNetworkSetting]).default("internet"),
   resources: ResourceMinimums.optional(),
   lifecycle: z
@@ -56,9 +104,9 @@ const Setup = z.strictObject({
         .int()
         .min(LIFETIME.minSeconds)
         .max(LIFETIME.maxSeconds)
-        .default(DEFAULT_LIFETIME_SECONDS),
+        .optional(),
     })
-    .default({ lifetimeSeconds: DEFAULT_LIFETIME_SECONDS }),
+    .default({}),
 });
 
 const Credentials = z.strictObject({
@@ -84,6 +132,8 @@ type Policy = z.infer<typeof Policy>;
 const Detail = z.object({
   id: Id,
   ephemeral: z.boolean().optional(),
+  keep_alive: z.boolean().optional(),
+  created_at: z.number().int().positive().safe().optional(),
   status: z.enum(["creating", "idle", "running", "paused", "error", "deleted"]),
   runtime: z.string().optional(),
   size: Size.optional(),
@@ -96,7 +146,10 @@ type Detail = z.infer<typeof Detail>;
 
 const Preparation = z.strictObject({
   size: Size,
-  ttl: z.number().int().min(LIFETIME.minSeconds).max(LIFETIME.maxSeconds),
+  ttl: z.number().int().min(LIFETIME.minSeconds).max(LIFETIME.maxSeconds).optional(),
+  runtime: Runtime,
+  env_vars: z.record(z.string(), z.string()).optional(),
+  snapshot_id: Id.optional(),
   network_policy: Policy,
   labels: z.array(NativeLabel).max(4),
 });
@@ -108,8 +161,11 @@ const CreateToken = z.strictObject({
   size: Size,
   labels: z.array(NativeLabel).max(4),
   policy: z.string().regex(/^[a-f0-9]{64}$/),
-  earliestExpiry: z.number().int().safe(),
-  latestExpiry: z.number().int().safe(),
+  expiry: z.tuple([z.number().int().safe(), z.number().int().safe()]).optional(),
+  runtime: Runtime,
+  boxKind: BoxKind,
+  keepAlive: z.boolean(),
+  restore: z.boolean().optional(),
 });
 
 type CreateToken = z.infer<typeof CreateToken>;
@@ -121,25 +177,51 @@ export type UpstashBoxAdapterOptions = {
   fetch?: typeof fetch;
 };
 
-function marker(submissionId: string) {
+function marker(submissionId: string, kind?: BoxKind) {
+  const prefix = kind
+    ? `${CorrelationPrefix}${kind === "ephemeral" ? "e" : "r"}:`
+    : CorrelationPrefix;
+
   return (
-    CorrelationPrefix + createHash("sha256").update(submissionId).digest("base64url").slice(0, 17)
+    prefix +
+    createHash("sha256")
+      .update(submissionId)
+      .digest("base64url")
+      .slice(0, 20 - prefix.length)
   );
+}
+
+function nativeKind(box: Detail): BoxKind | undefined {
+  if (box.ephemeral !== undefined) return box.ephemeral ? "ephemeral" : "regular";
+
+  if (box.expires_at !== undefined) return "ephemeral";
+  const candidate = box.labels?.find((label) => /^bs:[er]:[A-Za-z0-9_-]{15}$/.test(label));
+
+  if (candidate) return candidate.startsWith("bs:e:") ? "ephemeral" : "regular";
+
+  if (box.keep_alive === true) return "regular";
+
+  return undefined;
 }
 
 const CreationReceipt = z.object({ submission: z.string().min(1).max(128) });
 
-function hasEphemeralEvidence(box: Detail, ref: SandboxReference) {
-  if (box.ephemeral !== undefined) return box.ephemeral;
+function hasClassEvidence(box: Detail, ref: SandboxReference, kind: BoxKind) {
+  // Explicit contradictory provider evidence takes precedence over the historical receipt.
+  if (box.ephemeral !== undefined) return nativeKind(box) === kind;
+
+  if (ref.ownership === "borrowed") return nativeKind(box) === kind;
 
   if (ref.ownership !== "verified-created" || !ref.receipt || !box.labels) return false;
 
-  // The shared Box detail endpoint may omit the class. In that case cite the
-  // native marker from the adapter's ephemeral create instead.
   try {
     const receipt = CreationReceipt.safeParse(JSON.parse(ref.receipt));
 
-    return receipt.success && box.labels.includes(marker(receipt.data.submission));
+    return (
+      receipt.success &&
+      (box.labels.includes(marker(receipt.data.submission, kind)) ||
+        (kind === "ephemeral" && box.labels.includes(marker(receipt.data.submission))))
+    );
   } catch {
     return false;
   }
@@ -210,19 +292,26 @@ function policyDigest(policy: Policy = { mode: "allow-all" }) {
 
 function hasRequestedExpiry(detail: Detail, token: CreateToken) {
   const expires = detail.expires_at;
+  const range = token.expiry;
 
-  return expires !== undefined && expires >= token.earliestExpiry && expires <= token.latestExpiry;
+  return (
+    !range ||
+    (expires !== undefined &&
+      expires >= range[0] &&
+      expires <= range[1] &&
+      expires * 1000 > Date.now())
+  );
 }
 
 function ready(detail: Detail, token: CreateToken, submissionId: string) {
   return (
-    detail.ephemeral === true &&
+    nativeKind(detail) === token.boxKind &&
     (detail.status === "idle" || detail.status === "running") &&
-    detail.runtime === IMAGE &&
+    detail.runtime === token.runtime &&
     detail.size === token.size &&
     hasRequestedExpiry(detail, token) &&
-    (detail.expires_at ?? 0) * 1000 > Date.now() &&
-    detail.labels?.includes(marker(submissionId)) &&
+    Boolean(detail.keep_alive) === token.keepAlive &&
+    detail.labels?.includes(marker(submissionId, token.boxKind)) &&
     token.labels.every((label) => detail.labels?.includes(label)) &&
     token.policy === policyDigest(detail.network_policy)
   );
@@ -236,7 +325,7 @@ function sandboxInfo(detail: Detail, reference: SandboxReference | null): Sandbo
     running: "running",
     paused: "stopped",
     deleted: "destroyed",
-    creating: "unknown",
+    creating: "creating",
     error: "unknown",
   } as const;
 
@@ -246,6 +335,7 @@ function sandboxInfo(detail: Detail, reference: SandboxReference | null): Sandbo
     state: state[detail.status],
     nativeState: detail.status,
     observedAt: new Date().toISOString(),
+    ...(nativeKind(detail) === "regular" && { expires: { status: "none" } }),
     ...(detail.expires_at && {
       expires: {
         status: "known",
@@ -284,12 +374,24 @@ export function defineUpstashBoxAdapter(origin: string, options: UpstashBoxAdapt
         },
       },
       config: {
-        image: { env: "UPSTASH_BOX_IMAGE", choices: [IMAGE] },
+        image: { env: "UPSTASH_BOX_IMAGE", choices: Runtime.options },
+        boxKind: { env: "UPSTASH_BOX_KIND", choices: BoxKind.options },
         network: { env: "UPSTASH_BOX_NETWORK", choices: ["internet", "blocked"] },
       },
       docs: "https://beachside.run/docs/providers/upstash-box/",
     },
     async connect({ config, credentials, host }) {
+      const ephemeral = config.boxKind === "ephemeral";
+
+      if (ephemeral && (config.keepAlive || config.preview))
+        throw new AdapterError(
+          "UNSUPPORTED",
+          "Upstash Box keep-alive and previews require a regular box",
+        );
+
+      if (!ephemeral && config.lifecycle.lifetimeSeconds !== undefined)
+        throw new AdapterError("UNSUPPORTED", "Upstash regular boxes have no native lifetime");
+
       const size = smallestSize("Upstash Box", SIZES, config.resources ?? {});
       const parsedAllow = allowlistConfig("Upstash Box", config.network);
       throwAllowlistError(parsedAllow);
@@ -313,10 +415,14 @@ export function defineUpstashBoxAdapter(origin: string, options: UpstashBoxAdapt
 
       const live = createExec(origin, credentials.apiKey);
       host.onClose(live.close);
-      const list = await transport.json("/v2/box", host.signal);
-
-      if (!Array.isArray(list))
-        throw new AdapterError("UNAVAILABLE", "Upstash Box list is invalid");
+      const processes = createProcesses(origin, credentials.apiKey);
+      host.onClose(processes.close);
+      // Verify authorization with a filtered read. The label is reserved and unique to this probe.
+      await transport.empty(
+        `/v2/box?label=${encodeURIComponent(marker(crypto.randomUUID()))}`,
+        host.signal,
+        "GET",
+      );
 
       function locator(box: Sandbox) {
         const id = Id.safeParse(box.id);
@@ -352,7 +458,14 @@ export function defineUpstashBoxAdapter(origin: string, options: UpstashBoxAdapt
         });
       }
 
-      function partial(ref: SandboxReference, acknowledged: boolean): OperationOutcome {
+      function partial(
+        ref: SandboxReference,
+        acknowledged: boolean,
+        restore: boolean,
+      ): OperationOutcome {
+        if (restore)
+          return { kind: "snapshot_restore", status: "unknown", sandbox: ref, mounts: [] };
+
         return {
           kind: "create",
           status: "partial",
@@ -373,152 +486,390 @@ export function defineUpstashBoxAdapter(origin: string, options: UpstashBoxAdapt
         }
       }
 
-      const files = boxFiles(transport);
+      function prepare(
+        input: CreateInput,
+        snapshotId?: string,
+        selectedSize = size.name,
+      ): Preparation {
+        const runtime = Runtime.safeParse(input.image.value);
+
+        if (
+          input.image.kind !== "prepared" ||
+          !runtime.success ||
+          (input.region !== undefined && input.region !== REGION) ||
+          input.requirements ||
+          input.mounts?.length
+        )
+          throw new AdapterError(
+            "UNSUPPORTED",
+            "Upstash Box requires a prepared runtime in us-east-1 without mounts or state requirements",
+          );
+
+        if (!ephemeral && input.lifetimeSeconds !== undefined)
+          throw new AdapterError("UNSUPPORTED", "Upstash regular boxes have no native lifetime");
+
+        const reserved = Object.keys(input.env ?? {}).find((key) => RESERVED_ENV.has(key));
+
+        if (reserved)
+          throw new AdapterError(
+            "UNSUPPORTED",
+            `Upstash Box reserves environment variable ${reserved}`,
+          );
+
+        if (!policies.includes(input.networkPolicy))
+          throw new AdapterError("UNSUPPORTED", "Unsupported Upstash Box network policy");
+
+        const network_policy: Policy =
+          input.networkPolicy === "allow" && allowlist
+            ? {
+                mode: "custom",
+                allowed_domains: [...allowlist.hosts],
+                allowed_cidrs: [...allowlist.cidrs],
+              }
+            : { mode: input.networkPolicy === "blocked" ? "deny-all" : "allow-all" };
+
+        return {
+          size: selectedSize,
+          ttl: ephemeral
+            ? (input.lifetimeSeconds ??
+              config.lifecycle.lifetimeSeconds ??
+              DEFAULT_LIFETIME_SECONDS)
+            : undefined,
+          runtime: runtime.data,
+          env_vars: input.env,
+          network_policy,
+          labels: nativeLabels(input.labels),
+          snapshot_id: snapshotId,
+        };
+      }
+
+      async function submitAllocation(prepared: Preparation, ctx: AttemptContext<CreateToken>) {
+        let raw: unknown;
+        const sentAt = Math.floor(Date.now() / 1000);
+
+        try {
+          raw = await transport.json(
+            prepared.snapshot_id ? "/v2/box/from-snapshot" : "/v2/box",
+            ctx.signal,
+            "POST",
+            {
+              ...prepared,
+              ...(ephemeral ? { ephemeral: true } : config.keepAlive ? { keep_alive: true } : {}),
+              labels: [...prepared.labels, marker(ctx.submissionId, config.boxKind)],
+            },
+          );
+        } catch (error) {
+          if (definitiveRefusal(error)) return ctx.reject(error.code, error.message);
+
+          return ctx.unknown("Upstash Box did not confirm allocation");
+        }
+
+        const parsed = z.object({ id: Id }).safeParse(raw);
+
+        if (!parsed.success) return ctx.unknown("Upstash Box returned no usable allocation ID");
+        const { id } = parsed.data;
+        const ref = reference(id, ctx);
+
+        const token: CreateToken = {
+          id,
+          size: prepared.size,
+          labels: prepared.labels,
+          policy: policyDigest(prepared.network_policy),
+          runtime: prepared.runtime,
+          boxKind: config.boxKind,
+          keepAlive: config.keepAlive,
+          ...(prepared.snapshot_id && { restore: true }),
+          ...(prepared.ttl !== undefined && {
+            expiry: [sentAt + prepared.ttl - 5, Math.ceil(Date.now() / 1000) + prepared.ttl + 5],
+          }),
+        };
+
+        const native = Detail.safeParse(raw);
+
+        const hasExpiry =
+          native.success && hasRequestedExpiry(native.data, token) && !!token.expiry;
+
+        try {
+          await ctx.checkpoint(token);
+        } catch (error) {
+          if (error instanceof AdapterCheckpointError)
+            error.outcome = partial(ref, hasExpiry, !!token.restore);
+          throw error;
+        }
+
+        try {
+          if (native.success && ready(native.data, token, ctx.submissionId))
+            return { id, reference: ref, state: "running" as const };
+        } catch {
+          // A malformed policy cannot confirm the requested guarantee.
+        }
+
+        return observeAllocation(
+          {
+            operationId: ctx.operationId,
+            submissionId: ctx.submissionId,
+            sandbox: undefined,
+            token,
+          },
+          {
+            signal: ctx.signal,
+            deadline: Date.now() + 30_000,
+            pending: ctx.pending,
+            unknown: ctx.unknown,
+          },
+        );
+      }
+
+      async function observeAllocation(
+        attempt: RecoveryAttempt<CreateToken, undefined>,
+        ctx: ObserveContext<CreateToken>,
+      ) {
+        const token = attempt.token;
+
+        if (!token) return ctx.unknown("Upstash Box allocation did not return an ID");
+        const ref = reference(token.id, attempt);
+
+        try {
+          const box = await detail(token.id, ctx.signal);
+
+          if (ready(box, token, attempt.submissionId))
+            return { id: token.id, reference: ref, state: "running" as const };
+
+          if (box.status === "creating") return ctx.pending(token, { pollAfterMs: 2_000 });
+
+          return ctx.unknown(
+            "Upstash Box setup could not be confirmed",
+            partial(ref, !!token.expiry && hasRequestedExpiry(box, token), !!token.restore),
+          );
+        } catch {
+          return ctx.unknown(
+            "Upstash Box setup could not be observed",
+            partial(ref, false, !!token.restore),
+          );
+        }
+      }
+
+      function prepareRestore(input: SnapshotRestoreInput) {
+        assertResourceScope(input.snapshot, { provider: PROVIDER, scope });
+
+        if (input.snapshot.kind !== "snapshot")
+          throw new AdapterError("INVALID_ARGUMENT", "Upstash Box requires a snapshot reference");
+        const resources = input.request.resources;
+
+        if (resources?.diskMiB)
+          throw new AdapterError(
+            "UNSUPPORTED",
+            "Upstash Box cannot select snapshot restore disk size",
+          );
+
+        const requested = smallestSize("Upstash Box", SIZES, {
+          vcpus: Math.max(config.resources?.vcpus ?? 0, resources?.vcpu ?? 0),
+          memoryMiB: Math.max(config.resources?.memoryMiB ?? 0, resources?.memoryMiB ?? 0),
+        });
+
+        return prepare(
+          {
+            image: { kind: "prepared", value: config.image },
+            networkPolicy: input.request.networkPolicy,
+            labels: input.request.labels,
+            env: input.request.env,
+            lifetimeSeconds: input.request.lifetimeSeconds,
+            mounts: input.request.mounts,
+          },
+          Id.parse(input.snapshot.nativeId),
+          requested.name,
+        );
+      }
+
+      async function list(input: InventoryInput, ctx: ReadContext) {
+        const cursor = input.cursor === undefined ? undefined : Id.safeParse(input.cursor);
+
+        if (cursor && !cursor.success)
+          throw new AdapterError("INVALID_ARGUMENT", "Invalid Upstash Box cursor");
+        const rows = z.array(z.unknown()).safeParse(await transport.json("/v2/box", ctx.signal));
+
+        if (!rows.success) throw new AdapterError("UNAVAILABLE", "Upstash Box list is invalid");
+
+        const candidates = rows.data.flatMap((raw) => {
+          const box = Detail.safeParse(raw);
+
+          if (!box.success)
+            throw new AdapterError("UNAVAILABLE", "Upstash Box list entry is invalid");
+
+          return !cursor || box.data.id > cursor.data ? [box.data] : [];
+        });
+
+        candidates.sort((left, right) => (left.id < right.id ? -1 : left.id === right.id ? 0 : 1));
+        const page = candidates.slice(0, input.limit);
+
+        return { page, nextCursor: candidates.length > page.length ? page.at(-1)?.id : undefined };
+      }
+
+      const files = boxFiles(transport, live.exec, locator);
+
+      const restoreCapabilities: Support<RestoreCapabilities> = {
+        status: "supported",
+        value: {
+          networkPolicies: policies,
+          resources: true,
+          mounts: false,
+          independentLifecycle: true,
+        },
+      };
+
+      const snapshots = snapshotHooks({
+        transport,
+        scope,
+        boxKind: config.boxKind,
+        restoreCapabilities,
+        async readSandbox(box, ctx) {
+          const native = await detail(locator(box), ctx.signal);
+
+          if (
+            box.reference
+              ? !hasClassEvidence(native, box.reference, config.boxKind)
+              : nativeKind(native) !== config.boxKind
+          )
+            throw new AdapterError("CONFLICT", "Could not confirm the Upstash Box kind");
+
+          return { id: native.id, state: sandboxInfo(native, box.reference ?? null).state };
+        },
+      });
+
+      const snapshotRestore: NonNullable<AdapterSession["snapshotRestore"]> = {
+        recovery: { version: 1, token: CreateToken },
+        options: { env: true, labels: true, lifetime: ephemeral ? LIFETIME : undefined },
+        async prepare(input, ctx) {
+          prepareRestore(input);
+
+          const snapshot = await snapshots.snapshotInspect(input.snapshot, ctx);
+
+          if (snapshot.state !== "ready")
+            throw new AdapterError("CONFLICT", "Upstash Box snapshot is not ready");
+
+          return input;
+        },
+        async submit(input, ctx) {
+          return submitAllocation(prepareRestore(input), ctx);
+        },
+        async observe(attempt, ctx) {
+          const token = CreateToken.safeParse(attempt.token);
+
+          return observeAllocation(
+            { ...attempt, sandbox: undefined, token: token.success ? token.data : undefined },
+            ctx,
+          );
+        },
+      };
 
       return {
         scope,
         defaultImage: { kind: "prepared", value: config.image },
         defaultNetworkPolicy: defaultPolicy,
+        ...snapshots,
+        snapshotRestore,
+        processes: {
+          ...processes.processes,
+          start(input, ctx) {
+            locator(input.sandbox);
+
+            return processes.processes.start(input, ctx);
+          },
+        },
+        ...(!ephemeral &&
+          regularHooks({
+            transport,
+            identify: locator,
+            keepAlive: config.keepAlive,
+            access: config.preview?.access ?? "protected",
+            async inspect(box, ctx) {
+              const native = await detail(locator(box), ctx.signal);
+
+              if (
+                box.reference
+                  ? !hasClassEvidence(native, box.reference, "regular")
+                  : nativeKind(native) !== "regular"
+              )
+                throw new AdapterError(
+                  "CONFLICT",
+                  "Could not confirm the saved Upstash Box is regular",
+                );
+
+              return {
+                info: sandboxInfo(native, box.reference ?? null),
+                keepAlive: native.keep_alive === true,
+              };
+            },
+          })),
         supports: {
           images: ["prepared"],
           network: policies,
-          lifetime: LIFETIME,
+          lifetime: ephemeral ? LIFETIME : undefined,
+          createEnv: true,
           exec: { commands: ["argv", "shell"], maxOutputBytes: MAX_OUTPUT_BYTES },
           fileWrite: { overwrite: true, noClobber: true },
         },
         create: {
           recovery: { version: 1, token: CreateToken },
           async prepare(input) {
-            if (
-              input.image.kind !== "prepared" ||
-              input.image.value !== IMAGE ||
-              (input.region !== undefined && input.region !== REGION) ||
-              input.requirements ||
-              input.mounts?.length ||
-              Object.keys(input.env ?? {}).length
-            )
-              throw new AdapterError(
-                "UNSUPPORTED",
-                "Upstash Box requires the node image in us-east-1 without mounts, state requirements or create env",
-              );
-            const ttl = input.lifetimeSeconds ?? config.lifecycle.lifetimeSeconds;
-            let network_policy: Policy;
-
-            switch (input.networkPolicy) {
-              case "internet":
-                network_policy = { mode: "allow-all" };
-                break;
-              case "blocked":
-                network_policy = { mode: "deny-all" };
-                break;
-              case "allow":
-                if (!allowlist)
-                  throw new AdapterError(
-                    "UNSUPPORTED",
-                    "Configure the Upstash Box allowlist first",
-                  );
-                network_policy = {
-                  mode: "custom",
-                  allowed_domains: [...allowlist.hosts],
-                  allowed_cidrs: [...allowlist.cidrs],
-                };
-                break;
-              default:
-                throw new AdapterError("UNSUPPORTED", "Unsupported Upstash Box network policy");
-            }
-
-            if (!policies.includes(input.networkPolicy))
-              throw new AdapterError(
-                "UNSUPPORTED",
-                "Upstash Box requires the configured allowlist",
-              );
-
-            return { size: size.name, ttl, network_policy, labels: nativeLabels(input.labels) };
+            return prepare(input);
           },
-          async submit(prepared, ctx) {
-            let raw: unknown;
-            const sentAt = Math.floor(Date.now() / 1000);
+          submit: submitAllocation,
+          observe: observeAllocation,
+        },
+        async inventory(input, ctx) {
+          const { page, nextCursor } = await list(input, ctx);
 
-            try {
-              raw = await transport.json("/v2/box", ctx.signal, "POST", {
-                ...prepared,
-                ephemeral: true,
-                runtime: IMAGE,
-                labels: [...prepared.labels, marker(ctx.submissionId)],
-              });
-            } catch (error) {
-              if (definitiveRefusal(error)) return ctx.reject(error.code, error.message);
+          return {
+            items: page.map((box) => ({
+              id: box.id,
+              state:
+                box.status === "deleted"
+                  ? "destroyed"
+                  : box.status === "running" || box.status === "idle"
+                    ? "running"
+                    : "unknown",
+            })),
+            nextCursor,
+          };
+        },
+        async sandboxList(input, ctx) {
+          const { page, nextCursor } = await list(input, ctx);
 
-              return ctx.unknown("Upstash Box did not confirm allocation");
-            }
+          return {
+            coverage: "provider-scope",
+            nextCursor,
+            items: page.map((box) => ({
+              id: box.id,
+              state: sandboxInfo(box, null).state,
+              reference:
+                nativeKind(box) === config.boxKind && box.status !== "deleted"
+                  ? validateResourceReference({
+                      version: 1,
+                      kind: "sandbox",
+                      provider: PROVIDER,
+                      scope,
+                      nativeId: box.id,
+                      ownership: "borrowed",
+                    })
+                  : null,
+              labels: box.labels
+                ? listedLabels(
+                    Object.fromEntries(
+                      box.labels.flatMap((label) => {
+                        const separator = label.indexOf(":");
 
-            const parsed = z.object({ id: Id }).safeParse(raw);
-
-            if (!parsed.success) return ctx.unknown("Upstash Box returned no usable allocation ID");
-            const { id } = parsed.data;
-            const ref = reference(id, ctx);
-
-            // The service reports expiration in whole seconds. Allow for clock skew and requests
-            // that spent time in flight, but reject a fallback to the provider's three-day TTL.
-            const token = {
-              id,
-              size: prepared.size,
-              labels: prepared.labels,
-              policy: policyDigest(prepared.network_policy),
-              earliestExpiry: sentAt + prepared.ttl - 5,
-              latestExpiry: Math.ceil(Date.now() / 1000) + prepared.ttl + 5,
-            };
-
-            const native = Detail.safeParse(raw);
-            const hasExpiry = native.success && hasRequestedExpiry(native.data, token);
-
-            try {
-              await ctx.checkpoint(token);
-            } catch (error) {
-              if (error instanceof AdapterCheckpointError) error.outcome = partial(ref, hasExpiry);
-              throw error;
-            }
-
-            try {
-              if (native.success && ready(native.data, token, ctx.submissionId))
-                return { id, reference: ref, state: "running" };
-            } catch {
-              // A malformed policy cannot confirm the requested guarantee.
-            }
-
-            try {
-              const current = await detail(id, ctx.signal);
-
-              if (ready(current, token, ctx.submissionId))
-                return { id, reference: ref, state: "running" };
-            } catch {
-              // The create response still establishes the known ID.
-            }
-
-            return ctx.unknown(
-              "Upstash Box allocation is known but setup was not confirmed",
-              partial(ref, hasExpiry),
-            );
-          },
-          async observe(attempt, ctx) {
-            if (!attempt.token) return null;
-            const { id } = attempt.token;
-            const ref = reference(id, attempt);
-
-            try {
-              const box = await detail(id, ctx.signal);
-
-              if (ready(box, attempt.token, attempt.submissionId))
-                return { id, reference: ref, state: "running" };
-
-              return ctx.unknown(
-                "Upstash Box setup could not be confirmed",
-                partial(ref, hasRequestedExpiry(box, attempt.token)),
-              );
-            } catch {
-              return ctx.unknown("Upstash Box setup could not be observed", partial(ref, false));
-            }
-          },
+                        return separator > 0
+                          ? [[label.slice(0, separator), label.slice(separator + 1)]]
+                          : [];
+                      }),
+                    ),
+                    (key) => key === "bs",
+                  )
+                : null,
+              createdAt: box.created_at === undefined ? null : listedTime(box.created_at * 1000),
+            })),
+          };
         },
         destroy: {
           recovery: { version: 1, token: DestroyToken },
@@ -572,11 +923,8 @@ export function defineUpstashBoxAdapter(origin: string, options: UpstashBoxAdapt
           if (box.status === "deleted")
             throw new AdapterError("NOT_FOUND", "Upstash Box was deleted");
 
-          if (!hasEphemeralEvidence(box, ref))
-            throw new AdapterError(
-              "CONFLICT",
-              "Could not confirm the saved Upstash Box is ephemeral",
-            );
+          if (!hasClassEvidence(box, ref, config.boxKind))
+            throw new AdapterError("CONFLICT", "Could not confirm the saved Upstash Box kind");
 
           return sandboxInfo(box, ref);
         },
@@ -605,73 +953,12 @@ export function defineUpstashBoxAdapter(origin: string, options: UpstashBoxAdapt
           },
           { finiteStdin: "bytes" as const },
         ),
-        files: {
-          ...files,
-          read(input, ctx) {
-            locator(input.sandbox);
-
-            return files.read(input, ctx);
-          },
-          readStream(input, ctx) {
-            locator(input.sandbox);
-
-            return files.readStream(input, ctx);
-          },
-          async write(input: FileWriteInput, ctx) {
-            const id = locator(input.sandbox);
-
-            if (input.bytes.byteLength > MAX_FILE_BYTES)
-              return ctx.reject("CAPACITY", "Upstash Box write exceeds the 1 MiB adapter limit");
-
-            try {
-              if (input.overwrite) {
-                await transport.empty(`${boxPath(id)}/files/write`, ctx.signal, "POST", {
-                  path: input.path,
-                  encoding: "base64",
-                  content: Buffer.from(input.bytes).toString("base64"),
-                });
-              } else {
-                const result = await live.exec(
-                  {
-                    sandbox: input.sandbox,
-                    command: {
-                      kind: "argv",
-                      argv: [
-                        "node",
-                        "-e",
-                        EXCLUSIVE_WRITE,
-                        "--",
-                        input.path,
-                        String(input.bytes.byteLength),
-                      ],
-                    },
-                    stdin: input.bytes,
-                    deadlineSeconds: 30,
-                    maxOutputBytes: 0,
-                  },
-                  ctx.signal,
-                );
-
-                if (result.exitCode === 73)
-                  return ctx.reject("CONFLICT", "Upstash Box file already exists");
-
-                if (result.exitCode !== 0)
-                  return ctx.unknown("Upstash Box could not confirm the exclusive write");
-              }
-
-              return { bytesWritten: input.bytes.byteLength };
-            } catch (error) {
-              if (definitiveRefusal(error)) return ctx.reject(error.code, error.message);
-
-              return ctx.unknown("Upstash Box could not confirm the write");
-            }
-          },
-        },
+        files,
       } satisfies AdapterSession<
         Preparation,
         DestroyInput,
         ExecInput,
-        FileWriteInput,
+        import("@beachside/adapter").FileWriteInput,
         "argv" | "shell",
         CreateToken
       >;

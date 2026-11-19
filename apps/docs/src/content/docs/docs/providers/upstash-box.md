@@ -1,6 +1,6 @@
 ---
 title: Upstash Box
-description: Run finite commands and work with files in ephemeral Upstash Box sandboxes.
+description: Use Upstash Box ephemeral or regular sandboxes with Beachside.
 ---
 
 Install `beachside` and `@beachside/upstash-box`, then get a write-capable Box API key from the [Upstash Console](https://console.upstash.com/). Use `UPSTASH_BOX_API_KEY` for the CLI profile or supply it as `credentials.apiKey` when connecting with `upstashBoxAdapter`. The `upstashBox({ apiKey, ...config })` factory combines the two setup arguments.
@@ -28,18 +28,27 @@ try {
 }
 ```
 
-## Defaults and limits
+## Box kinds and setup
 
-- Boxes use the Debian `node` prepared runtime in AWS us-east-1. Set `resources` to select the smallest Upstash size that meets your CPU and memory requirements. The default is small (2 vCPUs, 4 GiB). Your Upstash plan controls size availability.
-- `lifecycle.lifetimeSeconds` defaults to 900. The adapter accepts 300 to 259,200 seconds. Upstash deletes boxes when their TTL expires.
-- Network defaults to `"internet"`. Set `network: "blocked"` or configure an allowlist with `network: { allow: ["api.example.com"] }`. Upstash blocks private ranges. An unlisted domain may still resolve over DNS in custom mode. The wildcard `*.example.com` excludes the apex. See the [native matching rules](https://upstash.com/docs/box/overall/network-policy#matching-rules).
-- Finite exec accepts argv or shell commands and per-command env. It captures up to 1 MiB of combined output and accepts up to 1 MiB of binary stdin. Live sessions require a write-capable key. Read-only keys can inspect boxes and read files on an awake box.
-- File reads use bounded ranges and support larger files through Beachside's file streams. File writes are bounded to 1 MiB. The default write creates the path exclusively. Pass `overwrite: true` to replace a file.
-- Up to four user labels fit alongside the adapter's correlation marker. Each encoded `key:value` must fit Upstash's 20-character limit and use letters, digits, periods, underscores, colons or hyphens. Colons in keys and the reserved `bs:` prefix are unsupported.
-- The adapter covers ephemeral lifecycle, finite exec and files. Create-time env, OCI images, retained storage, snapshots, previews, remote inventory and interactive processes are outside this integration.
+Beachside defaults to `boxKind: "ephemeral"` in AWS us-east-1. Set `lifecycle.lifetimeSeconds` to choose the native TTL. The default is 900 seconds. The adapter accepts 120 to 259,200 seconds.
 
-## Reopening and cleanup
+Set `boxKind: "regular"` for HTTP previews and explicit pause and resume. Upstash keeps regular boxes until you delete them. The adapter rejects a configured TTL for regular boxes before allocation. With `keepAlive: true`, Upstash keeps regular compute active on an eligible paid plan and disables pause and resume.
 
-Save the full Beachside reference after create. A fresh client can reopen the exact Box ID with a currently authorized key. Unknown create and delete outcomes are never replayed automatically. A confirmed Box ID remains available for follow-up if provisioning could not be confirmed. A delete acknowledgment followed by an inconclusive read leaves cleanup unconfirmed.
+Select a prepared `image` from `node`, `python`, `golang`, `ruby`, `rust` and their `-alpine` variants. The default is Debian `node`. Set `resources` to select the smallest Upstash size that meets your CPU and memory requirements. The default is small (2 vCPUs, 4 GiB). Your account controls size availability.
+
+Both kinds accept create-time env. Upstash reserves system variables such as `PATH`, `HOME` and `NODE_OPTIONS`. The adapter rejects those names. Network defaults to `"internet"`. Set `network: "blocked"` or `network: { allow: ["api.example.com"] }`. Custom policy can still resolve unlisted names over DNS. Upstash blocks private ranges. See the [native matching rules](https://upstash.com/docs/box/overall/network-policy#matching-rules).
+
+## Commands, files and previews
+
+- Finite exec accepts argv or shell commands and per-command env. It captures up to 1 MiB of combined output and accepts up to 1 MiB of binary stdin. Live processes also support incremental stdin, separate output, signals and PTYs. Upstash ends the native session when its socket closes.
+- File reads use bounded native ranges. The file hooks expose streaming writes, directory operations, metadata, copy and overwrite moves. A default no-clobber write stages bytes and publishes the file exclusively. The destination filesystem must support hard links. Upstash's rename endpoint supports overwrite moves.
+- Regular previews default to protected access. Set `preview: { access: "public" }` for an unauthenticated HTTPS route. A public lookup reuses an existing public route. Requesting a protected route again rotates its bearer token. The adapter rejects a different access mode in the observed route. Upstash can resume a paused box on preview traffic or publication, including if it pauses while a preview is being published.
+- Up to four user labels fit alongside a correlation marker. Each encoded `key:value` must fit Upstash's 20-character limit and use letters, digits, periods, underscores, colons or hyphens. Colons in keys and the reserved `bs:` prefix are unsupported.
+
+## Recovery and snapshots
+
+Saved Beachside references reopen the exact Box ID with a currently authorized key. Inventory lists boxes visible to the key. Entries with evidence of the selected class have borrowed references. An uncertain mutation is observed without replay.
+
+Upstash snapshots capture filesystem state for a fresh box. Restore selects the configured box kind and reapplies the configured network policy. Snapshot artifacts can survive source deletion. The Box API key supports source-scoped snapshot lookup. Restore uses the saved snapshot ID and requires that lookup to confirm readiness. A successfully restored Box has its own lifecycle. Deletion uses the saved ID directly.
 
 The adapter remains experimental pending live qualification.

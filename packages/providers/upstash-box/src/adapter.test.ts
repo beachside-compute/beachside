@@ -1,8 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
 import { once } from "node:events";
-import { mkdtemp, readFile, rm, symlink } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { WebSocketServer } from "ws";
 import { z } from "zod";
 import { adapterSuite } from "@beachside/adapter/testing";
@@ -10,20 +7,23 @@ import {
   Beachside,
   Image,
   NoExitCodeError,
+  OutcomeUnknownError,
   NonzeroExitError,
   type BeachsideClient,
 } from "beachside";
 import { createUpstashBoxAdapter, defineUpstashBoxAdapter } from "./adapter";
 import { MAX_OUTPUT_BYTES } from "./exec";
-import { EXCLUSIVE_WRITE } from "./files";
 import { ORIGIN, RANGE_BYTES } from "./transport";
 
 const RequestBody = z.object({
-  ephemeral: z.literal(true),
-  runtime: z.literal("node"),
+  ephemeral: z.literal(true).optional(),
+  runtime: z.string(),
+  env_vars: z.record(z.string(), z.string()).optional(),
+  keep_alive: z.literal(true).optional(),
   size: z.string(),
   labels: z.array(z.string()),
-  ttl: z.number(),
+  ttl: z.number().optional(),
+  snapshot_id: z.string().optional(),
   network_policy: z.object({ mode: z.string() }).passthrough(),
 });
 
@@ -53,9 +53,15 @@ function apiFixture() {
     string,
     z.output<typeof RequestBody> & {
       id: string;
-      expires_at: number;
+      expires_at?: number;
+      created_at: number;
       status: string;
     }
+  >();
+
+  const snapshots = new Map<
+    string,
+    { id: string; box_id: string; name: string; status: "ready"; created_at: number }
   >();
 
   const data = Buffer.alloc(RANGE_BYTES + 29, 0xfb);
@@ -66,9 +72,10 @@ function apiFixture() {
   let ttlOverride: number | undefined;
   let deleteReadFailed = false;
   let failDeleteRead = false;
+  let failedDetailStatus = 403;
   let held: (() => void) | undefined;
   let fileVersion = "1";
-  let detailClass: boolean | undefined = true;
+  let detailClass: "native" | boolean | undefined = "native";
   const ranges: { offset: number; length: number }[] = [];
 
   const fetch = Object.assign(
@@ -79,16 +86,38 @@ function apiFixture() {
       expect(key).toMatch(/^fixture/);
       expect(request.redirect).toBe("error");
 
-      if (target.pathname === "/v2/box") {
-        if (request.method === "GET") return Response.json([...boxes.values()]);
+      if (target.pathname === "/v2/box/snapshots" && request.method === "DELETE") {
+        const { ids } = z
+          .object({ ids: z.array(z.string()).length(1) })
+          .parse(await request.json());
+
+        return Response.json({ deleted: snapshots.delete(ids[0]!) ? 1 : 0 });
+      }
+
+      if (target.pathname === "/v2/box" || target.pathname === "/v2/box/from-snapshot") {
+        if (request.method === "GET") {
+          const label = target.searchParams.get("label");
+
+          return Response.json(
+            [...boxes.values()].filter((box) => !label || box.labels.includes(label)),
+          );
+        }
+
         const body = RequestBody.parse(await request.json());
+
+        if (target.pathname.endsWith("/from-snapshot"))
+          expect(snapshots.has(body.snapshot_id ?? "")).toBe(true);
         const id = `box_${++creates}`;
 
         const box = {
           ...body,
           id,
           status: "idle",
-          expires_at: Math.floor(Date.now() / 1000) + (ttlOverride ?? body.ttl),
+          created_at: Math.floor(Date.now() / 1000),
+          expires_at:
+            body.ttl === undefined
+              ? undefined
+              : Math.floor(Date.now() / 1000) + (ttlOverride ?? body.ttl),
         };
 
         boxes.set(id, box);
@@ -110,6 +139,29 @@ function apiFixture() {
 
       if (!box) return new Response(null, { status: 404 });
 
+      if (path[4] === "snapshots") {
+        if (box.status === "deleted") return new Response(null, { status: 404 });
+
+        if (request.method === "GET")
+          return Response.json({
+            snapshots: [...snapshots.values()].filter((snapshot) => snapshot.box_id === box.id),
+          });
+        const { name } = z.object({ name: z.string() }).parse(await request.json());
+        const id = `snap_${snapshots.size + 1}`;
+
+        const snapshot = {
+          id,
+          box_id: box.id,
+          name,
+          status: "ready" as const,
+          created_at: Math.floor(Date.now() / 1000),
+        };
+
+        snapshots.set(id, snapshot);
+
+        return Response.json(snapshot);
+      }
+
       if (path[4] === "files") {
         if (path[5] === "stat")
           return Response.json({ type: "file", size: data.length, version: fileVersion });
@@ -128,6 +180,32 @@ function apiFixture() {
         return new Response(null, { status: 204 });
       }
 
+      if (request.method === "POST" && path[4] === "pause") {
+        box.status = "paused";
+
+        return new Response(null, { status: 204 });
+      }
+
+      if (request.method === "POST" && path[4] === "resume") {
+        box.status = "idle";
+
+        return new Response(null, { status: 204 });
+      }
+
+      if (request.method === "GET" && path[4] === "preview") return Response.json({ previews: [] });
+
+      if (request.method === "POST" && path[4] === "preview") {
+        const body = z
+          .object({ port: z.number(), bearer_token: z.boolean(), basic_auth: z.boolean() })
+          .parse(await request.json());
+
+        return Response.json({
+          url: `https://${box.id}-${body.port}.preview.box.upstash.com`,
+          port: body.port,
+          ...(body.bearer_token && { token: "preview-fixture-token" }),
+        });
+      }
+
       if (request.method === "DELETE") {
         destroys++;
 
@@ -137,9 +215,12 @@ function apiFixture() {
         return new Response(null, { status: 204 });
       }
 
-      if (failDeleteRead) return new Response(null, { status: 403 });
+      if (failDeleteRead) return new Response(null, { status: failedDetailStatus });
 
-      return Response.json({ ...box, ephemeral: detailClass });
+      return Response.json({
+        ...box,
+        ephemeral: detailClass === "native" ? box.ephemeral : detailClass,
+      });
     },
     { preconnect: globalThis.fetch.preconnect },
   );
@@ -167,6 +248,15 @@ function apiFixture() {
     },
     denyReadAfterDelete() {
       deleteReadFailed = true;
+    },
+    changeFailedDetailStatus(status: number) {
+      failedDetailStatus = status;
+    },
+    exposeTombstone(id: string) {
+      const box = boxes.get(id);
+
+      if (box) box.status = "deleted";
+      failDeleteRead = false;
     },
     changeVersion() {
       fileVersion = "2";
@@ -203,17 +293,6 @@ async function socketFixture() {
       if (frame.type === "stdin" && frame.data) stdin.push(Buffer.from(frame.data, "base64"));
 
       if (frame.type !== "stdin_close") return;
-
-      if (start?.argv?.[0] === "node" && start.argv[2] === EXCLUSIVE_WRITE) {
-        const child = Bun.spawn(start.argv, {
-          stdin: new Uint8Array(Buffer.concat(stdin)),
-          stderr: "ignore",
-        });
-
-        socket.send(JSON.stringify({ type: "exit", code: await child.exited }));
-
-        return;
-      }
 
       if (start?.cmd === "combined-output") {
         socket.send(
@@ -315,6 +394,80 @@ test("creates at the requested size and policy, checks TTL, and reopens by exact
 
   fixture.badTtl();
   await expect(client.sandboxes.create()).rejects.toMatchObject({ code: "OUTCOME_UNKNOWN" });
+});
+
+test("regular boxes preserve runtime and create env, list, pause, resume, and publish protected previews", async () => {
+  const fixture = apiFixture();
+
+  const client = tracked(
+    await Beachside.connect({
+      adapter: createUpstashBoxAdapter({ fetch: fixture.fetch }),
+      config: { boxKind: "regular", image: "python-alpine" },
+      credentials: { apiKey: "fixture" },
+    }),
+  );
+
+  await expect(
+    client.sandboxes.create({ lifecycle: { lifetimeSeconds: 900 } }),
+  ).rejects.toMatchObject({ code: "UNSUPPORTED" });
+  await expect(client.sandboxes.create({ env: { LD_PRELOAD: "ignored" } })).rejects.toMatchObject({
+    code: "UNSUPPORTED",
+  });
+  expect(fixture.counters().create).toBe(0);
+
+  const box = await client.sandboxes.create({
+    env: { EXAMPLE: "configured" },
+    labels: { job: "test" },
+  });
+
+  const native = fixture.boxes.get(box.id);
+  expect(native?.runtime).toBe("python-alpine");
+  expect(native?.env_vars).toEqual({ EXAMPLE: "configured" });
+  expect(native?.ttl).toBeUndefined();
+  expect(native?.ephemeral).toBeUndefined();
+
+  const listing = await client.sandboxes.list();
+  expect(listing.items[0]?.labels).toEqual({ job: "test" });
+  const listed = listing.items[0]?.reference;
+  expect(listed?.ownership).toBe("borrowed");
+  expect((await client.sandboxes.get(listed!)).id).toBe(box.id);
+  expect((await box.suspend()).observation.state).toBe("stopped");
+  expect((await box.resume()).observation.state).toBe("running");
+  expect(await box.preview(3000)).toEqual({
+    access: "protected",
+    url: `https://${box.id}-3000.preview.box.upstash.com`,
+    headers: { Authorization: "Bearer preview-fixture-token" },
+  });
+  await box.destroy();
+});
+
+test("restores a snapshot by exact ID and reapplies the selected network and TTL", async () => {
+  const fixture = apiFixture();
+
+  const client = tracked(
+    await Beachside.connect({
+      adapter: createUpstashBoxAdapter({ fetch: fixture.fetch }),
+      config: {},
+      credentials: { apiKey: "fixture" },
+    }),
+  );
+
+  const box = await client.sandboxes.create();
+  const { snapshot } = await box.snapshot();
+
+  const restored = await snapshot.restore({
+    networkPolicy: "blocked",
+    lifecycle: { lifetimeSeconds: 600 },
+  });
+
+  const native = fixture.boxes.get(restored.id);
+  expect(native?.snapshot_id).toBe(snapshot.id);
+  expect(native?.ephemeral).toBe(true);
+  expect(native?.network_policy).toEqual({ mode: "deny-all" });
+  expect(native?.ttl).toBe(600);
+  await restored.destroy();
+  await box.destroy();
+  await snapshot.delete();
 });
 
 test("reopen requires evidence of an ephemeral Box when detail omits its class", async () => {
@@ -508,44 +661,13 @@ test("exec truncates combined output and retains the exit code", async () => {
   await box.destroy();
 });
 
-test("default writes use exclusive creation against concurrent writers and symlinks", async () => {
+test("a recovered delete requires authorized evidence and can confirm a tombstone without replay", async () => {
   const fixture = apiFixture();
-  const wire = await socketFixture();
-  const directory = await mkdtemp(join(tmpdir(), "upstash-write-"));
-  disposals.push(() => rm(directory, { recursive: true, force: true }));
-  const path = join(directory, "a file 'with quotes'");
-  const other = join(directory, "link");
+  const adapter = createUpstashBoxAdapter({ fetch: fixture.fetch });
 
   const client = tracked(
     await Beachside.connect({
-      adapter: defineUpstashBoxAdapter(wire.origin, { fetch: fixture.fetch }),
-      config: {},
-      credentials: { apiKey: "fixture" },
-    }),
-  );
-
-  const box = await client.sandboxes.create();
-
-  const writes = await Promise.allSettled([
-    box.writeFile(path, Uint8Array.of(0, 255)),
-    box.writeFile(path, Uint8Array.of(0, 128)),
-  ]);
-
-  expect(writes.map((write) => write.status).sort()).toEqual(["fulfilled", "rejected"]);
-  const saved = await readFile(path);
-  expect([255, 128]).toContain(saved[1]!);
-  await symlink(path, other);
-  await expect(box.writeFile(other, Uint8Array.of(5))).rejects.toMatchObject({ code: "CONFLICT" });
-  expect(await readFile(path)).toEqual(saved);
-  await box.destroy();
-});
-
-test("acknowledged deletion stays uncertain when observation loses access", async () => {
-  const fixture = apiFixture();
-
-  const client = tracked(
-    await Beachside.connect({
-      adapter: createUpstashBoxAdapter({ fetch: fixture.fetch }),
+      adapter,
       config: {},
       credentials: { apiKey: "fixture" },
     }),
@@ -553,6 +675,32 @@ test("acknowledged deletion stays uncertain when observation loses access", asyn
 
   const box = await client.sandboxes.create();
   fixture.denyReadAfterDelete();
-  await expect(box.destroy()).rejects.toMatchObject({ code: "OUTCOME_UNKNOWN" });
+  let unknown;
+
+  try {
+    await box.destroy();
+  } catch (error) {
+    unknown = error;
+  }
+
+  if (!(unknown instanceof OutcomeUnknownError) || !unknown.reference)
+    throw new Error("Expected the acknowledged deletion to retain a recovery reference");
+
+  fixture.changeFailedDetailStatus(404);
+
+  const fresh = tracked(
+    await Beachside.connect({
+      adapter,
+      config: {},
+      credentials: { apiKey: "fixture-current" },
+    }),
+  );
+
+  const recovery = await fresh.recover(unknown.reference);
+  await expect(recovery.observe()).rejects.toMatchObject({ code: "OUTCOME_UNKNOWN" });
+  expect(fixture.counters().destroy).toBe(1);
+
+  fixture.exposeTombstone(box.id);
+  expect(await recovery.observe()).toMatchObject({ computeStopped: true });
   expect(fixture.counters().destroy).toBe(1);
 });

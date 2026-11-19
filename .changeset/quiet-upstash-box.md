@@ -3,4 +3,4 @@
 "@beachside/cli": minor
 ---
 
-Add the separately installed Upstash Box adapter for Debian Node ephemeral sandboxes, with captured commands, binary files, and reopening by Box ID.
+Add the separately installed Upstash Box adapter for ephemeral and regular boxes, with live commands, binary files, snapshots, previews, and reopening by Box ID.

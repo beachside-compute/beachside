@@ -195,4 +195,4 @@ The profile selects connection-default OCI creation, records the image as borrow
 
 ## Upstash Box profile
 
-`upstash-box-profile.ts` selects the Debian Node runtime in us-east-1, internet egress and a 900-second native TTL. Set `BEACHSIDE_QUAL_PROVIDER=upstash-box`, `BEACHSIDE_QUAL_PROFILE` to this profile and `UPSTASH_BOX_API_KEY` for an authorized run. Select the `execution`, `execution-stdin`, `files` and `lifecycle-reopen` cases in `live/sandbox.test.ts` with Bun's test-name filter. The shared `sandbox-lifecycle` case requires remote inventory, which this adapter does not expose. Live results are pending.
+`upstash-box-profile.ts` selects the Debian Node runtime in us-east-1, internet egress and a 900-second native TTL. Set `BEACHSIDE_QUAL_PROVIDER=upstash-box`, `BEACHSIDE_QUAL_PROFILE` to this profile and `UPSTASH_BOX_API_KEY` for an authorized run. Select the `execution`, `execution-stdin`, `files`, `sandbox-lifecycle` and `lifecycle-reopen` cases in `live/sandbox.test.ts` with Bun's test-name filter. Live results are pending.

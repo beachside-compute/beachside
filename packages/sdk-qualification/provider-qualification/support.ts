@@ -78,7 +78,7 @@ export const upstashBoxSupport: SupportMetadata = {
   features: {
     lifecycle: {
       support: "supported",
-      note: "Create, inspect and destroy ephemeral Debian Node boxes in us-east-1 with native expiry. Remote inventory is outside the adapter's scope. Deterministic fixtures passed; live qualification is pending.",
+      note: "Create, inspect, list and destroy ephemeral and regular boxes in us-east-1. Native TTL applies to ephemeral boxes. Regular boxes require explicit cleanup. Live qualification is pending.",
     },
     execution: {
       support: "supported",
@@ -90,48 +90,54 @@ export const upstashBoxSupport: SupportMetadata = {
     },
     files: {
       support: "supported",
-      note: "Bounded binary ranges and streaming reads, with exclusive creation by default and explicit overwrite. Writes are limited to 1 MiB. Paged reads and exclusive writes passed deterministic fixtures. Live qualification is pending.",
+      note: "Bounded binary ranges and streaming reads, with exclusive creation by default and explicit overwrite. Buffered writes use a 1 MiB limit and larger writes use the file stream. Live qualification is pending.",
     },
     reopening: {
       support: "conditional",
-      note: "Saved Beachside references reopen the exact ephemeral Box ID using a currently authorized key. Covered by deterministic fixtures; live qualification is pending.",
+      note: "Saved Beachside references reopen the exact Box ID and check the selected class using a currently authorized key. Covered by deterministic fixtures; live qualification is pending.",
     },
     network: {
       support: "conditional",
       note: "Maps internet, blocked and configured allowlists to native policies and validates stored policy after creation. Private IPv4 ranges cannot be included in an allowlist. Fixture coverage confirms the mapping; live egress enforcement has not been measured.",
     },
     termination: {
-      support: "unsupported",
-      note: "Finite exec requests termination on timeout. The adapter exposes no process handle for independent termination and exit observation.",
+      support: "conditional",
+      note: "Live sessions support process signals and native exit evidence. Closing the socket ends the native session. Live qualification is pending.",
     },
     renewal: { support: "unsupported", note: "The adapter sets TTL at create." },
-    streaming: { support: "unsupported", note: "The adapter exposes finite captured exec." },
+    streaming: {
+      support: "conditional",
+      note: "Native text and binary output, stdin and PTY controls are bound to one live socket. Live qualification is pending.",
+    },
     directories: {
-      support: "unsupported",
-      note: "Directory and file metadata APIs are outside the adapter's scope.",
+      support: "conditional",
+      note: "Directory listing, stat, mkdir, removal and copy are available. Native move requires explicit overwrite. Live qualification is pending.",
     },
     suspension: {
-      support: "unsupported",
-      note: "Ephemeral boxes can auto-pause and wake on work.",
+      support: "conditional",
+      note: "Regular boxes without keep-alive support explicit filesystem pause and resume. Live qualification is pending.",
     },
     previewProtected: {
-      support: "unsupported",
-      note: "Ephemeral boxes have no public preview routes.",
+      support: "conditional",
+      note: "Regular boxes publish per-port HTTPS routes in the configured access mode. Live qualification is pending.",
     },
     previewPublic: {
-      support: "unsupported",
-      note: "Ephemeral boxes have no public preview routes.",
+      support: "conditional",
+      note: "Regular boxes publish per-port HTTPS routes in the configured access mode. Live qualification is pending.",
     },
-    oci: { support: "unsupported", note: "The adapter uses the prepared Debian Node runtime." },
-    snapshots: {
+    oci: {
       support: "unsupported",
-      note: "Snapshot operations are outside the adapter's scope.",
+      note: "The adapter uses native prepared runtimes on Debian and Alpine.",
+    },
+    snapshots: {
+      support: "conditional",
+      note: "Filesystem capture and fresh restore by saved snapshot ID. Restore preflight requires confirmed readiness from source-scoped inventory. The restored Box has its own lifecycle. Live qualification is pending.",
     },
     volumes: { support: "unsupported", note: "The adapter exposes no independent volume API." },
     persistence: { support: "unsupported", note: "The adapter exposes no volume mounts." },
     storageComposition: {
       support: "unsupported",
-      note: "The adapter exposes neither snapshots nor volume mounts.",
+      note: "The adapter exposes no volume mounts for snapshot composition.",
     },
   },
 };
@@ -588,7 +594,7 @@ export const providerStatus: ProviderStatus[] = [
     name: "Upstash Box",
     href: "/docs/providers/upstash-box/",
     experimental: true,
-    note: "Deterministic fixtures cover ephemeral sandbox lifecycle, finite commands and files. Live qualification is pending.",
+    note: "The adapter covers ephemeral and regular Box workflows. Live qualification is pending.",
   },
   {
     id: "modal",
