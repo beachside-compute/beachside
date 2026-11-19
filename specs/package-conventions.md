@@ -14,7 +14,7 @@
 | Boat adapter (experimental) | `@beachside/boat` | `@beachside/boat` |
 | Runloop adapter (experimental) | `@beachside/runloop` | `@beachside/runloop` |
 | Freestyle adapter (experimental) | `@beachside/freestyle` | `@beachside/freestyle` |
-| Archil adapter (experimental) | `@beachside/archil` | `@beachside/archil` |
+| Archil adapter | `@beachside/archil` | `@beachside/archil` |
 | exe.dev adapter (experimental) | `@beachside/exe-dev` | `@beachside/exe-dev` |
 | Official Vercel adapter | `@beachside/vercel` | `@beachside/vercel` |
 | Command line (`beachside` binary) | `@beachside/cli` | none; run `beachside` |

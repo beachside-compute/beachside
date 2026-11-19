@@ -484,6 +484,20 @@ export const providerStatus: ProviderStatus[] = [
     ],
   },
   {
+    id: "archil",
+    name: "Archil",
+    href: "/docs/providers/archil/",
+    experimental: false,
+    note: "Live-tested on the Free plan across sandboxes, commands, files, renewal, pause/resume, reopening, protected previews and volumes; snapshots and forks were checked live by hand.",
+    limits: [
+      'The Free plan only accepts `network: "archil-managed"`, Archil\'s managed allowlist; `internet`, `blocked` and allowlists need a paid plan and have not been tested live.',
+      "Snapshot restores fork a retained holder sandbox, so `restore()` needs `requireIndependentLifecycle: false`, and a source or snapshot cannot be deleted while things forked from it exist.",
+      "Sandboxes carry no labels.",
+      "A session's lifetime pauses the sandbox when it runs out rather than deleting it; storage is billed while paused.",
+      "Anything a command leaves in the background stops when the command returns; use `processes.start()` and `detach()` for servers.",
+    ],
+  },
+  {
     id: "vercel",
     name: "Vercel Sandbox",
     href: "/docs/providers/vercel/",
@@ -503,13 +517,6 @@ export const providerStatus: ProviderStatus[] = [
     href: "/docs/providers/runloop/",
     experimental: true,
     note: "Not yet tested against the live Runloop service; sign-ups are invitation only.",
-  },
-  {
-    id: "archil",
-    name: "Archil",
-    href: "/docs/providers/archil/",
-    experimental: true,
-    note: "Checked by hand on the Free plan; not yet run through the live qualification suite.",
   },
   {
     id: "exe-dev",

@@ -32,18 +32,18 @@ With `--json`, the result includes where each credential comes from (never a key
 
 Set `BEACHSIDE_PROVIDER` (or pass `--provider`) and the provider's own variables:
 
-| Provider    | Variables                                                                                                       |
-| ----------- | --------------------------------------------------------------------------------------------------------------- |
-| `boxd`      | `BOXD_API_KEY`, `BOXD_ORG`; optional `BOXD_NETWORK` and `BOXD_REGION`                                           |
-| `freestyle` | `FREESTYLE_API_KEY`; optional `FREESTYLE_NETWORK`                                                               |
-| `daytona`   | `DAYTONA_API_KEY`, `DAYTONA_TARGET`                                                                             |
-| `boat`      | `BOAT_API_KEY`                                                                                                  |
-| `runloop`   | `RUNLOOP_API_KEY`; optional `RUNLOOP_NETWORK` (experimental)                                                    |
-| `e2b`       | `E2B_API_KEY`                                                                                                   |
-| `archil`    | `ARCHIL_API_KEY`, `ARCHIL_REGION`; optional `ARCHIL_NETWORK` (`archil-managed` on the Free plan) (experimental) |
-| `exe-dev`   | `EXE_API_KEY` (experimental)                                                                                    |
-| `vercel`    | `VERCEL_TOKEN`, `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID`                                                           |
-| `modal`     | `MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET`, `MODAL_APP_NAME`, `MODAL_ENVIRONMENT`                                   |
+| Provider    | Variables                                                                                        |
+| ----------- | ------------------------------------------------------------------------------------------------ |
+| `boxd`      | `BOXD_API_KEY`, `BOXD_ORG`; optional `BOXD_NETWORK` and `BOXD_REGION`                            |
+| `freestyle` | `FREESTYLE_API_KEY`; optional `FREESTYLE_NETWORK`                                                |
+| `daytona`   | `DAYTONA_API_KEY`, `DAYTONA_TARGET`                                                              |
+| `boat`      | `BOAT_API_KEY`                                                                                   |
+| `runloop`   | `RUNLOOP_API_KEY`; optional `RUNLOOP_NETWORK` (experimental)                                     |
+| `e2b`       | `E2B_API_KEY`                                                                                    |
+| `archil`    | `ARCHIL_API_KEY`, `ARCHIL_REGION`; optional `ARCHIL_NETWORK` (`archil-managed` on the Free plan) |
+| `exe-dev`   | `EXE_API_KEY` (experimental)                                                                     |
+| `vercel`    | `VERCEL_TOKEN`, `VERCEL_TEAM_ID`, `VERCEL_PROJECT_ID`                                            |
+| `modal`     | `MODAL_TOKEN_ID`, `MODAL_TOKEN_SECRET`, `MODAL_APP_NAME`, `MODAL_ENVIRONMENT`                    |
 
 `beachside providers` shows which of these are missing once the adapter is installed, with a link to where you get each one when the adapter gives one. It reads them from the installed adapter, so it loads that package. Each adapter declares its own variables, so a third-party adapter that declares them works env-only too. `BOXD_ORG` is the ID (`org-…`) of the boxd org your API key belongs to; `boxd auth --json` lists your orgs with their IDs (the active one has `"active": true`). Daytona has no default image, so each env-only Daytona `create` or `run` needs `--prepared <snapshot>` (such as `daytona-small`) or `--image`; a profile made by `beachside init` already sets `daytona-small`. `BOXD_REGION` (such as `nyc`) picks a boxd region other than your org's home one. Sandboxes reach the internet by default; set a provider's `*_NETWORK` variable to `blocked` (or put an allowlist in a profile's config) to restrict it.
 

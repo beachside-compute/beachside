@@ -163,7 +163,9 @@ export async function snapshotRoundtrip(
   return plan.value.profile;
 }
 
-const enabled = liveEnabled && featureSupported("snapshots");
+// Archil restores fork a retained holder, so they are never independent of it.
+const enabled =
+  liveEnabled && featureSupported("snapshots") && process.env.BEACHSIDE_QUAL_PROVIDER !== "archil";
 
 describe("Beachside snapshots", () => {
   let fixture: Awaited<ReturnType<typeof setupLive>> | undefined;
