@@ -725,7 +725,23 @@ export function defineUpstashBoxAdapter(origin: string, options: UpstashBoxAdapt
         return { page, nextCursor: candidates.length > page.length ? page.at(-1)?.id : undefined };
       }
 
-      const files = boxFiles(transport, live.exec, locator);
+      async function requireRunningGuest(box: Sandbox, signal: AbortSignal) {
+        const { status } = await detail(locator(box), signal);
+
+        if (status === "deleted") throw new AdapterError("NOT_FOUND", "Upstash Box was deleted");
+
+        if (status === "paused")
+          throw new AdapterError("CONFLICT", "Resume the Upstash Box before accessing its guest");
+
+        if (status !== "idle" && status !== "running")
+          throw new AdapterError(
+            "UNAVAILABLE",
+            "Upstash Box guest readiness could not be confirmed",
+          );
+      }
+
+      const guardGuest = ephemeral ? undefined : requireRunningGuest;
+      const files = boxFiles(transport, live.exec, locator, guardGuest);
 
       const restoreCapabilities: Support<RestoreCapabilities> = {
         status: "supported",
@@ -790,8 +806,10 @@ export function defineUpstashBoxAdapter(origin: string, options: UpstashBoxAdapt
         snapshotRestore,
         processes: {
           ...processes.processes,
-          start(input, ctx) {
+          async start(input, ctx) {
             locator(input.sandbox);
+
+            if (guardGuest) await guardGuest(input.sandbox, ctx.signal);
 
             return processes.processes.start(input, ctx);
           },
@@ -804,6 +822,9 @@ export function defineUpstashBoxAdapter(origin: string, options: UpstashBoxAdapt
             access: config.preview?.access ?? "protected",
             async inspect(box, ctx) {
               const native = await detail(locator(box), ctx.signal);
+
+              if (native.status === "deleted")
+                throw new AdapterError("NOT_FOUND", "Upstash Box was deleted");
 
               if (
                 box.reference
@@ -963,6 +984,8 @@ export function defineUpstashBoxAdapter(origin: string, options: UpstashBoxAdapt
             locator(input.sandbox);
 
             try {
+              if (guardGuest) await guardGuest(input.sandbox, ctx.signal);
+
               return await live.exec(input, ctx.signal);
             } catch (error) {
               if (error instanceof ExecLoss) return error.output;

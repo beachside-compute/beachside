@@ -59,7 +59,7 @@ function fixture() {
       }
 
       if (method === "GET" && path === snapshotsPath)
-        return Response.json({ snapshots: record ? [record] : [] });
+        return Response.json({ snapshots: record ? [record] : null });
 
       if (method === "DELETE" && path === "/v2/box/snapshots") {
         const ids = z.object({ ids: z.array(z.string()) }).parse(body).ids;

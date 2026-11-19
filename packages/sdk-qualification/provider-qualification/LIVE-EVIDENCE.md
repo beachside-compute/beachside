@@ -361,6 +361,88 @@ Only explicit network scenario evidence measures egress: the paired probe covers
 
 ## Upstash Box
 
+### allow-requested · us-east-1 · /tmp
+
+- Image / authority: prepared; unspecified / api-key.
+- Runtime: Bun 1.4.4, darwin-arm64. Native interface: Upstash Box v2 SDK 0.8.0 reference.
+- SDK: 0.17.1, commit `648e72292f86553810f7c94c864730644c0ad987`.
+- Fresh-process reopen: not recorded.
+- Harness commit: `648e72292f86553810f7c94c864730644c0ad987`.
+- Evidence: [reviewed record](https://github.com/beachside-compute/beachside/pull/253).
+
+| Scenario                                                 | Latest live result | Date       |
+| -------------------------------------------------------- | ------------------ | ---------- |
+| network-allowlist (allow-requested / probe not recorded) | passed             | 2026-11-19 |
+
+### paired-internet-blocked-requested · us-east-1 · /tmp
+
+- Image / authority: prepared; unspecified / api-key.
+- Runtime: Bun 1.4.4, darwin-arm64. Native interface: Upstash Box v2 SDK 0.8.0 reference.
+- SDK: 0.17.1, commit `648e72292f86553810f7c94c864730644c0ad987`.
+- Fresh-process reopen: not recorded.
+- Harness commit: `648e72292f86553810f7c94c864730644c0ad987`.
+- Evidence: [reviewed record](https://github.com/beachside-compute/beachside/pull/253).
+
+| Scenario                                                                                  | Latest live result | Date       |
+| ----------------------------------------------------------------------------------------- | ------------------ | ---------- |
+| network-controls (paired-internet-blocked-requested / cloudflare-tcp443-hostname-ipv4-v1) | failed             | 2026-11-19 |
+
+### internet-requested · us-east-1 · /tmp
+
+- Image / authority: prepared; unspecified / api-key.
+- Runtime: Bun 1.4.4, darwin-arm64. Native interface: Upstash Box v2 SDK 0.8.0 reference.
+- SDK: 0.17.1, commit `648e72292f86553810f7c94c864730644c0ad987`.
+- Fresh-process reopen: required.
+- Harness commit: `648e72292f86553810f7c94c864730644c0ad987`.
+- Evidence: [reviewed record](https://github.com/beachside-compute/beachside/pull/253).
+
+| Scenario           | Latest live result | Date       |
+| ------------------ | ------------------ | ---------- |
+| snapshot-roundtrip | passed             | 2026-11-19 |
+
+### internet-requested · us-east-1 · /tmp
+
+- Image / authority: prepared; unspecified / api-key.
+- Runtime: Bun 1.4.4, darwin-arm64. Native interface: Upstash Box v2 SDK 0.8.0 reference.
+- SDK: 0.17.1, commit `648e72292f86553810f7c94c864730644c0ad987`.
+- Fresh-process reopen: not recorded.
+- Harness commit: `648e72292f86553810f7c94c864730644c0ad987`.
+- Evidence: [reviewed record](https://github.com/beachside-compute/beachside/pull/253).
+
+| Scenario                 | Latest live result | Date       |
+| ------------------------ | ------------------ | ---------- |
+| lifecycle-suspend-resume | failed             | 2026-11-19 |
+| preview-protected        | failed             | 2026-11-19 |
+| preview-public           | failed             | 2026-11-19 |
+
+### internet-requested · us-east-1 · /tmp
+
+- Image / authority: prepared; unspecified / api-key.
+- Runtime: Bun 1.4.4, darwin-arm64. Native interface: Upstash Box v2 SDK 0.8.0 reference.
+- SDK: 0.17.1, commit `648e72292f86553810f7c94c864730644c0ad987`.
+- Fresh-process reopen: not recorded.
+- Harness commit: `648e72292f86553810f7c94c864730644c0ad987`.
+- Evidence: [reviewed record](https://github.com/beachside-compute/beachside/pull/253).
+
+| Scenario              | Latest live result | Date       |
+| --------------------- | ------------------ | ---------- |
+| execution-streaming   | passed             | 2026-11-19 |
+| execution-termination | failed             | 2026-11-19 |
+
+### internet-requested · us-east-1 · /tmp
+
+- Image / authority: prepared; unspecified / api-key.
+- Runtime: Bun 1.4.4, darwin-arm64. Native interface: Upstash Box v2 SDK 0.8.0 reference.
+- SDK: 0.17.1, commit `648e72292f86553810f7c94c864730644c0ad987`.
+- Fresh-process reopen: not recorded.
+- Harness commit: `648e72292f86553810f7c94c864730644c0ad987`.
+- Evidence: [reviewed record](https://github.com/beachside-compute/beachside/pull/253).
+
+| Scenario                | Latest live result | Date       |
+| ----------------------- | ------------------ | ---------- |
+| file-directories (/tmp) | passed             | 2026-11-19 |
+| files (/tmp)            | passed             | 2026-11-19 |
+
 ### internet-requested · us-east-1 · /tmp
 
 - Image / authority: prepared; unspecified / api-key.
@@ -441,26 +523,26 @@ Adapter support and live validation are separate facts. **Supported** means impl
 
 **E2B experimental-volume exception:** the Volume CRUD row's unsupported label excludes experimental native CRUD from maintained live qualification; SDK hooks exist. A live create was blocked by HTTP 403 for the tested account; original volume custody remains unresolved, so maintained qualification skips volume cases before setup. This is separate from mounts, which the adapter rejects before allocation. See the [volume caveat](#e2b-volumes) and [mounted-persistence caveat](#e2b-persistence).
 
-| Feature                             | Daytona                                                         | E2B                                                                               | Upstash Box                                                |
-| ----------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| Sandbox lifecycle                   | [Supported · passed at 8449def7](#daytona-lifecycle)            | [Supported · passed at 8449def7](#e2b-lifecycle)                                  | [Supported · passed at 9d0e7c32](#upstash-box-lifecycle)   |
-| Native sandbox suspend/resume       | [Conditional · passed at 6796b30b](#daytona-suspension)         | [Conditional · passed at 26f516d1](#e2b-suspension)                               | [Conditional · not-run](#upstash-box-suspension)           |
-| Protected HTTP preview              | [Conditional · passed at 3188e333](#daytona-previewProtected)   | [Conditional · not-run](#e2b-previewProtected)                                    | [Conditional · not-run](#upstash-box-previewProtected)     |
-| Public HTTP preview                 | [Conditional · not-run](#daytona-previewPublic)                 | [Conditional · passed at 3188e333](#e2b-previewPublic)                            | [Conditional · not-run](#upstash-box-previewPublic)        |
-| Local-handle process termination    | [Conditional · passed at aaba981e](#daytona-termination)        | [Conditional · passed at aaba981e](#e2b-termination)                              | [Conditional · not-run](#upstash-box-termination)          |
-| Configured lifetime renewal         | [Conditional · passed at 3188e333](#daytona-renewal)            | [Conditional · passed at 3188e333](#e2b-renewal)                                  | [Unsupported · not-run](#upstash-box-renewal)              |
-| Scoped sandbox reopening            | [Conditional · passed at 3188e333](#daytona-reopening)          | [Conditional · passed at 3188e333](#e2b-reopening)                                | [Conditional · passed at 9d0e7c32](#upstash-box-reopening) |
-| Execution and captured output       | [Supported · passed at 8449def7](#daytona-execution)            | [Supported · passed at 8449def7](#e2b-execution)                                  | [Supported · passed at 9d0e7c32](#upstash-box-execution)   |
-| Process streams and terminals       | [Conditional · passed at aaba981e](#daytona-streaming)          | [Conditional · passed at aaba981e](#e2b-streaming)                                | [Conditional · not-run](#upstash-box-streaming)            |
-| Finite execution input              | [Conditional · not-run](#daytona-finiteStdin)                   | [Conditional · not-run](#e2b-finiteStdin)                                         | [Supported · passed at 9d0e7c32](#upstash-box-finiteStdin) |
-| Binary files and overwrite          | [Conditional · passed at 3188e333](#daytona-files)              | [Conditional · passed at 3188e333](#e2b-files)                                    | [Supported · passed at 9d0e7c32](#upstash-box-files)       |
-| Directory primitives                | [Conditional · passed at e91f2d5f](#daytona-directories)        | [Conditional · passed at e91f2d5f](#e2b-directories)                              | [Conditional · failed](#upstash-box-directories)           |
-| OCI image builds                    | [Conditional · not-run](#daytona-oci)                           | [Conditional · not-run](#e2b-oci)                                                 | [Unsupported · not-run](#upstash-box-oci)                  |
-| Measured network controls           | [Conditional · not-run](#daytona-network)                       | [Supported · failed](#e2b-network)                                                | [Conditional · not-run](#upstash-box-network)              |
-| Cold snapshot with selected storage | [Conditional · passed at 5911cccd](#daytona-storageComposition) | [Unsupported · not-run](#e2b-storageComposition)                                  | [Unsupported · not-run](#upstash-box-storageComposition)   |
-| Snapshot roundtrip                  | [Conditional · passed at 1505ee0d](#daytona-snapshots)          | [Conditional · passed at 8449def7](#e2b-snapshots)                                | [Conditional · not-run](#upstash-box-snapshots)            |
-| Volume CRUD                         | [Supported · passed at 1505ee0d](#daytona-volumes)              | [Unsupported · blocked at working-tree-before-dfc34b6 (historical)](#e2b-volumes) | [Unsupported · not-run](#upstash-box-volumes)              |
-| Mounted persistence                 | [Conditional · passed at 1505ee0d](#daytona-persistence)        | [Unsupported · not-run](#e2b-persistence)                                         | [Unsupported · not-run](#upstash-box-persistence)          |
+| Feature                             | Daytona                                                         | E2B                                                                               | Upstash Box                                                  |
+| ----------------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| Sandbox lifecycle                   | [Supported · passed at 8449def7](#daytona-lifecycle)            | [Supported · passed at 8449def7](#e2b-lifecycle)                                  | [Supported · passed at 9d0e7c32](#upstash-box-lifecycle)     |
+| Native sandbox suspend/resume       | [Conditional · passed at 6796b30b](#daytona-suspension)         | [Conditional · passed at 26f516d1](#e2b-suspension)                               | [Conditional · failed](#upstash-box-suspension)              |
+| Protected HTTP preview              | [Conditional · passed at 3188e333](#daytona-previewProtected)   | [Conditional · not-run](#e2b-previewProtected)                                    | [Conditional · failed](#upstash-box-previewProtected)        |
+| Public HTTP preview                 | [Conditional · not-run](#daytona-previewPublic)                 | [Conditional · passed at 3188e333](#e2b-previewPublic)                            | [Conditional · failed](#upstash-box-previewPublic)           |
+| Local-handle process termination    | [Conditional · passed at aaba981e](#daytona-termination)        | [Conditional · passed at aaba981e](#e2b-termination)                              | [Conditional · failed](#upstash-box-termination)             |
+| Configured lifetime renewal         | [Conditional · passed at 3188e333](#daytona-renewal)            | [Conditional · passed at 3188e333](#e2b-renewal)                                  | [Unsupported · not-run](#upstash-box-renewal)                |
+| Scoped sandbox reopening            | [Conditional · passed at 3188e333](#daytona-reopening)          | [Conditional · passed at 3188e333](#e2b-reopening)                                | [Conditional · passed at 9d0e7c32](#upstash-box-reopening)   |
+| Execution and captured output       | [Supported · passed at 8449def7](#daytona-execution)            | [Supported · passed at 8449def7](#e2b-execution)                                  | [Supported · passed at 9d0e7c32](#upstash-box-execution)     |
+| Process streams and terminals       | [Conditional · passed at aaba981e](#daytona-streaming)          | [Conditional · passed at aaba981e](#e2b-streaming)                                | [Conditional · passed at 648e7229](#upstash-box-streaming)   |
+| Finite execution input              | [Conditional · not-run](#daytona-finiteStdin)                   | [Conditional · not-run](#e2b-finiteStdin)                                         | [Supported · passed at 9d0e7c32](#upstash-box-finiteStdin)   |
+| Binary files and overwrite          | [Conditional · passed at 3188e333](#daytona-files)              | [Conditional · passed at 3188e333](#e2b-files)                                    | [Supported · passed at 648e7229](#upstash-box-files)         |
+| Directory primitives                | [Conditional · passed at e91f2d5f](#daytona-directories)        | [Conditional · passed at e91f2d5f](#e2b-directories)                              | [Conditional · passed at 648e7229](#upstash-box-directories) |
+| OCI image builds                    | [Conditional · not-run](#daytona-oci)                           | [Conditional · not-run](#e2b-oci)                                                 | [Unsupported · not-run](#upstash-box-oci)                    |
+| Measured network controls           | [Conditional · not-run](#daytona-network)                       | [Supported · failed](#e2b-network)                                                | [Conditional · failed](#upstash-box-network)                 |
+| Cold snapshot with selected storage | [Conditional · passed at 5911cccd](#daytona-storageComposition) | [Unsupported · not-run](#e2b-storageComposition)                                  | [Unsupported · not-run](#upstash-box-storageComposition)     |
+| Snapshot roundtrip                  | [Conditional · passed at 1505ee0d](#daytona-snapshots)          | [Conditional · passed at 8449def7](#e2b-snapshots)                                | [Conditional · passed at 648e7229](#upstash-box-snapshots)   |
+| Volume CRUD                         | [Supported · passed at 1505ee0d](#daytona-volumes)              | [Unsupported · blocked at working-tree-before-dfc34b6 (historical)](#e2b-volumes) | [Unsupported · not-run](#upstash-box-volumes)                |
+| Mounted persistence                 | [Conditional · passed at 1505ee0d](#daytona-persistence)        | [Unsupported · not-run](#e2b-persistence)                                         | [Unsupported · not-run](#upstash-box-persistence)            |
 
 ### Daytona caveats
 
@@ -694,25 +776,25 @@ Create, inspect, list and destroy ephemeral and regular boxes in us-east-1. Nati
 
 #### Native sandbox suspend/resume
 
-Regular boxes without keep-alive support explicit filesystem pause and resume. Live qualification is pending.
+Regular boxes without keep-alive support explicit filesystem pause and resume. The first live workflow failed its inactive guest-access check.
 
 <a id="upstash-box-previewProtected"></a>
 
 #### Protected HTTP preview
 
-Regular boxes publish per-port HTTPS routes in the configured access mode. Live qualification is pending.
+The first live protected workflow reached the HTTP and token-rotation checks, then failed its post-deletion error assertion.
 
 <a id="upstash-box-previewPublic"></a>
 
 #### Public HTTP preview
 
-Regular boxes publish per-port HTTPS routes in the configured access mode. Live qualification is pending.
+The first live public workflow reached the HTTP and route reuse checks, then failed its post-deletion error assertion.
 
 <a id="upstash-box-termination"></a>
 
 #### Local-handle process termination
 
-Live sessions support process signals and native exit evidence. Closing the socket ends the native session. Live qualification is pending.
+Live sessions support process signals and native exit evidence. The live test previously stopped at the process status check before issuing a signal.
 
 <a id="upstash-box-renewal"></a>
 
@@ -736,7 +818,7 @@ Finite argv and shell with cwd/env, separate binary streams and a 1 MiB combined
 
 #### Process streams and terminals
 
-Native text and binary output, stdin and PTY controls are bound to one live socket. Live qualification is pending.
+The Debian Python baseline passed sustained output over 32 MiB, separate streams, and text and binary stdin/EOF. PTY controls have fixture coverage.
 
 <a id="upstash-box-finiteStdin"></a>
 
@@ -754,7 +836,7 @@ Bounded binary ranges and streaming reads, with exclusive creation by default an
 
 #### Directory primitives
 
-Directory listing, stat, mkdir, removal and copy are available. Native move requires explicit overwrite. The live directory workflow failed because mkdir over an existing file returned OUTCOME_UNKNOWN instead of INVALID_ARGUMENT.
+The live Python Alpine run passed directory listing, metadata, recursive directory operations, no-clobber copy, explicit-overwrite move and a hash-checked 32 MiB transfer, including the mkdir collision regression.
 
 <a id="upstash-box-oci"></a>
 
@@ -766,7 +848,7 @@ The adapter uses native prepared runtimes on Debian and Alpine.
 
 #### Measured network controls
 
-Maps internet, blocked and configured allowlists to native policies and validates stored policy after creation. Private IPv4 ranges cannot be included in an allowlist. Fixture coverage confirms the mapping; live egress enforcement has not been measured.
+The HTTPS allowlist reached the configured public host and denied a second host. Native deny-all still allowed outbound TCP in the paired live test.
 
 <a id="upstash-box-storageComposition"></a>
 
@@ -778,7 +860,7 @@ The adapter exposes no volume mounts for snapshot composition.
 
 #### Snapshot roundtrip
 
-Filesystem capture and fresh restore by saved snapshot ID. Restore preflight requires confirmed readiness from source-scoped inventory. The restored Box has its own lifecycle. Live qualification is pending.
+The ephemeral Debian Python roundtrip confirmed files, fresh process state, independent restored writes, fresh-process reopen, restore after source deletion and snapshot cleanup.
 
 <a id="upstash-box-volumes"></a>
 

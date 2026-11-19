@@ -90,12 +90,17 @@ test("process streams exact output, writes binary input and closes the pipe once
     { ...context(), onOutput() {}, onOutputBytes: (chunk) => chunks.push(chunk) },
   );
 
+  expect(await process.status!(context())).toMatchObject({ state: "running" });
   await process.write!(Uint8Array.of(0, 255), context());
   await process.write!(Uint8Array.of(128), context());
   const eof = process.closeStdin!(context());
   await eof;
   await process.closeStdin!(context());
   expect(await process.wait()).toEqual({ exitCode: 7 });
+  expect(await process.status!(context())).toMatchObject({
+    state: "exited",
+    exit: { exitCode: 7 },
+  });
   await process.outputDone;
   expect(chunks).toEqual([
     { stream: "stdout", bytes: Uint8Array.of(0, 255) },

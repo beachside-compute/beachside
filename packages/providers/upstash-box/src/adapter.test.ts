@@ -69,6 +69,7 @@ function apiFixture() {
   let creates = 0;
   let destroys = 0;
   let mkdirRequests = 0;
+  let fileRequests = 0;
   let next: "normal" | "lost" | "held" = "normal";
   let ttlOverride: number | undefined;
   let failReadinessCheck = false;
@@ -169,6 +170,8 @@ function apiFixture() {
       }
 
       if (path[4] === "files") {
+        fileRequests++;
+
         if (path[5] === "stat") {
           if (target.searchParams.get("path") === "/workspace/home/new-directory")
             return new Response(null, { status: 404 });
@@ -254,6 +257,7 @@ function apiFixture() {
     ranges,
     counters: () => ({ create: creates, destroy: destroys, release: 0 }),
     mkdirRequests: () => mkdirRequests,
+    fileRequests: () => fileRequests,
     loseNextCreateResponse() {
       next = "lost";
     },
@@ -459,7 +463,7 @@ test("regular boxes preserve runtime and create env, list, pause, resume, and pu
 
   const client = tracked(
     await Beachside.connect({
-      adapter: createUpstashBoxAdapter({ fetch: fixture.fetch }),
+      adapter: defineUpstashBoxAdapter("http://127.0.0.1:1", { fetch: fixture.fetch }),
       config: { boxKind: "regular", image: "python-alpine" },
       credentials: { apiKey: "fixture" },
     }),
@@ -505,6 +509,23 @@ test("regular boxes preserve runtime and create env, list, pause, resume, and pu
   expect(listed?.ownership).toBe("borrowed");
   expect((await client.sandboxes.get(listed!)).id).toBe(box.id);
   expect((await box.suspend()).observation.state).toBe("stopped");
+  const fileRequests = fixture.fileRequests();
+  await expect(box.readFile("/workspace/home/sample")).rejects.toMatchObject({ code: "CONFLICT" });
+  await expect(box.writeFile("/workspace/home/sample", Uint8Array.of(1))).rejects.toMatchObject({
+    code: "CONFLICT",
+    effect: "none",
+  });
+  await expect(box.makeDirectory("/workspace/home/sample")).rejects.toMatchObject({
+    code: "CONFLICT",
+    effect: "none",
+  });
+  await expect(box.exec(["true"])).rejects.toMatchObject({ code: "CONFLICT", effect: "none" });
+  await expect(
+    box.processes.start({ command: { kind: "argv", argv: ["true"] } }),
+  ).rejects.toMatchObject({
+    code: "CONFLICT",
+  });
+  expect(fixture.fileRequests()).toBe(fileRequests);
   expect((await client.sandboxes.list()).items[0]?.state).toBe("stopped");
   expect((await box.resume()).observation.state).toBe("running");
   expect(await box.preview(3000)).toEqual({
@@ -513,6 +534,7 @@ test("regular boxes preserve runtime and create env, list, pause, resume, and pu
     headers: { Authorization: "Bearer preview-fixture-token" },
   });
   await box.destroy();
+  await expect(box.preview(3000)).rejects.toMatchObject({ code: "NOT_FOUND" });
 });
 
 test("restores a snapshot by exact ID and reapplies the selected network and TTL", async () => {

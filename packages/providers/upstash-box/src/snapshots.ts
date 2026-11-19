@@ -43,7 +43,12 @@ const SnapshotIdentity = NativeSnapshot.pick({ id: true, box_id: true, name: tru
 
 type NativeSnapshot = z.infer<typeof NativeSnapshot>;
 
-const SnapshotList = z.object({ snapshots: z.array(NativeSnapshot) });
+const SnapshotList = z.object({
+  snapshots: z
+    .array(NativeSnapshot)
+    .nullable()
+    .transform((entries) => entries ?? []),
+});
 
 const SnapshotHistory = z.strictObject({
   sourceId: Id,

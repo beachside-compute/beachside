@@ -115,6 +115,7 @@ export function createProcesses(origin: string, apiKey: string): ProcessFactory 
     let truncated = false;
     let dispatched = false;
     let acknowledged = false;
+    let observedAt = new Date().toISOString();
     let finished = false;
     let detached = false;
     let confirmedExit: NativeProcessExit | undefined;
@@ -249,6 +250,17 @@ export function createProcesses(origin: string, apiKey: string): ProcessFactory 
       outputDone: output.promise,
       capture: capture?.promise,
       wait: () => exited.promise,
+      async status() {
+        if (confirmedExit) return { state: "exited", exit: confirmedExit, observedAt };
+
+        return {
+          state:
+            acknowledged && !finished && !detached && socket.readyState === WebSocket.OPEN
+              ? "running"
+              : "unknown",
+          observedAt,
+        };
+      },
       async detach() {
         detach();
       },
@@ -385,6 +397,7 @@ export function createProcesses(origin: string, apiKey: string): ProcessFactory 
       }
 
       confirmedExit = { exitCode: code };
+      observedAt = new Date().toISOString();
       started.resolve(handle);
       exited.resolve(confirmedExit);
 
@@ -455,6 +468,7 @@ export function createProcesses(origin: string, apiKey: string): ProcessFactory 
           case "started": {
             if (acknowledged) throw new Error("Duplicate Upstash Box process start");
             acknowledged = true;
+            observedAt = new Date().toISOString();
 
             if (detached) {
               if (inputClosed)
@@ -479,6 +493,7 @@ export function createProcesses(origin: string, apiKey: string): ProcessFactory 
           case "stdout":
           case "stderr":
             receive(frame.type, frame.data);
+            observedAt = new Date().toISOString();
             break;
           case "exit":
             confirmExit(frame.code);

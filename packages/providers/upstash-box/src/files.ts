@@ -59,6 +59,8 @@ const Content = z.object({ content: z.string() });
 
 type PathInput = { sandbox: Sandbox; path: string };
 
+type StreamWriteInput = PathInput & { overwrite: boolean; bytes: AsyncIterable<Uint8Array> };
+
 type ReadableFile = { size: number; version: string };
 
 export function boxPath(id: string) {
@@ -77,11 +79,22 @@ export function boxFiles(
   transport: Transport,
   run: GuestRunner,
   identify: (sandbox: Sandbox) => string,
+  guardGuest?: (sandbox: Sandbox, signal: AbortSignal) => Promise<void>,
 ) {
   const query = ({ sandbox, path }: PathInput) => ({
     prefix: `${boxPath(identify(sandbox))}/files`,
     path: encodeURIComponent(path),
   });
+
+  async function guestRejection(sandbox: Sandbox, ctx: AttemptContext) {
+    try {
+      await guardGuest?.(sandbox, ctx.signal);
+    } catch (error) {
+      return error instanceof AdapterError
+        ? ctx.reject(error.code, error.message)
+        : ctx.reject("UNAVAILABLE", "Upstash Box guest readiness could not be checked");
+    }
+  }
 
   async function nativeStat(input: PathInput, signal: AbortSignal, follow: boolean) {
     const { prefix, path } = query(input);
@@ -153,6 +166,7 @@ export function boxFiles(
   }
 
   async function list(input: PathInput, { signal }: ReadContext): Promise<FileEntry[]> {
+    await guardGuest?.(input.sandbox, signal);
     const { prefix, path } = query(input);
     const directory = await nativeStat(input, signal, true);
 
@@ -244,10 +258,7 @@ export function boxFiles(
     if (exit !== 0) throw new Error("Upstash Box did not acknowledge exclusive file publication");
   }
 
-  async function writeStream(
-    input: { sandbox: Sandbox; path: string; overwrite: boolean; bytes: AsyncIterable<Uint8Array> },
-    ctx: FileTransferContext,
-  ) {
+  async function writeStream(input: StreamWriteInput, ctx: FileTransferContext) {
     identify(input.sandbox);
 
     if (input.path === "/" || input.path.endsWith("/"))
@@ -309,6 +320,7 @@ export function boxFiles(
   return {
     maxBytes: MAX_FILE_BYTES,
     async read(input: PathInput & { maxBytes?: number }, { signal }: ReadContext) {
+      await guardGuest?.(input.sandbox, signal);
       const file = await regular(input, signal);
 
       // Let the SDK detect one extra byte and route adapter-limit reads to readStream.
@@ -324,6 +336,7 @@ export function boxFiles(
       return bytes;
     },
     async readStream(input: PathInput, { signal }: ReadContext) {
+      await guardGuest?.(input.sandbox, signal);
       const controller = new AbortController();
       const active = AbortSignal.any([signal, controller.signal]);
       const file = await regular(input, active);
@@ -363,6 +376,7 @@ export function boxFiles(
       input: PathInput & { followSymlinks: boolean },
       { signal }: ReadContext,
     ): Promise<FileStat> {
+      await guardGuest?.(input.sandbox, signal);
       const file = await nativeStat(input, signal, input.followSymlinks);
 
       return {
@@ -372,10 +386,13 @@ export function boxFiles(
       };
     },
     async exists(input: PathInput, { signal }: ReadContext) {
+      await guardGuest?.(input.sandbox, signal);
+
       return (await maybeStat(input, signal)) !== null;
     },
     makeDirectory: {
       async prepare(input: FileMutationInput, { signal }: ReadContext) {
+        await guardGuest?.(input.sandbox, signal);
         const existing = await maybeStat(input, signal, true);
 
         if (existing && existing.type !== "directory")
@@ -415,6 +432,9 @@ export function boxFiles(
       const id = identify(sandbox);
 
       if (path === "/") return ctx.reject("INVALID_ARGUMENT", "Cannot remove the filesystem root");
+      const rejected = await guestRejection(sandbox, ctx);
+
+      if (rejected) return rejected;
 
       try {
         const file = await maybeStat(input, ctx.signal);
@@ -456,6 +476,9 @@ export function boxFiles(
 
       if (input.bytes.byteLength > MAX_FILE_BYTES)
         return ctx.reject("CAPACITY", "Upstash Box write exceeds the buffered limit");
+      const rejected = await guestRejection(input.sandbox, ctx);
+
+      if (rejected) return rejected;
 
       try {
         if (input.overwrite) {
@@ -508,8 +531,14 @@ export function boxFiles(
         return ctx.unknown("Upstash Box could not confirm the file write");
       }
     },
-    writeStream,
+    async writeStream(input: StreamWriteInput, ctx: FileTransferContext) {
+      await guardGuest?.(input.sandbox, ctx.signal);
+
+      return writeStream(input, ctx);
+    },
     async copy(input: FileTransferInput, ctx: FileTransferContext) {
+      await guardGuest?.(input.sandbox, ctx.signal);
+
       const source = await nativeStat(
         { sandbox: input.sandbox, path: input.source },
         ctx.signal,
@@ -552,6 +581,7 @@ export function boxFiles(
 
       if (!input.overwrite)
         throw new AdapterError("UNSUPPORTED", "Upstash Box has no atomic no-clobber rename");
+      await guardGuest?.(input.sandbox, ctx.signal);
 
       try {
         await rename(input.sandbox, input.source, input.destination, ctx.signal);

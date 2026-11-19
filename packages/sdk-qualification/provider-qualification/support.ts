@@ -98,32 +98,32 @@ export const upstashBoxSupport: SupportMetadata = {
     },
     network: {
       support: "conditional",
-      note: "Maps internet, blocked and configured allowlists to native policies and validates stored policy after creation. Private IPv4 ranges cannot be included in an allowlist. Fixture coverage confirms the mapping; live egress enforcement has not been measured.",
+      note: "The HTTPS allowlist reached the configured public host and denied a second host. Native deny-all still allowed outbound TCP in the paired live test.",
     },
     termination: {
       support: "conditional",
-      note: "Live sessions support process signals and native exit evidence. Closing the socket ends the native session. Live qualification is pending.",
+      note: "Live sessions support process signals and native exit evidence. The live test previously stopped at the process status check before issuing a signal.",
     },
     renewal: { support: "unsupported", note: "The adapter sets TTL at create." },
     streaming: {
       support: "conditional",
-      note: "Native text and binary output, stdin and PTY controls are bound to one live socket. Live qualification is pending.",
+      note: "The Debian Python baseline passed sustained output over 32 MiB, separate streams, and text and binary stdin/EOF. PTY controls have fixture coverage.",
     },
     directories: {
       support: "conditional",
-      note: "Directory listing, stat, mkdir, removal and copy are available. Native move requires explicit overwrite. The live directory workflow failed because mkdir over an existing file returned OUTCOME_UNKNOWN instead of INVALID_ARGUMENT.",
+      note: "The live Python Alpine run passed directory listing, metadata, recursive directory operations, no-clobber copy, explicit-overwrite move and a hash-checked 32 MiB transfer, including the mkdir collision regression.",
     },
     suspension: {
       support: "conditional",
-      note: "Regular boxes without keep-alive support explicit filesystem pause and resume. Live qualification is pending.",
+      note: "Regular boxes without keep-alive support explicit filesystem pause and resume. The first live workflow failed its inactive guest-access check.",
     },
     previewProtected: {
       support: "conditional",
-      note: "Regular boxes publish per-port HTTPS routes in the configured access mode. Live qualification is pending.",
+      note: "The first live protected workflow reached the HTTP and token-rotation checks, then failed its post-deletion error assertion.",
     },
     previewPublic: {
       support: "conditional",
-      note: "Regular boxes publish per-port HTTPS routes in the configured access mode. Live qualification is pending.",
+      note: "The first live public workflow reached the HTTP and route reuse checks, then failed its post-deletion error assertion.",
     },
     oci: {
       support: "unsupported",
@@ -131,7 +131,7 @@ export const upstashBoxSupport: SupportMetadata = {
     },
     snapshots: {
       support: "conditional",
-      note: "Filesystem capture and fresh restore by saved snapshot ID. Restore preflight requires confirmed readiness from source-scoped inventory. The restored Box has its own lifecycle. Live qualification is pending.",
+      note: "The ephemeral Debian Python roundtrip confirmed files, fresh process state, independent restored writes, fresh-process reopen, restore after source deletion and snapshot cleanup.",
     },
     volumes: { support: "unsupported", note: "The adapter exposes no independent volume API." },
     persistence: { support: "unsupported", note: "The adapter exposes no volume mounts." },
@@ -594,7 +594,7 @@ export const providerStatus: ProviderStatus[] = [
     name: "Upstash Box",
     href: "/docs/providers/upstash-box/",
     experimental: true,
-    note: "The ephemeral Debian Node baseline passed five workflows. The directory workflow failed. Regular Box workflows remain untested live.",
+    note: "Ephemeral lifecycle, Alpine directory operations, sustained streaming and snapshot restore passed. Strict blocked egress failed live qualification.",
   },
   {
     id: "modal",

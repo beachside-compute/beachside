@@ -36,7 +36,7 @@ Set `boxKind: "regular"` for HTTP previews and explicit pause and resume. Regula
 
 Select a prepared `image` from `node`, `python`, `golang`, `ruby`, `rust` and their `-alpine` variants. The default is Debian `node`. Set `resources` to select the smallest Upstash size that meets your CPU and memory requirements. The default is small (2 vCPUs, 4 GiB). Your account controls size availability.
 
-Both kinds accept create-time env. Upstash reserves system variables such as `PATH`, `HOME` and `NODE_OPTIONS`. The adapter rejects those names. Network defaults to `"internet"`. Set `network: "blocked"` or `network: { allow: ["api.example.com"] }`. Custom policy can still resolve unlisted names over DNS. Upstash blocks private ranges. See the [native matching rules](https://upstash.com/docs/box/overall/network-policy#matching-rules).
+Both kinds accept create-time env. Upstash reserves system variables such as `PATH`, `HOME` and `NODE_OPTIONS`. The adapter rejects those names. Network defaults to `"internet"`. Configure an allowlist with `network: { allow: ["api.example.com"] }`. Custom policy can still resolve unlisted names over DNS. Upstash blocks private ranges. In live testing, native `deny-all` still allowed the outbound TCP probes. See the [native matching rules](https://upstash.com/docs/box/overall/network-policy#matching-rules).
 
 ## Commands, files and previews
 
@@ -51,4 +51,4 @@ Saved Beachside references reopen the exact Box ID with a currently authorized k
 
 Upstash snapshots capture filesystem state for a fresh box. Restore selects the configured box kind and reapplies the configured network policy. Snapshot artifacts can survive source deletion. The Box API key supports source-scoped snapshot lookup. Restore uses the saved snapshot ID and requires that lookup to confirm readiness. A successfully restored Box has its own lifecycle. Deletion uses the saved ID directly.
 
-The adapter is experimental. Lifecycle, execution, finite stdin, binary files and reopening passed live on an ephemeral Debian Node box in us-east-1. The directory workflow failed when creating a directory over an existing file returned `OUTCOME_UNKNOWN` instead of `INVALID_ARGUMENT`. See [tested provider support](/docs/providers/support/).
+The adapter is experimental. In us-east-1, live tests covered the ephemeral Debian baseline, Alpine file and directory operations, Debian process streaming, a custom HTTPS allowlist and snapshot restore after source deletion. See [tested provider support](/docs/providers/support/).
