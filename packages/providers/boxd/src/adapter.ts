@@ -1646,6 +1646,9 @@ export function createBoxdAdapter(
             if (machine.access.sshPort === null)
               throw new AdapterError("UNAVAILABLE", "boxd has not allocated an SSH port yet");
 
+            if (!/^[a-z0-9-]+$/.test(machine.name))
+              throw new AdapterError("CONFLICT", "boxd machine name is not a usable SSH host");
+
             // Every machine's SSH ends at the region's proxy, which presents one host key.
             let hostKey: string | undefined;
 
@@ -1662,11 +1665,9 @@ export function createBoxdAdapter(
             if (!hostKey) throw new AdapterError("UNAVAILABLE", "boxd sent no SSH host key");
 
             // Linking is idempotent and account-wide: the key reaches every machine the account can.
+            // It runs last, so a refused target never leaves a key linked.
             if (input.publicKey)
               await native.run(ctx, () => native.account.linkSshKey({ pubkey: input.publicKey! }));
-
-            if (!/^[a-z0-9-]+$/.test(machine.name))
-              throw new AdapterError("CONFLICT", "boxd machine name is not a usable SSH host");
 
             return {
               host: `${machine.name}.${zone}`,

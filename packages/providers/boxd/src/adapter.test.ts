@@ -1816,8 +1816,12 @@ test("SSH targets point at the machine's proxy port with the proxy host key and 
     (await expectRejection(box.sshTarget())).toMatchObject({ code: "CONFLICT" });
     machine.sshDisabled = false;
 
+    // A refused target never links the key.
     fixture.sshHostKey("");
-    (await expectRejection(box.sshTarget())).toMatchObject({ code: "UNAVAILABLE" });
+    (await expectRejection(box.sshTarget({ publicKey: key }))).toMatchObject({
+      code: "UNAVAILABLE",
+    });
+    expect(fixture.linkedKeys).toEqual([key]);
 
     machine.status = "suspended";
     (await expectRejection(box.sshTarget())).toMatchObject({ code: "UNAVAILABLE" });
