@@ -1640,7 +1640,7 @@ export function createBoxdAdapter(
             if (!machine.ssh)
               throw new AdapterError(
                 "CONFLICT",
-                "SSH is off for this boxd machine; turn it on with `boxd machine ssh on`",
+                "SSH is off for this boxd machine; turn it on with `boxd machine config set <machine> ssh on`",
               );
 
             if (machine.access.sshPort === null)

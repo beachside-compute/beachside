@@ -250,6 +250,9 @@ const Credentials = z.strictObject({ apiKey: z.string().min(1) });
 
 const Token = z.strictObject({ submissionId: z.string().min(1).max(128) });
 
+/** A pending create also keeps the sandbox id Daytona acknowledged, when it sent one. */
+const CreateToken = Token.extend({ sandboxId: z.string().min(1).max(512).optional() });
+
 const RestoreToken = Token.extend({ sandboxId: z.string().min(1).max(512).optional() });
 
 const ImageToken = Token.extend({
@@ -396,7 +399,12 @@ async function createResult(
   }
 
   if (result.status === "pending")
-    return ctx.pending({ submissionId: ctx.submissionId }, { pollAfterMs: result.observeAfterMs });
+    return ctx.pending(
+      result.nativeSandbox?.id
+        ? { submissionId: ctx.submissionId, sandboxId: result.nativeSandbox.id }
+        : { submissionId: ctx.submissionId },
+      { pollAfterMs: result.observeAfterMs },
+    );
 
   return failure(result, ctx);
 }
@@ -1017,6 +1025,7 @@ export function createDaytonaAdapter(
               submissionId: attempt.submissionId,
               operationId: attempt.operationId,
               expectedSnapshotId: attempt.resource.nativeId,
+              sandboxId: known?.id,
             });
           } catch {
             value = null;
@@ -1268,7 +1277,7 @@ export function createDaytonaAdapter(
           },
         },
         create: {
-          recovery: { version: 1, token: Token },
+          recovery: { version: 1, token: CreateToken },
           async prepare(input) {
             if ("beachside.imageSnapshot" in (input.labels ?? {}))
               throw new AdapterError("INVALID_ARGUMENT", "Reserved Daytona snapshot label");
@@ -1342,10 +1351,13 @@ export function createDaytonaAdapter(
             return { ...result, mounts: input.mounts };
           },
           async observe(attempt, ctx) {
+            const saved = CreateToken.safeParse(attempt.token);
+
             const result = await driver.observe({
               scope,
               submissionId: attempt.submissionId,
               operationId: attempt.operationId,
+              sandboxId: saved.success ? saved.data.sandboxId : undefined,
             });
 
             const value = result
