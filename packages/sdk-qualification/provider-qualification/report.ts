@@ -428,6 +428,14 @@ export function renderLiveMatrix(
     const record = group[0]!;
     const config = record.configuration;
 
+    const image = [
+      config.imageClass,
+      config.imageVariant ?? config.templateClass ?? "unspecified",
+      config.sandboxVariant,
+    ]
+      .filter(Boolean)
+      .join("; ");
+
     if (provider !== record.provider) {
       provider = record.provider;
       lines.push(`## ${providerNames[provider] ?? provider}`, "");
@@ -436,7 +444,7 @@ export function renderLiveMatrix(
     lines.push(
       `### ${config.network} · ${config.regionClass} · ${config.fileRoot ?? "file root not recorded"}`,
       "",
-      `- Image / authority: ${config.imageClass}; ${config.templateClass ?? "unspecified"} / ${config.authorityClass ?? "unspecified"}.`,
+      `- Image / authority: ${image} / ${config.authorityClass ?? "unspecified"}.`,
       `- Runtime: ${record.runtime}, ${record.platform}. Native interface: ${record.nativeVersion ?? "not recorded"}.`,
       `- SDK: ${record.sdkVersion}, commit \`${record.sdkCommit}\`.`,
       `- Fresh-process reopen: ${config.freshProcess === undefined ? "not recorded" : config.freshProcess ? "required" : "not selected"}.`,

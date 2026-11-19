@@ -39,7 +39,7 @@ This table covers the supported providers. Vercel Sandbox, Boat, Runloop, Archil
 | Extend a sandbox's lifetime           | Tested live     | Tested live     | Tested live     | Tested live          | Not supported |
 | Reconnect to a sandbox later          | Tested live     | Tested live     | Tested live     | Tested live          | Tested live   |
 | Run commands and capture output       | Tested live     | Tested live     | Tested live     | Tested live          | Tested live   |
-| Stream output and use terminals       | Not supported   | Not tested live | Tested live     | Tested live          | Tested live   |
+| Stream process output                 | Not supported   | Not tested live | Tested live     | Tested live          | Tested live   |
 | Send input to a command               | Tested live     | Tested live     | Not tested live | Not tested live      | Tested live   |
 | Read and write files                  | Tested live     | Tested live     | Tested live     | Tested live          | Tested live   |
 | List, copy and move files             | Tested live     | Tested live     | Tested live     | Tested live          | Tested live   |

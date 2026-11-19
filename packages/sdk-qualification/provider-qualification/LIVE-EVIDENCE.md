@@ -363,7 +363,7 @@ Only explicit network scenario evidence measures egress: the paired probe covers
 
 ### internet-requested · us-east-1 · /tmp
 
-- Image / authority: prepared; unspecified / api-key.
+- Image / authority: prepared; python; regular / api-key.
 - Runtime: Bun 1.4.4, darwin-arm64. Native interface: Upstash Box v2 SDK 0.8.0 reference.
 - SDK: 0.17.1, commit `8b342692a66256cc524af36998bb0e471ec87e12`.
 - Fresh-process reopen: not recorded.
@@ -378,7 +378,7 @@ Only explicit network scenario evidence measures egress: the paired probe covers
 
 ### internet-requested · us-east-1 · /tmp
 
-- Image / authority: prepared; unspecified / api-key.
+- Image / authority: prepared; python; ephemeral / api-key.
 - Runtime: Bun 1.4.4, darwin-arm64. Native interface: Upstash Box v2 SDK 0.8.0 reference.
 - SDK: 0.17.1, commit `8b342692a66256cc524af36998bb0e471ec87e12`.
 - Fresh-process reopen: not recorded.
@@ -391,7 +391,7 @@ Only explicit network scenario evidence measures egress: the paired probe covers
 
 ### allow-requested · us-east-1 · /tmp
 
-- Image / authority: prepared; unspecified / api-key.
+- Image / authority: prepared; python; ephemeral / api-key.
 - Runtime: Bun 1.4.4, darwin-arm64. Native interface: Upstash Box v2 SDK 0.8.0 reference.
 - SDK: 0.17.1, commit `648e72292f86553810f7c94c864730644c0ad987`.
 - Fresh-process reopen: not recorded.
@@ -404,7 +404,7 @@ Only explicit network scenario evidence measures egress: the paired probe covers
 
 ### paired-internet-blocked-requested · us-east-1 · /tmp
 
-- Image / authority: prepared; unspecified / api-key.
+- Image / authority: prepared; python; ephemeral / api-key.
 - Runtime: Bun 1.4.4, darwin-arm64. Native interface: Upstash Box v2 SDK 0.8.0 reference.
 - SDK: 0.17.1, commit `648e72292f86553810f7c94c864730644c0ad987`.
 - Fresh-process reopen: not recorded.
@@ -417,7 +417,7 @@ Only explicit network scenario evidence measures egress: the paired probe covers
 
 ### internet-requested · us-east-1 · /tmp
 
-- Image / authority: prepared; unspecified / api-key.
+- Image / authority: prepared; python; ephemeral / api-key.
 - Runtime: Bun 1.4.4, darwin-arm64. Native interface: Upstash Box v2 SDK 0.8.0 reference.
 - SDK: 0.17.1, commit `648e72292f86553810f7c94c864730644c0ad987`.
 - Fresh-process reopen: required.
@@ -430,7 +430,7 @@ Only explicit network scenario evidence measures egress: the paired probe covers
 
 ### internet-requested · us-east-1 · /tmp
 
-- Image / authority: prepared; unspecified / api-key.
+- Image / authority: prepared; python; ephemeral / api-key.
 - Runtime: Bun 1.4.4, darwin-arm64. Native interface: Upstash Box v2 SDK 0.8.0 reference.
 - SDK: 0.17.1, commit `648e72292f86553810f7c94c864730644c0ad987`.
 - Fresh-process reopen: not recorded.
@@ -443,7 +443,7 @@ Only explicit network scenario evidence measures egress: the paired probe covers
 
 ### internet-requested · us-east-1 · /tmp
 
-- Image / authority: prepared; unspecified / api-key.
+- Image / authority: prepared; python-alpine; ephemeral / api-key.
 - Runtime: Bun 1.4.4, darwin-arm64. Native interface: Upstash Box v2 SDK 0.8.0 reference.
 - SDK: 0.17.1, commit `648e72292f86553810f7c94c864730644c0ad987`.
 - Fresh-process reopen: not recorded.
@@ -545,7 +545,7 @@ Adapter support and live validation are separate facts. **Supported** means impl
 | Configured lifetime renewal         | [Conditional · passed at 3188e333](#daytona-renewal)            | [Conditional · passed at 3188e333](#e2b-renewal)                                  | [Unsupported · not-run](#upstash-box-renewal)                     |
 | Scoped sandbox reopening            | [Conditional · passed at 3188e333](#daytona-reopening)          | [Conditional · passed at 3188e333](#e2b-reopening)                                | [Conditional · passed at 9d0e7c32](#upstash-box-reopening)        |
 | Execution and captured output       | [Supported · passed at 8449def7](#daytona-execution)            | [Supported · passed at 8449def7](#e2b-execution)                                  | [Supported · passed at 9d0e7c32](#upstash-box-execution)          |
-| Process streams and terminals       | [Conditional · passed at aaba981e](#daytona-streaming)          | [Conditional · passed at aaba981e](#e2b-streaming)                                | [Conditional · passed at 648e7229](#upstash-box-streaming)        |
+| Process streaming                   | [Conditional · passed at aaba981e](#daytona-streaming)          | [Conditional · passed at aaba981e](#e2b-streaming)                                | [Conditional · passed at 648e7229](#upstash-box-streaming)        |
 | Finite execution input              | [Conditional · not-run](#daytona-finiteStdin)                   | [Conditional · not-run](#e2b-finiteStdin)                                         | [Supported · passed at 9d0e7c32](#upstash-box-finiteStdin)        |
 | Binary files and overwrite          | [Conditional · passed at 3188e333](#daytona-files)              | [Conditional · passed at 3188e333](#e2b-files)                                    | [Supported · passed at 648e7229](#upstash-box-files)              |
 | Directory primitives                | [Conditional · passed at e91f2d5f](#daytona-directories)        | [Conditional · passed at e91f2d5f](#e2b-directories)                              | [Conditional · passed at 648e7229](#upstash-box-directories)      |
@@ -608,7 +608,7 @@ Argv/shell, cwd/env, binary output and nonzero exit use the prepared baseline co
 
 <a id="daytona-streaming"></a>
 
-#### Process streams and terminals
+#### Process streaming
 
 Finite and explicit sustained text streaming, exact-byte incremental stdin/EOF and status use a private Python 3 supervisor and Unix socket on writable /tmp. Queue 64 KiB/256 chunks, frames 16 KiB; no cumulative transcript. Pipe reads pause while full. Explicit PTYs combine bytes and support resize. Generation/lease-bound references reopen live output after disconnect (or 30s lease expiry), with an explicit gap and no replay. Disconnect preserves stdin; detach closes it. Helper removal follows child exit or owned sandbox destruction; abandonment markers remain until sandbox destruction. These P4 guarantees have deterministic coverage and separate live evidence. The maintained compiled >32 MiB build and incremental text/binary input/EOF workflow passed at ecc73de on borrowed Linux/us/daytona-default with confirmed sandbox destruction and client close; other images are unqualified.
 
@@ -718,7 +718,7 @@ Argv/shell, cwd/env, binary output and nonzero exit use the prepared baseline co
 
 <a id="e2b-streaming"></a>
 
-#### Process streams and terminals
+#### Process streaming
 
 Finite legacy streaming plus explicit sustained public envd RPC text streaming, exact-byte incremental stdin/EOF (envd >=0.5.2), status and bounded byte capture for exec callbacks. No cumulative transcript in sustained mode. PID presence proves running; absence without EndEvent is unknown. RPC loss may lose exit observation. Initial sustained streaming failed at 37dd9c2 on coalesced-frame queue overflow; termination passed and cleanup was confirmed. After bounded fair delivery, >32 MiB build and exact text/binary input/EOF plus status/termination passed at ecc73de on borrowed base with confirmed sandbox destruction and client close. Historical finite evidence remains separate. Original-byte streaming passed at 5f2bd13 with confirmed owned cleanup. Scoped live-only process reopening, explicit PTYs and resize have deterministic coverage; no transcript replay, native tag generation or exclusive attachment guarantee. P4 live qualification is recorded separately.
 
@@ -828,7 +828,7 @@ Finite argv and shell with cwd/env, separate binary streams and a 1 MiB combined
 
 <a id="upstash-box-streaming"></a>
 
-#### Process streams and terminals
+#### Process streaming
 
 The Debian Python baseline passed sustained output over 32 MiB, separate streams, and text and binary stdin/EOF. PTY controls have fixture coverage.
 

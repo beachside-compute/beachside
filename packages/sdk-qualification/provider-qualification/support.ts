@@ -32,7 +32,7 @@ export const features = {
     workflow: "execution",
     scenarios: ["exec-argv", "exec-shell", "exec-nonzero"],
   },
-  streaming: { label: "Process streams and terminals", scenarios: ["execution-streaming"] },
+  streaming: { label: "Process streaming", scenarios: ["execution-streaming"] },
   finiteStdin: { label: "Finite execution input", scenarios: ["execution-stdin"] },
   files: {
     label: "Binary files and overwrite",
@@ -631,7 +631,7 @@ const overviewLabels: Record<keyof typeof features, string> = {
   renewal: "Extend a sandbox's lifetime",
   suspension: "Pause and resume",
   execution: "Run commands and capture output",
-  streaming: "Stream output and use terminals",
+  streaming: "Stream process output",
   finiteStdin: "Send input to a command",
   termination: "Stop a running command",
   files: "Read and write files",
