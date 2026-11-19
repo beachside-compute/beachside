@@ -1327,6 +1327,7 @@ describe("beachside CLI against the fake provider", () => {
         "runloop",
         "archil",
         "exe-dev",
+        "upstash-box",
         "modal",
       ]);
       expect((await values("--config", "")).directive).toBe(":2");

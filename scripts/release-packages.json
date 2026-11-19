@@ -9,6 +9,7 @@
   "packages/providers/freestyle",
   "packages/providers/archil",
   "packages/providers/exe-dev",
+  "packages/providers/upstash-box",
   "packages/providers/modal",
   "packages/providers/vercel",
   "packages/cli"

@@ -17,7 +17,7 @@ Adapter support and live validation are separate facts. **Supported** means impl
 | Configured lifetime renewal         | [Conditional · passed at 7e91cbd1](#archil-renewal)          |
 | Scoped sandbox reopening            | [Conditional · passed at 7e91cbd1](#archil-reopening)        |
 | Execution and captured output       | [Conditional · passed at 7e91cbd1](#archil-execution)        |
-| Process streams and terminals       | [Conditional · not-run](#archil-streaming)                   |
+| Process streaming                   | [Conditional · not-run](#archil-streaming)                   |
 | Finite execution input              | [Conditional · passed at 7e91cbd1](#archil-finiteStdin)      |
 | Binary files and overwrite          | [Conditional · passed at 7e91cbd1](#archil-files)            |
 | Directory primitives                | [Conditional · passed at 7e91cbd1](#archil-directories)      |
@@ -82,7 +82,7 @@ Argv and shell over Archil's process connection, with separate stdout and stderr
 
 <a id="archil-streaming"></a>
 
-### Process streams and terminals
+### Process streaming
 
 Sustained byte streams, terminals and incremental stdin over the process connection.
 

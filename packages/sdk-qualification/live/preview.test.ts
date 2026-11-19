@@ -1,10 +1,20 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { AdapterSandbox } from "beachside";
-import { liveEnabled, setupLive, finishLive, featureSupported } from "./providers";
+import { liveEnabled, setupLive, finishLive, featureSupported, reopenSnapshot } from "./providers";
+import { memoryProgram, memoryRead, processAbsent, quote } from "./fixtures/memory-probe";
 
 const provider = process.env.BEACHSIDE_QUAL_PROVIDER ?? "daytona";
 
-const access = ["daytona", "archil"].includes(provider) ? "protected" : "public";
+const upstash = provider === "upstash-box";
+
+const access =
+  ["daytona", "archil"].includes(provider) ||
+  (upstash && process.env.BEACHSIDE_UPSTASH_PREVIEW === "protected")
+    ? "protected"
+    : "public";
+
+const upstashRegular = upstash && process.env.BEACHSIDE_UPSTASH_BOX_KIND === "regular";
+const checkPause = liveEnabled && upstashRegular && access === "protected";
 
 const enabled =
   liveEnabled &&
@@ -14,14 +24,18 @@ const enabled =
       featureSupported("previewPublic") &&
       process.env.BEACHSIDE_BOXD_PREVIEW_ACCESS === "public") ||
     (provider === "freestyle" && featureSupported("previewPublic")) ||
-    (provider === "archil" && featureSupported("previewProtected")));
+    (provider === "archil" && featureSupported("previewProtected")) ||
+    upstashRegular);
 
 describe("Beachside native HTTP preview", () => {
   let fixture: Awaited<ReturnType<typeof setupLive>> | undefined;
   let box: AdapterSandbox;
   beforeAll(async () => {
     if (!enabled) return;
-    fixture = await setupLive([`preview-${access}`], { compute: 1, snapshots: 0, volumes: 0 });
+    fixture = await setupLive(
+      [...(checkPause ? ["lifecycle-suspend-resume"] : []), `preview-${access}`],
+      { compute: 1, snapshots: 0, volumes: 0 },
+    );
     await fixture.resources.setup(async () => {
       await fixture!.resources.open();
       box = await fixture!.resources.create("preview/source");
@@ -30,6 +44,47 @@ describe("Beachside native HTTP preview", () => {
   afterAll(async () => {
     if (fixture) await finishLive(fixture);
   }, 76000);
+  (checkPause ? test : test.skip)(
+    "lifecycle-suspend-resume",
+    async () => {
+      const configured = fixture!;
+      const t = configured.resources;
+      t.at("preview/regular-lifecycle");
+      const path = `${configured.fileRoot}/beachside-pause-${t.ledger.runId}`;
+      const bytes = Uint8Array.of(0, 255, 19);
+      await box.writeFile(path, bytes, { signal: t.signal });
+
+      const process = await box.processes.start(
+        { command: { kind: "shell", script: `exec python3 -u -c ${quote(memoryProgram)}` } },
+        { signal: t.signal },
+      );
+
+      try {
+        expect(await t.exec(box, memoryRead)).toMatch(/\d/);
+        expect((await box.inspect({ signal: t.signal })).expires).toEqual({ status: "none" });
+        const suspended = await box.suspend({ signal: t.signal });
+        expect(suspended.processes).toBe("terminated");
+        expect(suspended.observation.state).toBe("stopped");
+        const saved = JSON.parse(JSON.stringify(box.reference));
+        await reopenSnapshot(configured, saved, {
+          path,
+          base64: Buffer.from(bytes).toString("base64"),
+          expires: { status: "none" },
+          inactive: true,
+        });
+        const reopened = await t.client.sandboxes.get(saved, { signal: t.signal });
+        const resumed = await reopened.resume({ signal: t.signal });
+        expect(resumed.reference).toEqual(saved);
+        expect(resumed.execution).toBe("fresh");
+        expect(resumed.observation.expires).toEqual({ status: "none" });
+        expect(await t.read(reopened, path)).toEqual(bytes);
+        expect(await t.exec(reopened, processAbsent)).toBe("PROCESS_ABSENT\n");
+      } finally {
+        await process.detach();
+      }
+    },
+    241000,
+  );
   (enabled ? test : test.skip)(
     `preview-${access}`,
     async () => {
@@ -55,7 +110,14 @@ describe("Beachside native HTTP preview", () => {
       const marker = `preview-${t.ledger.runId}`;
       const root = `/tmp/beachside-preview-${t.ledger.runId}`;
       await t.exec(box, `mkdir -m 700 '${root}' && printf '%s' '${marker}' > '${root}/index.html'`);
-      await t.background(box, `python3 -m http.server 3000 --bind 0.0.0.0 --directory '${root}'`);
+      const server = `python3 -m http.server 3000 --bind 0.0.0.0 --directory '${root}'`;
+
+      if (upstash)
+        await box.processes.start(
+          { command: { kind: "shell", script: `exec ${server}` } },
+          { signal: t.signal },
+        );
+      else await t.background(box, server);
       const preview = await box.preview(3000, { signal: t.signal });
       expect(preview.access).toBe(access);
       const headers = preview.access === "protected" ? preview.headers : undefined;
@@ -82,9 +144,9 @@ describe("Beachside native HTTP preview", () => {
 
       if (preview.access === "protected") {
         // A wrong value under each header the provider returned, so the check covers its own token.
-        const invalid = Object.fromEntries(
-          Object.keys(preview.headers).map((name) => [name, "invalid-token"]),
-        );
+        const invalid: Record<string, string> = upstash
+          ? { Authorization: "Bearer invalid-token" }
+          : Object.fromEntries(Object.keys(preview.headers).map((name) => [name, "invalid-token"]));
 
         for (const auth of [undefined, invalid]) {
           const denied = await fetch(preview.url, {
@@ -104,7 +166,29 @@ describe("Beachside native HTTP preview", () => {
         signal: t.signal,
       });
 
-      expect((await reopened.preview(3000, { signal: t.signal })).access).toBe(access);
+      const again = await reopened.preview(3000, { signal: t.signal });
+      expect(again.access).toBe(access);
+
+      if (upstash && preview.access === "protected" && again.access === "protected") {
+        const old = await fetch(preview.url, {
+          headers: preview.headers,
+          redirect: "manual",
+          signal,
+        });
+
+        const current = await fetch(again.url, {
+          headers: again.headers,
+          redirect: "manual",
+          signal,
+        });
+
+        expect(old.ok).toBe(false);
+        await old.body?.cancel();
+        expect(current.ok).toBe(true);
+        expect(await current.text()).toBe(marker);
+      }
+
+      if (upstash && access === "public") expect(again.url).toBe(preview.url);
       expect(JSON.stringify(saved)).not.toContain("token");
       t.at("preview/owned-cleanup");
       await t.destroy("preview/source");

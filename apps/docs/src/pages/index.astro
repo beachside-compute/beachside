@@ -253,6 +253,7 @@ const year = new Date().getFullYear();
             <li class="chip chip-boat"><span></span>Boat (exp)</li>
             <li class="chip chip-runloop"><span></span>Runloop (exp)</li>
             <li class="chip chip-exe-dev"><span></span>exe.dev (exp)</li>
+            <li class="chip chip-upstash-box"><span></span>Upstash Box</li>
             <li class="chip chip-vercel"><span></span>Vercel (exp)</li>
             <li class="chip chip-modal"><span></span>Modal (exp)</li>
             <li class="chip chip-yours">+ your adapter</li>
@@ -1466,11 +1467,13 @@ const year = new Date().getFullYear();
         border-radius: 2px;
         background: var(--sb-lav);
       }
-      .chip-exe-dev {
+      .chip-exe-dev,
+      .chip-upstash-box {
         background: color-mix(in srgb, var(--sb-ink) 8%, var(--sb-surface));
         color: var(--sb-ink);
       }
-      .chip-exe-dev span {
+      .chip-exe-dev span,
+      .chip-upstash-box span {
         border-radius: 50%;
         background: var(--sb-ink);
       }

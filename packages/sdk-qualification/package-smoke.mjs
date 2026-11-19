@@ -21,6 +21,7 @@ const packages = [
   ["@beachside/freestyle", "packages/providers/freestyle"],
   ["@beachside/archil", "packages/providers/archil"],
   ["@beachside/exe-dev", "packages/providers/exe-dev"],
+  ["@beachside/upstash-box", "packages/providers/upstash-box"],
   ["@beachside/vercel", "packages/providers/vercel"],
   ["@beachside/e2b", "packages/providers/e2b"],
   ["beachside", "packages/sdk"],
@@ -84,6 +85,7 @@ async function pack(directory) {
       "@beachside/freestyle",
       "@beachside/archil",
       "@beachside/exe-dev",
+      "@beachside/upstash-box",
       "@beachside/cli",
     ].includes(manifest.name)
   ) {
@@ -352,6 +354,25 @@ async function flow() {
   await box.readFile("/tmp/file");
   await fork.destroy(); await box.destroy(); await client.close();
   return { url, preserve, bound: exeDev({ sshKey: "key", network: "internet" }) };
+}
+void flow;
+`;
+  else if (mode === "upstash-box")
+    source = `
+import { Beachside } from "beachside";
+import { upstashBox, upstashBoxAdapter } from "@beachside/upstash-box";
+async function flow() {
+  const client = await Beachside.connect({
+    adapter: upstashBoxAdapter,
+    config: { network: { allow: ["example.com"] }, resources: { vcpus: 2 } },
+    credentials: { apiKey: "fixture" },
+  });
+  const box = await client.sandboxes.create();
+  await box.writeFile("/workspace/home/file", new Uint8Array([0, 255]));
+  await box.readFile("/workspace/home/file");
+  await box.destroy();
+  await client.close();
+  return upstashBox({ apiKey: "fixture" });
 }
 void flow;
 `;
@@ -1276,6 +1297,29 @@ console.log("Packed exe.dev imports and local validation passed without provider
 
   for (const runtime of ["node", "bun"])
     console.log(`${runtime}: ${run(runtime, ["consumer.mjs"], exeDevConsumer)}`);
+
+  const upstash = join(temporary, "upstash-box-consumer");
+  await consumer(
+    upstash,
+    { ...sdkDeps, "@beachside/upstash-box": archiveOverrides["@beachside/upstash-box"] },
+    archiveOverrides,
+    `
+import { Beachside } from "beachside";
+import { upstashBox, upstashBoxAdapter } from "@beachside/upstash-box";
+if (upstashBoxAdapter.name !== "upstash-box" || !upstashBox({ apiKey: "fixture" }).bound)
+  throw Error("External adapter identity mismatch");
+try {
+  await Beachside.connect({ adapter: upstashBoxAdapter, config: { resources: { vcpus: 100 } }, credentials: { apiKey: "fixture" } });
+  throw Error("Unsupported size accepted");
+} catch (error) { if (error.code !== "UNSUPPORTED") throw error; }
+console.log("Packed Upstash Box imports and local validation passed without provider IO");
+`,
+  );
+  await checkTypes(upstash, "upstash-box");
+  inspectGraph(upstash, ["beachside", "@beachside/upstash-box"]);
+
+  for (const runtime of ["node", "bun"])
+    console.log(`${runtime}: ${run(runtime, ["consumer.mjs"], upstash)}`);
 
   const e2bDeps = { ...sdkDeps, "@beachside/e2b": archiveOverrides["@beachside/e2b"] };
 

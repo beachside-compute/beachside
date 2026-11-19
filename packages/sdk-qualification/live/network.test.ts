@@ -45,13 +45,42 @@ export async function networkControls(t: TestResources) {
   ]);
 }
 
-const enabled = liveEnabled && process.env.BEACHSIDE_QUAL_PROVIDER === "e2b";
+async function httpsSample(t: TestResources, box: AdapterSandbox) {
+  const output = await box.exec(
+    {
+      command: {
+        kind: "argv",
+        argv: [
+          "python3",
+          "-c",
+          "import http.client,json\nresults=[]\nfor host in ('example.com','www.cloudflare.com'):\n c=http.client.HTTPSConnection(host,timeout=4)\n try:\n  c.request('HEAD','/'); c.getresponse(); results.append(True)\n except (OSError,http.client.HTTPException): results.append(False)\n finally: c.close()\nprint(json.dumps(results))",
+        ],
+      },
+      deadlineSeconds: 15,
+      maxOutputBytes: 256,
+    },
+    { signal: t.signal },
+  );
+
+  expect(output.truncated).toBe(false);
+  expect(output.stderr.length).toBe(0);
+
+  return JSON.parse(output.stdoutText());
+}
+
+const provider = process.env.BEACHSIDE_QUAL_PROVIDER;
+
+const allow =
+  liveEnabled && provider === "upstash-box" && process.env.BEACHSIDE_UPSTASH_NETWORK === "allow";
+
+const enabled = (liveEnabled && provider === "e2b") || allow;
+const selected = allow ? "network-allowlist" : "network-controls";
 
 describe("Beachside network controls", () => {
   let fixture: Awaited<ReturnType<typeof setupLive>> | undefined;
   beforeAll(async () => {
     if (enabled) {
-      fixture = await setupLive(["network-controls"], { compute: 2, snapshots: 0, volumes: 0 });
+      fixture = await setupLive([selected], { compute: allow ? 1 : 2, snapshots: 0, volumes: 0 });
       await fixture.resources.setup(() => fixture!.resources.open());
     }
   }, 96000);
@@ -59,8 +88,15 @@ describe("Beachside network controls", () => {
     if (fixture) await finishLive(fixture);
   }, 76000);
   (enabled ? test : test.skip)(
-    "network-controls",
-    async () => networkControls(fixture!.resources),
+    selected,
+    async () => {
+      const t = fixture!.resources;
+
+      if (allow) {
+        const box = await t.create("network/allowlist");
+        expect(await httpsSample(t, box)).toEqual([true, false]);
+      } else await networkControls(t);
+    },
     241000,
   );
 });

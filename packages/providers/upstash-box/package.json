@@ -1,0 +1,47 @@
+{
+  "name": "@beachside/upstash-box",
+  "version": "0.17.1",
+  "private": false,
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "check": "tsc -p tsconfig.json",
+    "build": "rm -rf dist && bun build src/index.ts --target node --format esm --outdir dist --external @beachside/adapter --external ws --external zod && tsc -p tsconfig.build.json --noEmit false --declaration --emitDeclarationOnly --outDir dist && bun ../../../scripts/rewrite-declarations.mjs"
+  },
+  "dependencies": {
+    "@beachside/adapter": "workspace:*",
+    "ws": "8.23.0",
+    "zod": "4.6.6"
+  },
+  "devDependencies": {
+    "beachside": "workspace:*",
+    "@types/ws": "8.18.1"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/beachside-compute/beachside.git",
+    "directory": "packages/providers/upstash-box"
+  },
+  "description": "Upstash Box sandbox provider adapter for Beachside.",
+  "bugs": {
+    "url": "https://github.com/beachside-compute/beachside/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "types": "./dist/index.d.ts",
+  "engines": {
+    "node": ">=20"
+  }
+}
