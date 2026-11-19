@@ -514,6 +514,7 @@ export function createProcesses(origin: string, apiKey: string): ProcessFactory 
   return {
     processes: {
       supports: {
+        status: true,
         sustainedOutput: true,
         binaryOutput: true,
         signals: ["SIGTERM", "SIGKILL"],

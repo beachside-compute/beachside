@@ -460,12 +460,19 @@ test("expiry acknowledgment survives a failed readiness read and fresh recovery"
 
 test("regular boxes preserve runtime and create env, list, pause, resume, and publish protected previews", async () => {
   const fixture = apiFixture();
+  let pauseBeforeMkdir = false;
 
   const client = tracked(
     await Beachside.connect({
       adapter: defineUpstashBoxAdapter("http://127.0.0.1:1", { fetch: fixture.fetch }),
       config: { boxKind: "regular", image: "python-alpine" },
       credentials: { apiKey: "fixture" },
+      async onReference(reference) {
+        if (!pauseBeforeMkdir || reference.kind !== "file_mkdir") return;
+        const native = fixture.boxes.get(reference.sandboxId ?? "");
+
+        if (native) native.status = "paused";
+      },
     }),
   );
 
@@ -527,6 +534,13 @@ test("regular boxes preserve runtime and create env, list, pause, resume, and pu
   });
   expect(fixture.fileRequests()).toBe(fileRequests);
   expect((await client.sandboxes.list()).items[0]?.state).toBe("stopped");
+  expect((await box.resume()).observation.state).toBe("running");
+  pauseBeforeMkdir = true;
+  await expect(box.makeDirectory("/workspace/home/new-directory")).rejects.toMatchObject({
+    code: "CONFLICT",
+    effect: "none",
+  });
+  expect(fixture.mkdirRequests()).toBe(0);
   expect((await box.resume()).observation.state).toBe("running");
   expect(await box.preview(3000)).toEqual({
     access: "protected",

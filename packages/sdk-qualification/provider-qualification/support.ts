@@ -78,7 +78,7 @@ export const upstashBoxSupport: SupportMetadata = {
   features: {
     lifecycle: {
       support: "supported",
-      note: "Create, inspect, list and destroy ephemeral and regular boxes in us-east-1. Native TTL applies to ephemeral boxes. Regular boxes require explicit cleanup and have not been tested live.",
+      note: "The ephemeral us-east-1 baseline passed create, inspect, inventory and destroy with a 900-second native TTL. Regular Debian Python boxes were created and destroyed in the live preview runs and require explicit cleanup.",
     },
     execution: {
       support: "supported",
@@ -97,12 +97,12 @@ export const upstashBoxSupport: SupportMetadata = {
       note: "Saved Beachside references reopen the exact Box ID and check the selected class using a currently authorized key. The live baseline reopened from a separate process and checked the original expiry on ephemeral Debian Node.",
     },
     network: {
-      support: "conditional",
+      support: "unsupported",
       note: "The HTTPS allowlist reached the configured public host and denied a second host. With native deny-all, the TCP probes connected and the HTTPS follow-up to beachside.run ended during TLS without an HTTP response. Beachside rejects blocked egress pending verification of broader outbound isolation.",
     },
     termination: {
       support: "conditional",
-      note: "Live sessions support process signals and native exit evidence. The live test previously stopped at the process status check before issuing a signal.",
+      note: "The ephemeral Debian Python retest passed running status, signal request, output drain and independently observed terminal exit in one live session.",
     },
     renewal: { support: "unsupported", note: "The adapter sets TTL at create." },
     streaming: {
@@ -115,15 +115,15 @@ export const upstashBoxSupport: SupportMetadata = {
     },
     suspension: {
       support: "conditional",
-      note: "Regular boxes without keep-alive support explicit filesystem pause and resume. The first live workflow failed its inactive guest-access check.",
+      note: "Regular Debian Python passed native pause, reopening without waking, explicit resume with preserved files and fresh execution. Keep-alive boxes do not support pause or resume.",
     },
     previewProtected: {
       support: "conditional",
-      note: "The first live protected workflow reached the HTTP and token-rotation checks, then failed its post-deletion error assertion.",
+      note: "Regular Debian Python passed authenticated HTTPS, missing and invalid token denial, bearer rotation, and lookup after deletion.",
     },
     previewPublic: {
       support: "conditional",
-      note: "The first live public workflow reached the HTTP and route reuse checks, then failed its post-deletion error assertion.",
+      note: "Regular Debian Python passed public HTTPS, route reuse and lookup after deletion.",
     },
     oci: {
       support: "unsupported",
@@ -593,8 +593,8 @@ export const providerStatus: ProviderStatus[] = [
     id: "upstash-box",
     name: "Upstash Box",
     href: "/docs/providers/upstash-box/",
-    experimental: true,
-    note: "Ephemeral lifecycle, Alpine directory operations, sustained streaming and snapshot restore passed. Strict blocked egress failed live qualification.",
+    experimental: false,
+    note: "Live-tested on ephemeral and regular boxes, including Alpine files, process control, previews and snapshots. Supports custom egress allowlists. Strict blocked egress is unavailable.",
   },
   {
     id: "modal",

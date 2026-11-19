@@ -1,6 +1,6 @@
 # @beachside/upstash-box
 
-Experimental Beachside adapter for ephemeral and regular Upstash Box sandboxes in AWS us-east-1. Live results cover the ephemeral Debian baseline, Alpine files and directories, process streaming, custom HTTPS allowlist and snapshot restore. See the [provider support matrix](https://beachside.run/docs/providers/support/).
+Beachside adapter for ephemeral and regular Upstash Box sandboxes in AWS us-east-1. Live tests cover lifecycle, reopening, execution, streaming and termination, Alpine files and directories, snapshots, regular-box pause and resume, both preview modes, and a custom HTTPS allowlist. Strict blocked egress is unsupported. See the [provider support matrix](https://beachside.run/docs/providers/support/).
 
 ```sh
 npm install beachside @beachside/upstash-box

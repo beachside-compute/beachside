@@ -474,6 +474,126 @@
         "testName": "snapshot-roundtrip"
       },
       "evidenceRef": "https://github.com/beachside-compute/beachside/pull/253"
+    },
+    {
+      "provider": "upstash-box",
+      "sdkCommit": "8b342692a66256cc524af36998bb0e471ec87e12",
+      "harnessCommit": "8b342692a66256cc524af36998bb0e471ec87e12",
+      "sdkVersion": "0.17.1",
+      "nativeVersion": "Upstash Box v2 SDK 0.8.0 reference",
+      "runtime": "Bun 1.4.4",
+      "platform": "darwin-arm64",
+      "timestamp": "2026-11-19T04:59:55.711Z",
+      "configuration": {
+        "imageClass": "prepared",
+        "imageVariant": "python",
+        "sandboxVariant": "regular",
+        "fileRoot": "/tmp",
+        "authorityClass": "api-key",
+        "network": "internet-requested",
+        "regionClass": "us-east-1"
+      },
+      "schemaVersion": 1,
+      "mode": "live",
+      "scenario": "lifecycle-suspend-resume",
+      "status": "passed",
+      "runCleanup": "confirmed",
+      "runner": {
+        "name": "bun:test",
+        "format": "junit",
+        "testName": "lifecycle-suspend-resume"
+      },
+      "evidenceRef": "https://github.com/beachside-compute/beachside/pull/253"
+    },
+    {
+      "provider": "upstash-box",
+      "sdkCommit": "8b342692a66256cc524af36998bb0e471ec87e12",
+      "harnessCommit": "8b342692a66256cc524af36998bb0e471ec87e12",
+      "sdkVersion": "0.17.1",
+      "nativeVersion": "Upstash Box v2 SDK 0.8.0 reference",
+      "runtime": "Bun 1.4.4",
+      "platform": "darwin-arm64",
+      "timestamp": "2026-11-19T04:59:55.711Z",
+      "configuration": {
+        "imageClass": "prepared",
+        "imageVariant": "python",
+        "sandboxVariant": "regular",
+        "fileRoot": "/tmp",
+        "authorityClass": "api-key",
+        "network": "internet-requested",
+        "regionClass": "us-east-1"
+      },
+      "schemaVersion": 1,
+      "mode": "live",
+      "scenario": "preview-protected",
+      "status": "passed",
+      "runCleanup": "confirmed",
+      "runner": {
+        "name": "bun:test",
+        "format": "junit",
+        "testName": "preview-protected"
+      },
+      "evidenceRef": "https://github.com/beachside-compute/beachside/pull/253"
+    },
+    {
+      "provider": "upstash-box",
+      "sdkCommit": "8b342692a66256cc524af36998bb0e471ec87e12",
+      "harnessCommit": "8b342692a66256cc524af36998bb0e471ec87e12",
+      "sdkVersion": "0.17.1",
+      "nativeVersion": "Upstash Box v2 SDK 0.8.0 reference",
+      "runtime": "Bun 1.4.4",
+      "platform": "darwin-arm64",
+      "timestamp": "2026-11-19T05:00:19.773Z",
+      "configuration": {
+        "imageClass": "prepared",
+        "imageVariant": "python",
+        "sandboxVariant": "regular",
+        "fileRoot": "/tmp",
+        "authorityClass": "api-key",
+        "network": "internet-requested",
+        "regionClass": "us-east-1"
+      },
+      "schemaVersion": 1,
+      "mode": "live",
+      "scenario": "preview-public",
+      "status": "passed",
+      "runCleanup": "confirmed",
+      "runner": {
+        "name": "bun:test",
+        "format": "junit",
+        "testName": "preview-public"
+      },
+      "evidenceRef": "https://github.com/beachside-compute/beachside/pull/253"
+    },
+    {
+      "provider": "upstash-box",
+      "sdkCommit": "8b342692a66256cc524af36998bb0e471ec87e12",
+      "harnessCommit": "8b342692a66256cc524af36998bb0e471ec87e12",
+      "sdkVersion": "0.17.1",
+      "nativeVersion": "Upstash Box v2 SDK 0.8.0 reference",
+      "runtime": "Bun 1.4.4",
+      "platform": "darwin-arm64",
+      "timestamp": "2026-11-19T04:59:42.250Z",
+      "configuration": {
+        "imageClass": "prepared",
+        "imageVariant": "python",
+        "sandboxVariant": "ephemeral",
+        "fileRoot": "/tmp",
+        "authorityClass": "api-key",
+        "network": "internet-requested",
+        "regionClass": "us-east-1"
+      },
+      "schemaVersion": 1,
+      "mode": "live",
+      "scenario": "execution-termination",
+      "status": "passed",
+      "runCleanup": "confirmed",
+      "runner": {
+        "name": "bun:test",
+        "format": "junit",
+        "testName": "execution-termination"
+      },
+      "evidenceRef": "https://github.com/beachside-compute/beachside/pull/253"
     }
   ]
 }

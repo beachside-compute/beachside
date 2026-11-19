@@ -25,7 +25,7 @@ Beachside is one TypeScript API over several sandbox providers. The application 
 | E2B                        | `@beachside/e2b`         | `Beachside.connect({ adapter: e2bAdapter, credentials: { apiKey }, config: {} })`                                                                                          |
 | Archil (experimental)      | `@beachside/archil`      | `Beachside.connect({ adapter: archilAdapter, credentials: { apiKey }, config: { region: "aws-us-east-1" } })`                                                              |
 | exe.dev (experimental)     | `@beachside/exe-dev`     | `Beachside.connect({ adapter: exeDevAdapter, credentials: { token }, config: {} })`                                                                                        |
-| Upstash Box (experimental) | `@beachside/upstash-box` | `Beachside.connect({ adapter: upstashBoxAdapter, credentials: { apiKey }, config: {} })`                                                                                   |
+| Upstash Box                | `@beachside/upstash-box` | `Beachside.connect({ adapter: upstashBoxAdapter, credentials: { apiKey }, config: {} })`                                                                                   |
 | Vercel                     | `@beachside/vercel`      | `Beachside.connect({ adapter: vercelAdapter, credentials: { token }, config: { teamId, projectId } })`                                                                     |
 | Modal (experimental)       | `@beachside/modal`       | `Beachside.connect({ adapter: modalAdapter, credentials: { tokenId, tokenSecret }, config: { appName } })`                                                                 |
 

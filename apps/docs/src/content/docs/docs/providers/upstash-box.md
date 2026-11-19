@@ -34,6 +34,8 @@ Beachside defaults to `boxKind: "ephemeral"` in AWS us-east-1. Ephemeral boxes u
 
 Set `boxKind: "regular"` for HTTP previews and explicit pause and resume. Regular boxes have no automatic deletion deadline. The adapter rejects a configured TTL for regular boxes before allocation. With `keepAlive: true`, Upstash keeps regular compute active on an eligible paid plan and disables pause and resume.
 
+Resume a paused regular box before accessing its guest. Finish guest operations, including file streams, before pausing. Upstash can wake a box if a native guest request races with a pause.
+
 Select a prepared `image` from `node`, `python`, `golang`, `ruby`, `rust` and their `-alpine` variants. The default is Debian `node`. Set `resources` to select the smallest Upstash size that meets your CPU and memory requirements. The default is small (2 vCPUs, 4 GiB). Your account controls size availability.
 
 Both kinds accept create-time env. Upstash reserves system variables such as `PATH`, `HOME` and `NODE_OPTIONS`. The adapter rejects those names. Network defaults to `"internet"`. Configure an allowlist with `network: { allow: ["api.example.com"] }`. Custom policy can still resolve unlisted names over DNS. Upstash blocks private ranges. Under native `deny-all`, the TCP probes connected and the separate HTTPS probe to `beachside.run` stopped at TLS without receiving an HTTP response. Beachside rejects `network: "blocked"` pending verification of broader outbound isolation. See the [native matching rules](https://upstash.com/docs/box/overall/network-policy#matching-rules).
@@ -51,4 +53,4 @@ Saved Beachside references reopen the exact Box ID with a currently authorized k
 
 Upstash snapshots capture filesystem state for a fresh box. Restore selects the configured box kind and reapplies the configured network policy. Snapshot artifacts can survive source deletion. The Box API key supports source-scoped snapshot lookup. Restore uses the saved snapshot ID and requires that lookup to confirm readiness. A successfully restored Box has its own lifecycle. Deletion uses the saved ID directly.
 
-The adapter is experimental. In us-east-1, live tests covered the ephemeral Debian baseline, Alpine file and directory operations, Debian process streaming, a custom HTTPS allowlist and snapshot restore after source deletion. See [tested provider support](/docs/providers/support/).
+In us-east-1, live tests covered the ephemeral Debian baseline, Alpine files and directories, Debian process streaming and termination, a custom HTTPS allowlist, snapshot restore after source deletion, regular-box pause and resume, and both preview modes. See [tested provider support](/docs/providers/support/).

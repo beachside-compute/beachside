@@ -406,6 +406,9 @@ export function boxFiles(
       async submit(input: FileMutationInput, ctx: AttemptContext) {
         const { sandbox, path, recursive } = input;
         const id = identify(sandbox);
+        const rejected = await guestRejection(sandbox, ctx);
+
+        if (rejected) return rejected;
 
         try {
           await transport.empty(`${boxPath(id)}/files/mkdir`, ctx.signal, "POST", {
