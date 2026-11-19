@@ -78,23 +78,23 @@ export const upstashBoxSupport: SupportMetadata = {
   features: {
     lifecycle: {
       support: "supported",
-      note: "Create, inspect, list and destroy ephemeral and regular boxes in us-east-1. Native TTL applies to ephemeral boxes. Regular boxes require explicit cleanup. Live qualification is pending.",
+      note: "Create, inspect, list and destroy ephemeral and regular boxes in us-east-1. Native TTL applies to ephemeral boxes. Regular boxes require explicit cleanup and have not been tested live.",
     },
     execution: {
       support: "supported",
-      note: "Finite argv and shell with cwd/env, separate binary streams and a 1 MiB combined capture bound. Deterministic fixtures passed; live qualification is pending.",
+      note: "Finite argv and shell with cwd/env, separate binary streams and a 1 MiB combined capture bound. The live baseline exercised argv, shell, separate stderr and a nonzero exit on ephemeral Debian Node.",
     },
     finiteStdin: {
       support: "supported",
-      note: "Up to 1 MiB of binary input followed by EOF over a native live session. Deterministic fixtures passed; live qualification is pending.",
+      note: "Up to 1 MiB of binary input followed by EOF over a native live session. The live baseline checked text, binary, empty and omitted input on ephemeral Debian Node.",
     },
     files: {
       support: "supported",
-      note: "Bounded binary ranges and streaming reads, with exclusive creation by default and explicit overwrite. Buffered writes use a 1 MiB limit and larger writes use the file stream. Live qualification is pending.",
+      note: "Bounded binary ranges and streaming reads, with exclusive creation by default and explicit overwrite. Buffered writes use a 1 MiB limit and larger writes use the file stream. The live baseline checked small binary files and write collisions on ephemeral Debian Node.",
     },
     reopening: {
       support: "conditional",
-      note: "Saved Beachside references reopen the exact Box ID and check the selected class using a currently authorized key. Covered by deterministic fixtures; live qualification is pending.",
+      note: "Saved Beachside references reopen the exact Box ID and check the selected class using a currently authorized key. The live baseline reopened from a separate process and checked the original expiry on ephemeral Debian Node.",
     },
     network: {
       support: "conditional",
@@ -111,7 +111,7 @@ export const upstashBoxSupport: SupportMetadata = {
     },
     directories: {
       support: "conditional",
-      note: "Directory listing, stat, mkdir, removal and copy are available. Native move requires explicit overwrite. Live qualification is pending.",
+      note: "Directory listing, stat, mkdir, removal and copy are available. Native move requires explicit overwrite. The live directory workflow failed because mkdir over an existing file returned OUTCOME_UNKNOWN instead of INVALID_ARGUMENT.",
     },
     suspension: {
       support: "conditional",
@@ -594,7 +594,7 @@ export const providerStatus: ProviderStatus[] = [
     name: "Upstash Box",
     href: "/docs/providers/upstash-box/",
     experimental: true,
-    note: "The adapter covers ephemeral and regular Box workflows. Live qualification is pending.",
+    note: "The ephemeral Debian Node baseline passed five workflows. The directory workflow failed. Regular Box workflows remain untested live.",
   },
   {
     id: "modal",

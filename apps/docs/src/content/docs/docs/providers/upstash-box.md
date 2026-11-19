@@ -51,4 +51,4 @@ Saved Beachside references reopen the exact Box ID with a currently authorized k
 
 Upstash snapshots capture filesystem state for a fresh box. Restore selects the configured box kind and reapplies the configured network policy. Snapshot artifacts can survive source deletion. The Box API key supports source-scoped snapshot lookup. Restore uses the saved snapshot ID and requires that lookup to confirm readiness. A successfully restored Box has its own lifecycle. Deletion uses the saved ID directly.
 
-The adapter remains experimental pending live qualification.
+The adapter is experimental. Lifecycle, execution, finite stdin, binary files and reopening passed live on an ephemeral Debian Node box in us-east-1. The directory workflow failed when creating a directory over an existing file returned `OUTCOME_UNKNOWN` instead of `INVALID_ARGUMENT`. See [tested provider support](/docs/providers/support/).

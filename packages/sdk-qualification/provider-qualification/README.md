@@ -195,4 +195,6 @@ The profile selects connection-default OCI creation, records the image as borrow
 
 ## Upstash Box profile
 
-`upstash-box-profile.ts` selects the Debian Node runtime in us-east-1, internet egress and a 900-second native TTL. Set `BEACHSIDE_QUAL_PROVIDER=upstash-box`, `BEACHSIDE_QUAL_PROFILE` to this profile and `UPSTASH_BOX_API_KEY` for an authorized run. Select the `execution`, `execution-stdin`, `files`, `sandbox-lifecycle` and `lifecycle-reopen` cases in `live/sandbox.test.ts` with Bun's test-name filter. Live results are pending.
+`upstash-box-profile.ts` selects the ephemeral Debian Node runtime in us-east-1, internet egress and a 900-second native TTL. Set `BEACHSIDE_QUAL_PROVIDER=upstash-box`, `BEACHSIDE_QUAL_PROFILE` to this profile and `UPSTASH_BOX_API_KEY` for an authorized run. Select the `execution`, `execution-stdin`, `files`, `sandbox-lifecycle`, `file-directories` and `lifecycle-reopen` cases in `live/sandbox.test.ts` with Bun's test-name filter.
+
+The first run at `9d0e7c32` used Bun 1.4.4 on darwin-arm64. Lifecycle, execution, finite stdin, binary files and fresh-process reopening passed. The directory workflow failed when `makeDirectory` targeted an existing regular file and returned `OUTCOME_UNKNOWN` instead of `INVALID_ARGUMENT`. The only owned box was destroyed and an exact-ID native read returned a deleted tombstone. The client closed successfully. The run allocated no snapshots, volumes, builds or previews.

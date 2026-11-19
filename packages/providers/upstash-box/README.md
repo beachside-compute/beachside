@@ -1,6 +1,6 @@
 # @beachside/upstash-box
 
-Experimental Beachside adapter for ephemeral and regular Upstash Box sandboxes in AWS us-east-1. Live qualification is pending.
+Experimental Beachside adapter for ephemeral and regular Upstash Box sandboxes in AWS us-east-1. The ephemeral Debian Node baseline has partial live coverage. See the [provider support matrix](https://beachside.run/docs/providers/support/).
 
 ```sh
 npm install beachside @beachside/upstash-box
