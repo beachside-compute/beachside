@@ -319,7 +319,20 @@ test("suspend pauses with memory, resume resumes it, and renew sends a session t
     expect(resumed).toMatchObject({ execution: "resumed" });
     expect(fixture.sandboxes.get(box.id)?.status).toBe("running");
 
-    await box.renew({ forSeconds: 600 });
+    const before = Date.now();
+    const renewed = await box.renew({ forSeconds: 600 });
+    expect(renewed.observation?.expires).toMatchObject({
+      status: "known",
+      action: "suspend",
+      scope: "running-session",
+    });
+
+    if (renewed.observation?.expires.status !== "known") throw Error("Renewal deadline unknown");
+    const deadline = Date.parse(renewed.observation.expires.at);
+    expect(deadline).toBeGreaterThanOrEqual(before + 600_000);
+    expect(deadline).toBeLessThanOrEqual(Date.now() + 600_000);
+    // Inspect still cannot read the deadline back from Archil.
+    expect((await box.inspect()).expires.status).toBe("unknown");
     expect(fixture.calls.find((call) => call.path.endsWith("/timeout"))?.body).toEqual({
       timeout: 600,
     });

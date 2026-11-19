@@ -784,6 +784,20 @@ export function createArchilAdapter(options: ArchilAdapterOptions = {}) {
             : { status: "unknown", reason: "Archil did not report the sandbox size" },
       });
 
+      /** A running sandbox's deadline right after a timeout update this adapter just sent. */
+      const renewed = (info: SandboxInfo, sent: number, seconds: number): SandboxInfo =>
+        info.state === "running"
+          ? {
+              ...info,
+              expires: {
+                status: "known",
+                at: new Date(sent + seconds * 1000).toISOString(),
+                action: "suspend",
+                scope: "running-session",
+              },
+            }
+          : info;
+
       /** Poll a read until it settles, the local wait ends, or the caller aborts. */
       const settle = async <T>(
         signal: AbortSignal,
@@ -2487,7 +2501,10 @@ export function createArchilAdapter(options: ArchilAdapterOptions = {}) {
             return { ...input, forSeconds };
           },
           async submit(input, ctx) {
-            // `timeout` counts from now for the running session and budgets the next one.
+            // `timeout` counts from receipt for the running session and budgets the next one, so
+            // the deadline is at least the send time plus the window; inspect cannot report it.
+            const sent = Date.now();
+
             try {
               await send(
                 "POST",
@@ -2505,7 +2522,9 @@ export function createArchilAdapter(options: ArchilAdapterOptions = {}) {
               reference: input.sandbox.reference,
               requested: { forSeconds: input.forSeconds },
               acknowledged: true,
-              observation: wire ? observation(wire, input.sandbox.reference) : null,
+              observation: wire
+                ? renewed(observation(wire, input.sandbox.reference), sent, input.forSeconds)
+                : null,
             };
           },
         },

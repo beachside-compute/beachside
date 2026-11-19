@@ -73,6 +73,14 @@ test("metadata, listings, copies, moves and removal run through the guest helper
     const listing = await box.readDirectory(dir);
     expect(listing.entries.map((entry) => entry.name)).toEqual(["a.txt", "c.txt", "sub"]);
 
+    // A file in the way is refused before any change, recursive or not.
+    for (const recursive of [false, true])
+      await expect(box.makeDirectory(join(dir, "a.txt"), { recursive })).rejects.toMatchObject({
+        code: "INVALID_ARGUMENT",
+        effect: "none",
+      });
+    expect(readFileSync(join(dir, "a.txt"), "utf8")).toBe("alpha");
+
     await box.removeFile(join(dir, "sub"), { recursive: true });
     expect(await box.fileExists(join(dir, "sub"))).toBe(false);
   } finally {
