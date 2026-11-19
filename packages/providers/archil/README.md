@@ -23,7 +23,7 @@ try {
 }
 ```
 
-Archil does not reveal which account an API key belongs to, so the scope is a one-way fingerprint of the key, partitioned by region and control-plane URL. References hold the sandbox id and scope, never the API key, and reopen with the same key.
+Archil keys are scoped to one account and one region, and Archil authorizes every call with the current key, so the scope is the control-plane service partitioned by region and control-plane URL. References hold the sandbox id and scope, never the API key or a fingerprint of it, so they keep working after a key rotation for the same account.
 
 ## Setup defaults
 
