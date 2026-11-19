@@ -86,6 +86,13 @@ const reference = sandbox.reference ?? (await sandbox.inspect()).reference;
 if (!reference) throw new Error("Verified sandbox identity is unavailable");
 const saved = JSON.parse(JSON.stringify(reference));
 await client.close();
+
+// Later, possibly in another process: connect with the same adapter and config.
+const freshClient = await Beachside.connect({
+  adapter: daytonaAdapter,
+  credentials: { apiKey: process.env.DAYTONA_API_KEY! },
+  config: { target: "us" },
+});
 const reopened = await freshClient.sandboxes.get(saved);
 const info = await reopened.inspect();
 if (info.state === "running") {

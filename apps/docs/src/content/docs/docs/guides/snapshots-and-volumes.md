@@ -287,7 +287,7 @@ console.log(await snapshot.inspect());
 
 Validation checks the reference's shape; it does not prove that the resource still exists. `get()` checks scope and reads the provider before returning a handle. `inspect()` refreshes the resource's state. Saved history is not current provider state.
 
-Daytona organization scope supports key rotation. For E2B, configure an authenticated, verified `teamId` if references must survive key rotation; its default scope is tied to the API key.
+Daytona organization scope supports key rotation. E2B, Freestyle and Archil scopes never include the key, so a rotated key for the same account reopens their references.
 
 `snapshots.list({ limit: 20 })` and `volumes.list({ limit: 20 })` return bounded pages with optional cursors and coverage information. Finding a resource in a list does not prove your application created it or owns it. Listed or imported snapshots may lack the history needed for restore.
 

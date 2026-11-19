@@ -72,7 +72,7 @@ Sets `ttlSeconds` to the VM's age plus the requested window.
 
 ### Scoped sandbox reopening
 
-References hold the VM id and a key fingerprint, never the key.
+References hold the VM id and the Freestyle service scope, never the key or a fingerprint of it.
 
 <a id="freestyle-execution"></a>
 

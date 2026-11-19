@@ -3510,12 +3510,18 @@ export type AdapterConnectOptions<
     connect: (input: never) => Promise<S>;
     policy?: { schema: z.ZodType; default: Json };
   };
-  config: z.input<C>;
   credentials: z.input<K>;
   onReference?: (reference: RecoveryReference) => void | Promise<void>;
   // oxlint-disable-next-line anti-slop/no-unknown-parameters -- A cleanup hook may throw any JavaScript value; the diagnostic receives it intact.
   onDiagnostic?: (error: unknown) => void;
-};
+} & AdapterConfigOption<C>;
+
+/**
+ * `config` may be left out when every field of the adapter's config is optional; it then
+ * defaults to `{}`. Adapters with a required field keep `config` required at compile time.
+ */
+export type AdapterConfigOption<C extends z.ZodType> =
+  Record<never, never> extends z.input<C> ? { config?: z.input<C> } : { config: z.input<C> };
 
 export function connectDirect(
   adapter: BoundAdapter,
