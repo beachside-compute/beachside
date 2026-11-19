@@ -1,5 +1,17 @@
 # @beachside/cli
 
+## 0.18.0
+
+### Minor Changes
+
+- [#247](https://github.com/beachside-compute/beachside/pull/247) [`26437cc`](https://github.com/beachside-compute/beachside/commit/26437ccc396b52b4ec463279e37695e5cdb15193) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - `create --with rex` saves the instance as a `rex hosts` label (`rex -S beachside-<name>`) when a local Rex CLI is available, and `rm` removes it again. The Rex app still needs Add Remote Host…, and the connection address is always printed.
+
+### Patch Changes
+
+- Updated dependencies [[`720d4f7`](https://github.com/beachside-compute/beachside/commit/720d4f73b6a8108ac4621407fe5076393fd9b535)]:
+  - @beachside/adapter@0.18.0
+  - beachside@0.18.0
+
 ## 0.17.1
 
 ### Patch Changes
