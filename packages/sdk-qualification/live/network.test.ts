@@ -5,8 +5,7 @@ import { TestResources } from "./fixtures/resources";
 import { liveEnabled, setupLive, finishLive } from "./providers";
 
 export async function networkControls(t: TestResources) {
-  if (t.client.provider === "e2b" && t.imageId !== "base")
-    throw Error("Network controls require the borrowed base template");
+  if (t.imageId !== "base") throw Error("Network controls require the borrowed base template");
 
   const sample = async (box: AdapterSandbox) => {
     const output = await box.exec(
@@ -28,33 +27,22 @@ export async function networkControls(t: TestResources) {
 
   const control = await t.create("network/control", undefined, "internet");
   expect((await sample(control)).every((attempt) => attempt.connected)).toBe(true);
-
-  if (t.client.provider === "upstash-box")
-    expect(await httpsSample(t, control)).toEqual([true, true]);
-
   const blocked = await t.create("network/blocked", undefined, "blocked");
   const denied = await sample(blocked);
-
-  const deniedHttps =
-    t.client.provider === "upstash-box" ? await httpsSample(t, blocked) : undefined;
-
   // Observe the after positive control even when a denied connection unexpectedly succeeds.
   expect((await sample(control)).every((attempt) => attempt.connected)).toBe(true);
-  expect({ tcp: denied, https: deniedHttps }).toEqual({
-    tcp: [
-      {
-        target: "hostname",
-        connected: false,
-        error: expect.stringMatching(/^(timeout|unreachable|denied)$/),
-      },
-      {
-        target: "ipv4",
-        connected: false,
-        error: expect.stringMatching(/^(timeout|unreachable|denied)$/),
-      },
-    ],
-    https: t.client.provider === "upstash-box" ? [false, false] : undefined,
-  });
+  expect(denied).toEqual([
+    {
+      target: "hostname",
+      connected: false,
+      error: expect.stringMatching(/^(timeout|unreachable|denied)$/),
+    },
+    {
+      target: "ipv4",
+      connected: false,
+      error: expect.stringMatching(/^(timeout|unreachable|denied)$/),
+    },
+  ]);
 }
 
 async function httpsSample(t: TestResources, box: AdapterSandbox) {
@@ -85,7 +73,7 @@ const provider = process.env.BEACHSIDE_QUAL_PROVIDER;
 const allow =
   liveEnabled && provider === "upstash-box" && process.env.BEACHSIDE_UPSTASH_NETWORK === "allow";
 
-const enabled = liveEnabled && (provider === "e2b" || provider === "upstash-box");
+const enabled = (liveEnabled && provider === "e2b") || allow;
 const selected = allow ? "network-allowlist" : "network-controls";
 
 describe("Beachside network controls", () => {

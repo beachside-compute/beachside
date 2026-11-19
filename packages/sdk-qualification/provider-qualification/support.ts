@@ -98,7 +98,7 @@ export const upstashBoxSupport: SupportMetadata = {
     },
     network: {
       support: "conditional",
-      note: "The HTTPS allowlist reached the configured public host and denied a second host. Native deny-all still allowed outbound TCP in the paired live test.",
+      note: "The HTTPS allowlist reached the configured public host and denied a second host. Beachside rejects blocked egress because native deny-all still allowed outbound TCP in the paired live test.",
     },
     termination: {
       support: "conditional",

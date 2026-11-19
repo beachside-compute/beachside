@@ -848,7 +848,7 @@ The adapter uses native prepared runtimes on Debian and Alpine.
 
 #### Measured network controls
 
-The HTTPS allowlist reached the configured public host and denied a second host. Native deny-all still allowed outbound TCP in the paired live test.
+The HTTPS allowlist reached the configured public host and denied a second host. Beachside rejects blocked egress because native deny-all still allowed outbound TCP in the paired live test.
 
 <a id="upstash-box-storageComposition"></a>
 

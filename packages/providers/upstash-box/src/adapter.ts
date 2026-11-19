@@ -392,7 +392,7 @@ export function defineUpstashBoxAdapter(origin: string, options: UpstashBoxAdapt
       config: {
         image: { env: "UPSTASH_BOX_IMAGE", choices: Runtime.options },
         boxKind: { env: "UPSTASH_BOX_KIND", choices: BoxKind.options },
-        network: { env: "UPSTASH_BOX_NETWORK", choices: ["internet", "blocked"] },
+        network: { env: "UPSTASH_BOX_NETWORK", choices: ["internet"] },
       },
       docs: "https://beachside.run/docs/providers/upstash-box/",
     },
@@ -408,6 +408,12 @@ export function defineUpstashBoxAdapter(origin: string, options: UpstashBoxAdapt
       if (!ephemeral && config.lifecycle.lifetimeSeconds !== undefined)
         throw new AdapterError("UNSUPPORTED", "Upstash regular boxes have no native lifetime");
 
+      if (config.network === "blocked")
+        throw new AdapterError(
+          "UNSUPPORTED",
+          "Upstash Box deny-all failed live egress verification",
+        );
+
       const size = smallestSize("Upstash Box", SIZES, config.resources ?? {});
       const parsedAllow = allowlistConfig("Upstash Box", config.network);
       throwAllowlistError(parsedAllow);
@@ -416,7 +422,7 @@ export function defineUpstashBoxAdapter(origin: string, options: UpstashBoxAdapt
       if (allowlist) rejectPrivateRanges(allowlist.cidrs);
 
       const defaultPolicy = networkPolicyName(config.network);
-      const policies = allowlist ? ["allow"] : ["internet", "blocked"];
+      const policies = allowlist ? ["allow"] : ["internet"];
 
       const scope: Scope = {
         authority: { kind: "service", id: origin },
@@ -542,7 +548,7 @@ export function defineUpstashBoxAdapter(origin: string, options: UpstashBoxAdapt
                 allowed_domains: [...allowlist.hosts],
                 allowed_cidrs: [...allowlist.cidrs],
               }
-            : { mode: input.networkPolicy === "blocked" ? "deny-all" : "allow-all" };
+            : { mode: "allow-all" };
 
         return {
           size: selectedSize,

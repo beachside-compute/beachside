@@ -543,23 +543,32 @@ test("restores a snapshot by exact ID and reapplies the selected network and TTL
   const client = tracked(
     await Beachside.connect({
       adapter: createUpstashBoxAdapter({ fetch: fixture.fetch }),
-      config: {},
+      config: { network: { allow: ["example.com"] } },
       credentials: { apiKey: "fixture" },
     }),
   );
 
   const box = await client.sandboxes.create();
   const { snapshot } = await box.snapshot();
+  await expect(snapshot.restore({ networkPolicy: "blocked" })).rejects.toMatchObject({
+    code: "UNSUPPORTED",
+    effect: "none",
+  });
+  expect(fixture.counters().create).toBe(1);
 
   const restored = await snapshot.restore({
-    networkPolicy: "blocked",
+    networkPolicy: "allow",
     lifecycle: { lifetimeSeconds: 600 },
   });
 
   const native = fixture.boxes.get(restored.id);
   expect(native?.snapshot_id).toBe(snapshot.id);
   expect(native?.ephemeral).toBe(true);
-  expect(native?.network_policy).toEqual({ mode: "deny-all" });
+  expect(native?.network_policy).toEqual({
+    mode: "custom",
+    allowed_domains: ["example.com"],
+    allowed_cidrs: [],
+  });
   expect(native?.ttl).toBe(600);
   await restored.destroy();
   await box.destroy();
@@ -594,20 +603,27 @@ test("reopen requires evidence of an ephemeral Box when detail omits its class",
   await box.destroy();
 });
 
-test("blocked egress selects the native deny-all policy", async () => {
+test("blocked egress is rejected before allocation", async () => {
   const fixture = apiFixture();
+  const adapter = createUpstashBoxAdapter({ fetch: fixture.fetch });
 
-  const client = tracked(
-    await Beachside.connect({
-      adapter: createUpstashBoxAdapter({ fetch: fixture.fetch }),
+  await expect(
+    Beachside.connect({
+      adapter,
       credentials: { apiKey: "fixture" },
       config: { network: "blocked" },
     }),
+  ).rejects.toMatchObject({ code: "UNSUPPORTED" });
+
+  const client = tracked(
+    await Beachside.connect({ adapter, credentials: { apiKey: "fixture" }, config: {} }),
   );
 
-  const box = await client.sandboxes.create();
-  expect(fixture.boxes.get(box.id)?.network_policy).toEqual({ mode: "deny-all" });
-  await box.destroy();
+  await expect(client.sandboxes.create({ networkPolicy: "blocked" })).rejects.toMatchObject({
+    code: "UNSUPPORTED",
+    effect: "none",
+  });
+  expect(fixture.counters().create).toBe(0);
 });
 
 test("rejects OCI images before allocation", async () => {
