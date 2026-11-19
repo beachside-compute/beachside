@@ -19,6 +19,19 @@ Only explicit network scenario evidence measures egress: the paired probe covers
 
 - Image / authority: oci; unspecified / api-key.
 - Runtime: Bun 1.4.2, darwin-arm64. Native interface: disk SDK 1.12.0.
+- SDK: 0.18.0, commit `7e5f023cc1f6e08dc4717f82e0f90bf190cb39ff`.
+- Fresh-process reopen: not recorded.
+- Harness commit: `7e5f023cc1f6e08dc4717f82e0f90bf190cb39ff`.
+- Evidence: [reviewed record](archil-live-bun-junit-20261119-7e5f023-preview).
+
+| Scenario          | Latest live result | Date       |
+| ----------------- | ------------------ | ---------- |
+| preview-protected | passed             | 2026-11-19 |
+
+### archil-managed-requested · aws-us-east-1 · /tmp
+
+- Image / authority: oci; unspecified / api-key.
+- Runtime: Bun 1.4.2, darwin-arm64. Native interface: disk SDK 1.12.0.
 - SDK: 0.18.0, commit `7e91cbd1aad810d368a22ae86600e76fb7e36728`.
 - Fresh-process reopen: not recorded.
 - Harness commit: `7e91cbd1aad810d368a22ae86600e76fb7e36728`.
@@ -34,19 +47,6 @@ Only explicit network scenario evidence measures egress: the paired probe covers
 | lifecycle-reopen         | passed             | 2026-11-19 |
 | lifecycle-suspend-resume | passed             | 2026-11-19 |
 | sandbox-lifecycle        | passed             | 2026-11-19 |
-
-### archil-managed-requested · aws-us-east-1 · /tmp
-
-- Image / authority: oci; unspecified / api-key.
-- Runtime: Bun 1.4.2, darwin-arm64. Native interface: disk SDK 1.12.0.
-- SDK: 0.18.0, commit `a660cacb2a7d8ee6c6b91caf4ec9d51e30a92830`.
-- Fresh-process reopen: not recorded.
-- Harness commit: `a660cacb2a7d8ee6c6b91caf4ec9d51e30a92830`.
-- Evidence: [reviewed record](archil-live-bun-junit-20261119-a660cac-preview).
-
-| Scenario          | Latest live result | Date       |
-| ----------------- | ------------------ | ---------- |
-| preview-protected | passed             | 2026-11-19 |
 
 ### archil-managed-requested · aws-us-east-1 · /tmp
 

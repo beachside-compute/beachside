@@ -536,6 +536,34 @@
         "testName": "lifecycle-reopen"
       },
       "evidenceRef": "archil-live-bun-junit-20261119-7e91cbd-sandbox"
+    },
+    {
+      "provider": "archil",
+      "sdkCommit": "7e5f023cc1f6e08dc4717f82e0f90bf190cb39ff",
+      "harnessCommit": "7e5f023cc1f6e08dc4717f82e0f90bf190cb39ff",
+      "sdkVersion": "0.18.0",
+      "nativeVersion": "disk SDK 1.12.0",
+      "runtime": "Bun 1.4.2",
+      "platform": "darwin-arm64",
+      "timestamp": "2026-11-19T05:10:58.539Z",
+      "configuration": {
+        "imageClass": "oci",
+        "fileRoot": "/tmp",
+        "authorityClass": "api-key",
+        "network": "archil-managed-requested",
+        "regionClass": "aws-us-east-1"
+      },
+      "schemaVersion": 1,
+      "mode": "live",
+      "scenario": "preview-protected",
+      "status": "passed",
+      "runCleanup": "confirmed",
+      "runner": {
+        "name": "bun:test",
+        "format": "junit",
+        "testName": "preview-protected"
+      },
+      "evidenceRef": "archil-live-bun-junit-20261119-7e5f023-preview"
     }
   ]
 }

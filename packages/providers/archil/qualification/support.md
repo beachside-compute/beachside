@@ -11,7 +11,7 @@ Adapter support and live validation are separate facts. **Supported** means impl
 | ----------------------------------- | ------------------------------------------------------------ |
 | Sandbox lifecycle                   | [Conditional · passed at 7e91cbd1](#archil-lifecycle)        |
 | Native sandbox suspend/resume       | [Conditional · passed at 7e91cbd1](#archil-suspension)       |
-| Protected HTTP preview              | [Conditional · passed at a660cacb](#archil-previewProtected) |
+| Protected HTTP preview              | [Conditional · passed at 7e5f023c](#archil-previewProtected) |
 | Public HTTP preview                 | [Conditional · not-run](#archil-previewPublic)               |
 | Local-handle process termination    | [Conditional · not-run](#archil-termination)                 |
 | Configured lifetime renewal         | [Conditional · passed at 7e91cbd1](#archil-renewal)          |
