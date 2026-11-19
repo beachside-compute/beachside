@@ -956,14 +956,15 @@ export async function connectAdapter<
     policy?: { schema: z.ZodType; default: Json };
   },
   input: {
-    config: z.input<C>;
+    // Left out when every config field is optional; validated as `{}`.
+    config?: z.input<C>;
     credentials: z.input<K>;
     // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Cleanup callbacks may throw any JavaScript value; diagnostics preserve that value.
     onDiagnostic?: (error: unknown) => void;
     signal?: AbortSignal;
   },
 ): Promise<AdapterConnection<S>> {
-  const config = parseBoundedSchema(definition.config, input.config, "configuration");
+  const config = parseBoundedSchema(definition.config, input.config ?? {}, "configuration");
   const credentials = parseBoundedSchema(definition.credentials, input.credentials, "credentials");
   const controller = new AbortController();
   const releases: (() => void | Promise<void>)[] = [];
