@@ -4,7 +4,7 @@ import { liveEnabled, setupLive, finishLive, featureSupported } from "./provider
 
 const provider = process.env.BEACHSIDE_QUAL_PROVIDER ?? "daytona";
 
-const access = provider === "daytona" ? "protected" : "public";
+const access = ["daytona", "archil"].includes(provider) ? "protected" : "public";
 
 const enabled =
   liveEnabled &&
@@ -13,7 +13,8 @@ const enabled =
     (provider === "boxd" &&
       featureSupported("previewPublic") &&
       process.env.BEACHSIDE_BOXD_PREVIEW_ACCESS === "public") ||
-    (provider === "freestyle" && featureSupported("previewPublic")));
+    (provider === "freestyle" && featureSupported("previewPublic")) ||
+    (provider === "archil" && featureSupported("previewProtected")));
 
 describe("Beachside native HTTP preview", () => {
   let fixture: Awaited<ReturnType<typeof setupLive>> | undefined;
