@@ -1,5 +1,15 @@
 # @beachside/archil
 
+## 0.19.0
+
+### Patch Changes
+
+- [#256](https://github.com/beachside-compute/beachside/pull/256) [`8533a40`](https://github.com/beachside-compute/beachside/commit/8533a4058ba0637536ce50f3035bc53715093dc2) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Archil is now a supported provider, out of experimental in the docs and on the landing page, after passing Beachside's live qualification on the Free plan. `makeDirectory` on an existing file now rejects with INVALID_ARGUMENT and no effect, recursive or not, instead of an unknown outcome. `renew()` and `resume()` now report the new session deadline, which Archil itself does not return.
+
+- [#254](https://github.com/beachside-compute/beachside/pull/254) [`519d61a`](https://github.com/beachside-compute/beachside/commit/519d61ae9a27be2b0fdc148fdaf63c00b2f9a682) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - READMEs: E2B, Freestyle and Archil no longer describe an API-key fingerprint in scope (removed in 0.18.0), and the SDK reopen example shows the fresh `Beachside.connect` call.
+- Updated dependencies [[`27307c6`](https://github.com/beachside-compute/beachside/commit/27307c618714fa6103901f8f31136faee3ffa3ff), [`49fec49`](https://github.com/beachside-compute/beachside/commit/49fec49fa4c7e7cc4d65dfee56cc6e78efe53a62)]:
+  - @beachside/adapter@0.19.0
+
 ## 0.18.0
 
 ### Minor Changes
