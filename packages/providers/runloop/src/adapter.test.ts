@@ -876,3 +876,39 @@ test("command ids are RFC 9562 UUIDv7 values", () => {
 
   expect(id).toMatch(/^01234567-89ab-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
 });
+
+test("SSH targets mint a devbox key and route through the TLS gateway with the devbox host as SNI", async () => {
+  const { fixture, connect } = setup();
+  const client = await connect();
+
+  try {
+    expect((await client.capabilities()).ssh).toMatchObject({
+      status: "supported",
+      value: { auth: "privateKey", publicKey: "unused", proxy: "tls" },
+    });
+    expect(fixture.sshKeys()).toBe(0);
+    const box = await client.sandboxes.create();
+    expect(await box.sshTarget()).toEqual({
+      host: `${box.id}.ssh.runloop.ai`,
+      port: 22,
+      username: "user",
+      auth: {
+        method: "privateKey",
+        privateKey:
+          "-----BEGIN OPENSSH PRIVATE KEY-----\nkey-1\n-----END OPENSSH PRIVATE KEY-----\n",
+      },
+      proxy: {
+        kind: "tls",
+        host: "ssh.runloop.ai",
+        port: 443,
+        serverName: `${box.id}.ssh.runloop.ai`,
+      },
+    });
+    expect(JSON.stringify(box.reference)).not.toContain("PRIVATE KEY");
+    await box.destroy();
+    await expect(box.sshTarget()).rejects.toMatchObject({ code: "NOT_FOUND" });
+    expect(fixture.sshKeys()).toBe(1);
+  } finally {
+    await client.close();
+  }
+});

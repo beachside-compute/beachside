@@ -47,6 +47,10 @@ Both kinds accept create-time env. Upstash reserves system variables such as `PA
 - Regular previews default to protected access. Set `preview: { access: "public" }` for an unauthenticated HTTPS route. A public lookup reuses an existing public route. Requesting a protected route again rotates its bearer token and invalidates previously returned headers for that port. The adapter rejects a different access mode in the observed route and requires a running box at the readiness check. Upstash can resume a paused box on traffic to an existing route or if the box pauses during publication.
 - Up to four user labels fit alongside a correlation marker. Each encoded `key:value` must fit Upstash's 20-character limit and use letters, digits, periods, underscores, colons or hyphens. Colons in keys and the reserved `bs:` prefix are unsupported.
 
+## SSH
+
+`box.sshTarget()` returns the Box SSH gateway with the box ID as the username and your Box API key as the password, so the target carries an account-wide credential. SSH keys added in the Upstash Console also work. See [SSH access](/docs/guides/ssh-access/).
+
 ## Recovery and snapshots
 
 Saved Beachside references reopen the exact Box ID with a currently authorized key. Inventory lists boxes visible to the key. Entries with evidence of the selected class have borrowed references. An uncertain mutation is observed without replay.

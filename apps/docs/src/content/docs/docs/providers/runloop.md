@@ -59,6 +59,10 @@ Everything below is tested against a simulated Runloop API on every change. **No
 | Previews          | `preview(port)` returns the Devbox tunnel URL for that port, created with the Devbox.                                               | No          |
 | Unsupported       | OCI images and image builds, volumes, mounts, renewal, piped input, byte streaming, terminals, directory operations and regions.    | —           |
 
+## SSH
+
+`box.sshTarget()` asks Runloop for a new key pair on the devbox and returns its private key, user and host, plus the TLS gateway (`ssh.runloop.ai:443`) to run SSH through, for example with `ProxyCommand openssl s_client -quiet -servername %h -connect ssh.runloop.ai:443`. Runloop publishes no host key. See [SSH access](/docs/guides/ssh-access/).
+
 ## How streamed commands work
 
 `processes.start({ output: { mode: "stream" } })` starts the command with Runloop's `execute`, with no deadline and stdin from `/dev/null`. Output comes from Runloop's server-sent `stream_stdout_updates` and `stream_stderr_updates` endpoints as UTF-8 text with byte offsets; a stream that closes while the command is still running, or a dropped connection, is reopened from its offset. Exit comes from Runloop's status long-poll. If the log streams have not closed 10 seconds after exit, the output is reported incomplete. Byte output (`format: "bytes"`) and callback exec are not supported. `terminate()` kills the execution through Runloop; `detach()` leaves it running.

@@ -1625,6 +1625,58 @@ export function createBoxdAdapter(
             return startBoxdProcess(native, input, ctx);
           },
         },
+        ssh: {
+          supports: {
+            auth: "publicKey",
+            publicKey: "optional",
+            scope: "account",
+            hostKeys: true,
+            expires: false,
+            proxy: "none",
+          },
+          async target(input, ctx) {
+            const machine = await requireRunning(input.sandbox, ctx);
+
+            if (!machine.ssh)
+              throw new AdapterError(
+                "CONFLICT",
+                "SSH is off for this boxd machine; turn it on with `boxd machine ssh on`",
+              );
+
+            if (machine.access.sshPort === null)
+              throw new AdapterError("UNAVAILABLE", "boxd has not allocated an SSH port yet");
+
+            // Every machine's SSH ends at the region's proxy, which presents one host key.
+            let hostKey: string | undefined;
+
+            await native.run(
+              {
+                ...ctx,
+                onSshHostKey: (line) => {
+                  hostKey = line;
+                },
+              },
+              () => native.machines.list({ org: org.slug }),
+            );
+
+            if (!hostKey) throw new AdapterError("UNAVAILABLE", "boxd sent no SSH host key");
+
+            // Linking is idempotent and account-wide: the key reaches every machine the account can.
+            if (input.publicKey)
+              await native.run(ctx, () => native.account.linkSshKey({ pubkey: input.publicKey! }));
+
+            if (!/^[a-z0-9-]+$/.test(machine.name))
+              throw new AdapterError("CONFLICT", "boxd machine name is not a usable SSH host");
+
+            return {
+              host: `${machine.name}.${zone}`,
+              port: machine.access.sshPort,
+              username: "boxd",
+              auth: { method: "publicKey" },
+              hostKeys: [hostKey.trim().split(/\s+/).slice(0, 2).join(" ")],
+            };
+          },
+        },
         async preview(input, ctx) {
           if (config.preview.access !== "public")
             throw new AdapterError(

@@ -27,6 +27,7 @@ import {
   type ResourceReference,
   type SnapshotInfo,
   type SnapshotProfile,
+  type SshTarget,
   type SandboxResources,
   type AdapterSession,
   type AttemptContext,
@@ -214,6 +215,7 @@ type Native = Pick<
   | "create"
   | "get"
   | "sandboxes"
+  | "sshKey"
   | "deleteSandbox"
   | "getDeletionOperation"
   | "command"
@@ -819,6 +821,49 @@ export function createBoatAdapter(options: BoatAdapterOptions = {}) {
             throw new AdapterError("UNAVAILABLE", "Boat did not return a public URL for that port");
 
           return PreviewResult.parse({ access: "public", url: hosted.url });
+        },
+        ssh: {
+          supports: {
+            auth: "publicKey",
+            publicKey: "required",
+            scope: "sandbox",
+            hostKeys: false,
+            expires: false,
+            proxy: "none",
+          },
+          async target(input, ctx) {
+            await requireRunning(input.sandbox, ctx);
+
+            // Authorizing is per sandbox and idempotent for the same key.
+            const access = await read(ctx, (request) =>
+              native.sshKey(
+                { sandboxId: input.sandbox.id, sshKeyRequest: { key: input.publicKey! } },
+                request,
+              ),
+            );
+
+            const endpoint = /^([A-Za-z0-9.-]+):(\d{1,5})$/.exec(access.sshEndpoint ?? "");
+            const host = endpoint?.[1] ?? access.machineIp ?? "";
+            const user = access.sshUser || "user";
+
+            if (!access.ok || !/^[A-Za-z0-9.:-]+$/.test(host) || !/^[a-z_][a-z0-9_-]*$/.test(user))
+              throw new AdapterError("UNAVAILABLE", "Boat did not return an SSH address");
+
+            const hostKey = access.hostKey?.trim().split(/\s+/).slice(0, 2).join(" ");
+
+            const target: SshTarget = {
+              host,
+              port: endpoint ? Number(endpoint[2]) : 22,
+              username: user,
+              auth: { method: "publicKey" },
+            };
+
+            // Boat may omit the host key; send it only when it is a well-formed OpenSSH line.
+            if (hostKey && /^[a-z0-9@.-]+ [A-Za-z0-9+/]+={0,2}$/.test(hostKey))
+              target.hostKeys = [hostKey];
+
+            return target;
+          },
         },
         supports: {
           images: ["prepared"],

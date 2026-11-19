@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { AdapterError } from "./errors";
 import { LifetimeLimits, lifetimeProblem } from "./lifetime";
+import { SshCapabilitiesSchema, type SshCapabilities } from "./ssh";
 import type { CreateInput, ReadContext, RuntimeSession, Sandbox } from "./index";
 
 export const ResourceKind = z.enum([
@@ -1138,6 +1139,8 @@ export const DirectCapabilities = z.strictObject({
   volumes: supportSchema(VolumeCapabilities),
   mounts: supportSchema(MountCapabilities).optional(),
   fork: supportSchema(ForkCapabilities).optional(),
+  /** Native SSH targets from `sandbox.sshTarget()`; absent in reports from older SDKs. */
+  ssh: supportSchema(SshCapabilitiesSchema).optional(),
   suspension: supportSchema(
     z.strictObject({
       preserve: PreserveSchema,
@@ -1149,9 +1152,13 @@ export const DirectCapabilities = z.strictObject({
 
 export type DirectCapabilities = Omit<
   z.infer<typeof DirectCapabilities>,
-  "snapshots" | "volumes" | "suspension" | "imageManagement"
+  "snapshots" | "volumes" | "suspension" | "imageManagement" | "ssh"
 > &
-  Omit<StateCapabilities, "mounts"> & { mounts?: Support<MountCapabilities> };
+  Omit<StateCapabilities, "mounts"> & {
+    mounts?: Support<MountCapabilities>;
+    /** Whether `sandbox.sshTarget()` returns native SSH targets on this connection. */
+    ssh: Support<SshCapabilities>;
+  };
 
 export const Capabilities = z.strictObject({
   commands: z.array(z.enum(["argv", "shell"])),

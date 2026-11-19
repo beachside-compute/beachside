@@ -810,6 +810,37 @@ export function defineUpstashBoxAdapter(origin: string, options: UpstashBoxAdapt
         defaultNetworkPolicy: defaultPolicy,
         ...snapshots,
         snapshotRestore,
+        ssh: {
+          // The Box gateway takes the API key as the password; account keys from the console also work.
+          supports: {
+            auth: "password",
+            publicKey: "unused",
+            scope: "account",
+            hostKeys: false,
+            expires: false,
+            proxy: "none",
+          },
+          async target(input, ctx) {
+            const id = locator(input.sandbox);
+            const { status } = await detail(id, ctx.signal);
+
+            if (status === "deleted")
+              throw new AdapterError("NOT_FOUND", "Upstash Box was deleted");
+
+            if (status === "paused")
+              throw new AdapterError("CONFLICT", "Resume the Upstash Box before opening SSH");
+
+            if (status !== "idle" && status !== "running")
+              throw new AdapterError("UNAVAILABLE", "Upstash Box is not running yet");
+
+            return {
+              host: new URL(origin).hostname,
+              port: 22,
+              username: id,
+              auth: { method: "password", password: credentials.apiKey },
+            };
+          },
+        },
         processes: {
           ...processes.processes,
           async start(input, ctx) {

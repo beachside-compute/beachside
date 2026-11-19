@@ -98,6 +98,10 @@ Public previews are the default. To route more ports, set `preview: { access: "p
 
 With `preview: { access: "protected" }`, preview lookup fails as unsupported. This does not make boxd's own ingress private: native traffic can still reach or wake a machine. See [preview access](/docs/guides/preview-access/).
 
+## SSH
+
+`box.sshTarget()` returns the machine's port on the boxd SSH proxy, user `boxd`, and the proxy's host key. It authenticates with an SSH key linked to your boxd account; `sshTarget({ publicKey })` links that key first, which lets it reach every machine your account can. A machine with SSH turned off is refused. See [SSH access](/docs/guides/ssh-access/).
+
 ## Snapshots
 
 `box.snapshot()` always saves memory and disk together; boxd has no filesystem-only capture, so `snapshots: { preserve: Preserve.FILESYSTEM }` fails at connect. boxd pauses the machine briefly and it keeps running; a restored machine resumes the captured processes under a new ID, with its own name, URL and private IP. Processes that cached the old hostname or address keep the stale value.

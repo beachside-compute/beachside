@@ -4,6 +4,16 @@ import { z } from "zod";
 /** Fixed Runloop API origin; it is not a project-controlled setting. */
 export const RUNLOOP_API = "https://api.runloop.ai";
 
+/** The TLS gateway SSH runs through, with the devbox's SSH host as SNI (as `rli devbox ssh` does). */
+export const RUNLOOP_SSH_GATEWAY = { host: "ssh.runloop.ai", port: 443 } as const;
+
+const SshKey = z.object({
+  id: z.string(),
+  ssh_private_key: z.string().min(1).max(16384),
+  ssh_user: z.string().min(1).max(64),
+  url: z.string().min(1).max(253),
+});
+
 /** Largest JSON response body the adapter accepts, before decoding. */
 export const MAX_RESPONSE_BYTES = 16 * 1024 * 1024;
 
@@ -375,6 +385,9 @@ export function createRunloopClient(apiKey: string, fetch: Fetch = globalThis.fe
       json(Devbox, "POST", `/v1/devboxes/${encode(id)}/suspend`, signal),
     resume: (id: string, signal: AbortSignal) =>
       json(Devbox, "POST", `/v1/devboxes/${encode(id)}/resume`, signal),
+    /** Installs a fresh key on the devbox and returns its private half; never log the answer. */
+    createSshKey: (id: string, signal: AbortSignal) =>
+      json(SshKey, "POST", `/v1/devboxes/${encode(id)}/create_ssh_key`, signal),
     execute: (
       id: string,
       body: { command: string; command_id: string; optimistic_timeout: number },

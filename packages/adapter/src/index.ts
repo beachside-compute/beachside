@@ -71,6 +71,8 @@ export * from "./lifetime";
 
 export * from "./preview";
 
+export * from "./ssh";
+
 export type CreateInput = {
   image: Image;
   networkPolicy: string;
@@ -503,6 +505,17 @@ export type AdapterSession<
     input: { sandbox: Sandbox; port: number },
     ctx: ReadContext,
   ) => Promise<import("./preview").Preview>;
+  /**
+   * Native SSH access to a running sandbox. `supports` is reported by `capabilities()` without a
+   * provider call; `target` may mint credentials and must never persist them.
+   */
+  ssh?: {
+    supports: import("./ssh").SshCapabilities;
+    target(
+      input: { sandbox: Sandbox; publicKey?: string },
+      ctx: ReadContext,
+    ): Promise<import("./ssh").SshTarget>;
+  };
   processes?: {
     /** Additive behavior declarations; absence retains the finite, closed-input contract. */
     supports?: {

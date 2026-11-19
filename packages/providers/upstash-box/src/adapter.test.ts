@@ -858,3 +858,29 @@ for (const acknowledged of [true, false]) {
     expect(fixture.counters().destroy).toBe(1);
   });
 }
+
+test("SSH targets use the Box gateway with the box ID and the API key as password", async () => {
+  const fixture = apiFixture();
+  const adapter = createUpstashBoxAdapter({ fetch: fixture.fetch });
+  const client = tracked(await Beachside.connect({ adapter, credentials: { apiKey: "fixture" } }));
+
+  expect((await client.capabilities()).ssh).toMatchObject({
+    status: "supported",
+    value: { auth: "password", publicKey: "unused", scope: "account" },
+  });
+
+  const box = await client.sandboxes.create();
+  expect(await box.sshTarget()).toEqual({
+    host: new URL(ORIGIN).hostname,
+    port: 22,
+    username: box.id,
+    auth: { method: "password", password: "fixture" },
+  });
+  expect(JSON.stringify(box.reference)).not.toContain('fixture"');
+
+  fixture.boxes.get(box.id)!.status = "paused";
+  await expect(box.sshTarget()).rejects.toMatchObject({ code: "CONFLICT" });
+  fixture.boxes.get(box.id)!.status = "idle";
+  await box.destroy();
+  await expect(box.sshTarget()).rejects.toMatchObject({ code: "NOT_FOUND" });
+});
