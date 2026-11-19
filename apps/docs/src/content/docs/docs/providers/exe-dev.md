@@ -88,7 +88,7 @@ exe.dev runs one shell command line per `ssh <vm> <command>` request and returns
 
 ## SSH
 
-exe.dev is reached over SSH by host name. `box.sshTarget()` returns the VM's `ssh_dest`, `<vm>.exe.xyz` on port 22, and authenticates with the SSH keys already on your exe.dev account; it adds no key, so `publicKey` is ignored. exe.dev maps any username to the VM's default user, so the target reports `user` unless exe.dev names one. Account keys reach every VM the account can, and exe.dev publishes no per-VM host key. See [SSH access](/docs/guides/ssh-access/).
+exe.dev is reached over SSH by host name. `box.sshTarget()` returns the VM's `ssh_dest`, `<vm>.exe.xyz` on port 22, and authenticates with the SSH keys already on your exe.dev account; it adds no key, so `publicKey` is ignored. exe.dev maps any username to the VM's default user (`exedev` on `exeuntu`), so the target reports `user` as a placeholder unless exe.dev names one. Account keys reach every VM the account can, and exe.dev publishes no per-VM host key. See [SSH access](/docs/guides/ssh-access/).
 
 ## Destroy and recovery
 
