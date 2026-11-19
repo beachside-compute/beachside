@@ -81,7 +81,12 @@ describe("Beachside native HTTP preview", () => {
       expect(ready).toBe(true);
 
       if (preview.access === "protected") {
-        for (const auth of [undefined, { "x-daytona-preview-token": "invalid-token" }]) {
+        // A wrong value under each header the provider returned, so the check covers its own token.
+        const invalid = Object.fromEntries(
+          Object.keys(preview.headers).map((name) => [name, "invalid-token"]),
+        );
+
+        for (const auth of [undefined, invalid]) {
           const denied = await fetch(preview.url, {
             headers: auth,
             redirect: "manual",

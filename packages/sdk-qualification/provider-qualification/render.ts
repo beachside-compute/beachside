@@ -55,7 +55,7 @@ const reports = await Promise.all(
   }),
 );
 
-// Experimental official adapters keep their results beside their own packages.
+// boxd, Freestyle, Archil and the experimental official adapters keep their results beside their own packages.
 const packageReports = external
   ? []
   : await Promise.all(

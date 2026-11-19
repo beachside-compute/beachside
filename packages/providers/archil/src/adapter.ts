@@ -333,6 +333,8 @@ const DestroyToken = z.strictObject({
 const LifecycleToken = z.strictObject({
   id: Id,
   action: z.enum(["pause", "stop", "resume", "start"]),
+  /** When a resume or start was sent; its new session's deadline counts from here. */
+  sentAt: z.number().int().nonnegative().optional(),
 });
 
 const CaptureToken = z.strictObject({
@@ -1767,13 +1769,25 @@ export function createArchilAdapter(options: ArchilAdapterOptions = {}) {
         observation: observation(wire, reference),
       });
 
-      const resumed = (wire: Wire, reference: SandboxReference, action: "resume" | "start") => ({
-        reference,
-        execution: action === "resume" ? ("resumed" as const) : ("fresh" as const),
-        executionIdentity: unknownSandboxFacts().execution,
-        connections: "dropped" as const,
-        observation: observation(wire, reference),
-      });
+      /** The new session's budget runs from the resume or start sent at `sentAt`, when known. */
+      const resumed = (
+        wire: Wire,
+        reference: SandboxReference,
+        action: "resume" | "start",
+        sentAt?: number,
+      ) => {
+        const info = observation(wire, reference);
+        const budget = wire.max_ttl_seconds;
+
+        return {
+          reference,
+          execution: action === "resume" ? ("resumed" as const) : ("fresh" as const),
+          executionIdentity: unknownSandboxFacts().execution,
+          connections: "dropped" as const,
+          observation:
+            sentAt !== undefined && budget && budget > 0 ? renewed(info, sentAt, budget) : info,
+        };
+      };
 
       const session: AdapterSession<
         CreateInput,
@@ -2419,9 +2433,8 @@ export function createArchilAdapter(options: ArchilAdapterOptions = {}) {
 
             // A paused sandbox resumes its memory; `start` would discard it.
             const action = wire.status === "paused" ? "resume" : "start";
-            const token = { id: Id.parse(input.sandbox.id), action } as const;
+            const token = { id: Id.parse(input.sandbox.id), action, sentAt: Date.now() } as const;
             await ctx.checkpoint(token);
-            const sent = Date.now();
 
             try {
               await send("POST", sandboxPath(token.id, `/${action}`), undefined, ctx.signal, 120);
@@ -2439,13 +2452,7 @@ export function createArchilAdapter(options: ArchilAdapterOptions = {}) {
               if (result?.wire) {
                 held.delete(token.id);
 
-                const value = resumed(result.wire, input.sandbox.reference, action);
-                // The new session's budget runs from the resume or start this call just sent.
-                const budget = result.wire.max_ttl_seconds;
-
-                return budget && budget > 0
-                  ? { ...value, observation: renewed(value.observation, sent, budget) }
-                  : value;
+                return resumed(result.wire, input.sandbox.reference, action, token.sentAt);
               }
             } catch {
               /* The request is acknowledged; readiness continues through observation. */
@@ -2471,7 +2478,7 @@ export function createArchilAdapter(options: ArchilAdapterOptions = {}) {
             if (wire.status === "running") {
               held.delete(wire.sandbox_id);
 
-              return resumed(wire, box.reference, token.data.action);
+              return resumed(wire, box.reference, token.data.action, token.data.sentAt);
             }
 
             return wire.status === "pending" ||
