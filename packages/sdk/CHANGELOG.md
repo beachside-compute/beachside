@@ -1,5 +1,19 @@
 # beachside
 
+## 0.19.0
+
+### Minor Changes
+
+- [#257](https://github.com/beachside-compute/beachside/pull/257) [`49fec49`](https://github.com/beachside-compute/beachside/commit/49fec49fa4c7e7cc4d65dfee56cc6e78efe53a62) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add provider-native SSH targets. `client.capabilities().ssh` reports whether the adapter returns them, without contacting the provider, and `box.sshTarget({ publicKey? })` resolves host, port, username, authentication, host keys, TLS proxy and expiry for a running sandbox. boxd, Daytona, Upstash Box, Freestyle, exe.dev, Boat and Runloop implement it; adapters without the hook report `unsupported`.
+
+### Patch Changes
+
+- [#254](https://github.com/beachside-compute/beachside/pull/254) [`27307c6`](https://github.com/beachside-compute/beachside/commit/27307c618714fa6103901f8f31136faee3ffa3ff) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - `Beachside.connect` no longer needs `config: {}` when every field of the adapter's config is optional (E2B, Freestyle and others); a left-out `config` is validated as `{}`. Adapters with a required config field still require `config` at compile time, and a missing field is named in the error (`Invalid configuration: target`) instead of a bare `Invalid configuration`.
+
+- [#254](https://github.com/beachside-compute/beachside/pull/254) [`519d61a`](https://github.com/beachside-compute/beachside/commit/519d61ae9a27be2b0fdc148fdaf63c00b2f9a682) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - READMEs: E2B, Freestyle and Archil no longer describe an API-key fingerprint in scope (removed in 0.18.0), and the SDK reopen example shows the fresh `Beachside.connect` call.
+- Updated dependencies [[`27307c6`](https://github.com/beachside-compute/beachside/commit/27307c618714fa6103901f8f31136faee3ffa3ff), [`49fec49`](https://github.com/beachside-compute/beachside/commit/49fec49fa4c7e7cc4d65dfee56cc6e78efe53a62)]:
+  - @beachside/adapter@0.19.0
+
 ## 0.18.0
 
 ### Patch Changes
