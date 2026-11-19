@@ -315,8 +315,16 @@ test("suspend pauses with memory, resume resumes it, and renew sends a session t
     expect(suspended).toMatchObject({ preserve: "filesystem+memory", processes: "preserved" });
     expect(fixture.sandboxes.get(box.id)?.status).toBe("paused");
 
+    const resuming = Date.now();
     const resumed = await box.resume();
     expect(resumed).toMatchObject({ execution: "resumed" });
+    // The new session's budget counts from the resume.
+    const budget = fixture.sandboxes.get(box.id)!.maxTtl * 1000;
+    expect(resumed.observation.expires).toMatchObject({ status: "known", action: "suspend" });
+
+    if (resumed.observation.expires.status !== "known") throw Error("Resume deadline unknown");
+    expect(Date.parse(resumed.observation.expires.at)).toBeGreaterThanOrEqual(resuming + budget);
+    expect(Date.parse(resumed.observation.expires.at)).toBeLessThanOrEqual(Date.now() + budget);
     expect(fixture.sandboxes.get(box.id)?.status).toBe("running");
 
     const before = Date.now();

@@ -784,7 +784,7 @@ export function createArchilAdapter(options: ArchilAdapterOptions = {}) {
             : { status: "unknown", reason: "Archil did not report the sandbox size" },
       });
 
-      /** A running sandbox's deadline right after a timeout update this adapter just sent. */
+      /** A running sandbox's deadline right after a timeout, resume or start this adapter sent. */
       const renewed = (info: SandboxInfo, sent: number, seconds: number): SandboxInfo =>
         info.state === "running"
           ? {
@@ -2421,6 +2421,7 @@ export function createArchilAdapter(options: ArchilAdapterOptions = {}) {
             const action = wire.status === "paused" ? "resume" : "start";
             const token = { id: Id.parse(input.sandbox.id), action } as const;
             await ctx.checkpoint(token);
+            const sent = Date.now();
 
             try {
               await send("POST", sandboxPath(token.id, `/${action}`), undefined, ctx.signal, 120);
@@ -2438,7 +2439,13 @@ export function createArchilAdapter(options: ArchilAdapterOptions = {}) {
               if (result?.wire) {
                 held.delete(token.id);
 
-                return resumed(result.wire, input.sandbox.reference, action);
+                const value = resumed(result.wire, input.sandbox.reference, action);
+                // The new session's budget runs from the resume or start this call just sent.
+                const budget = result.wire.max_ttl_seconds;
+
+                return budget && budget > 0
+                  ? { ...value, observation: renewed(value.observation, sent, budget) }
+                  : value;
               }
             } catch {
               /* The request is acknowledged; readiness continues through observation. */
