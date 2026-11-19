@@ -36,7 +36,7 @@ Set `boxKind: "regular"` for HTTP previews and explicit pause and resume. Regula
 
 Select a prepared `image` from `node`, `python`, `golang`, `ruby`, `rust` and their `-alpine` variants. The default is Debian `node`. Set `resources` to select the smallest Upstash size that meets your CPU and memory requirements. The default is small (2 vCPUs, 4 GiB). Your account controls size availability.
 
-Both kinds accept create-time env. Upstash reserves system variables such as `PATH`, `HOME` and `NODE_OPTIONS`. The adapter rejects those names. Network defaults to `"internet"`. Configure an allowlist with `network: { allow: ["api.example.com"] }`. Custom policy can still resolve unlisted names over DNS. Upstash blocks private ranges. Beachside rejects `network: "blocked"` because the outbound TCP probes succeeded under native `deny-all`. See the [native matching rules](https://upstash.com/docs/box/overall/network-policy#matching-rules).
+Both kinds accept create-time env. Upstash reserves system variables such as `PATH`, `HOME` and `NODE_OPTIONS`. The adapter rejects those names. Network defaults to `"internet"`. Configure an allowlist with `network: { allow: ["api.example.com"] }`. Custom policy can still resolve unlisted names over DNS. Upstash blocks private ranges. Under native `deny-all`, the TCP probes connected and the separate HTTPS probe to `beachside.run` stopped at TLS without receiving an HTTP response. Beachside rejects `network: "blocked"` pending verification of broader outbound isolation. See the [native matching rules](https://upstash.com/docs/box/overall/network-policy#matching-rules).
 
 ## Commands, files and previews
 
