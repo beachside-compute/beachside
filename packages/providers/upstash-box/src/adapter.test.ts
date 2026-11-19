@@ -68,6 +68,7 @@ function apiFixture() {
   data.set([0, 0xff, 0x80, 0x29], RANGE_BYTES - 2);
   let creates = 0;
   let destroys = 0;
+  let mkdirRequests = 0;
   let next: "normal" | "lost" | "held" = "normal";
   let ttlOverride: number | undefined;
   let failReadinessCheck = false;
@@ -168,8 +169,19 @@ function apiFixture() {
       }
 
       if (path[4] === "files") {
-        if (path[5] === "stat")
+        if (path[5] === "stat") {
+          if (target.searchParams.get("path") === "/workspace/home/new-directory")
+            return new Response(null, { status: 404 });
+
           return Response.json({ type: "file", size: data.length, version: fileVersion });
+        }
+
+        if (path[5] === "mkdir") {
+          expect(request.method).toBe("POST");
+          mkdirRequests++;
+
+          return new Response(null, { status: 500 });
+        }
 
         if (path[5] === "read") {
           const offset = Number(target.searchParams.get("offset"));
@@ -241,6 +253,7 @@ function apiFixture() {
     data,
     ranges,
     counters: () => ({ create: creates, destroy: destroys, release: 0 }),
+    mkdirRequests: () => mkdirRequests,
     loseNextCreateResponse() {
       next = "lost";
     },
@@ -614,6 +627,31 @@ test("rejects a private egress range before sending the API key", async () => {
     }),
   ).rejects.toMatchObject({ code: "UNSUPPORTED" });
   expect(contacted).toBe(false);
+});
+
+test("mkdir rejects a known file collision before dispatch and preserves uncertain outcomes", async () => {
+  const fixture = apiFixture();
+
+  const client = tracked(
+    await Beachside.connect({
+      adapter: createUpstashBoxAdapter({ fetch: fixture.fetch }),
+      config: {},
+      credentials: { apiKey: "fixture" },
+    }),
+  );
+
+  const box = await client.sandboxes.create();
+
+  await expect(
+    box.makeDirectory("/workspace/home/data", { recursive: true }),
+  ).rejects.toMatchObject({ code: "INVALID_ARGUMENT", effect: "none" });
+  expect(fixture.mkdirRequests()).toBe(0);
+
+  await expect(
+    box.makeDirectory("/workspace/home/new-directory", { recursive: true }),
+  ).rejects.toMatchObject({ code: "OUTCOME_UNKNOWN" });
+  expect(fixture.mkdirRequests()).toBe(1);
+  await box.destroy();
 });
 
 test("streams binary files past the native range ceiling and rejects a changed file", async () => {

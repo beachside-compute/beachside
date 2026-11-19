@@ -374,28 +374,41 @@ export function boxFiles(
     async exists(input: PathInput, { signal }: ReadContext) {
       return (await maybeStat(input, signal)) !== null;
     },
-    async makeDirectory(input: FileMutationInput, ctx: AttemptContext) {
-      const { sandbox, path, recursive } = input;
-      const id = identify(sandbox);
+    makeDirectory: {
+      async prepare(input: FileMutationInput, { signal }: ReadContext) {
+        const existing = await maybeStat(input, signal, true);
 
-      try {
-        await transport.empty(`${boxPath(id)}/files/mkdir`, ctx.signal, "POST", {
-          path,
-          parents: recursive,
-        });
-      } catch (error) {
-        if (!(error instanceof BoxHttpError) || ![400, 404, 409, 422].includes(error.status)) {
-          if (definitiveRefusal(error)) return ctx.reject(error.code, error.message);
+        if (existing && existing.type !== "directory")
+          throw new AdapterError(
+            "INVALID_ARGUMENT",
+            "The directory path is occupied by a non-directory entry",
+          );
 
-          return ctx.unknown("Upstash Box did not acknowledge directory creation");
+        return input;
+      },
+      async submit(input: FileMutationInput, ctx: AttemptContext) {
+        const { sandbox, path, recursive } = input;
+        const id = identify(sandbox);
+
+        try {
+          await transport.empty(`${boxPath(id)}/files/mkdir`, ctx.signal, "POST", {
+            path,
+            parents: recursive,
+          });
+        } catch (error) {
+          if (!(error instanceof BoxHttpError) || ![400, 404, 409, 422].includes(error.status)) {
+            if (definitiveRefusal(error)) return ctx.reject(error.code, error.message);
+
+            return ctx.unknown("Upstash Box did not acknowledge directory creation");
+          }
+
+          const existing = await maybeStat(input, ctx.signal, true).catch(() => null);
+
+          if (existing?.type !== "directory") return ctx.reject(error.code, error.message);
         }
 
-        const existing = await maybeStat(input, ctx.signal, true).catch(() => null);
-
-        if (existing?.type !== "directory") return ctx.reject(error.code, error.message);
-      }
-
-      return { acknowledged: true as const };
+        return { acknowledged: true as const };
+      },
     },
     async remove(input: FileMutationInput, ctx: AttemptContext) {
       const { sandbox, path, recursive } = input;

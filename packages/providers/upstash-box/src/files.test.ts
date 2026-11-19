@@ -2,6 +2,7 @@ import {
   AdapterError,
   createAttemptContext,
   type ExecValue,
+  type FileMutationInput,
   type FileTransferContext,
 } from "@beachside/adapter";
 import { expect, test } from "bun:test";
@@ -246,6 +247,8 @@ async function fixture() {
     },
   );
 
+  const read = { signal, deadline: Date.now() + 30000 };
+
   return {
     dir,
     files,
@@ -266,7 +269,10 @@ async function fixture() {
     failRmdir: (mode: NonNullable<typeof failedRmdir>) => {
       failedRmdir = mode;
     },
-    read: { signal, deadline: Date.now() + 30000 },
+    read,
+    async makeDirectory(input: FileMutationInput) {
+      return files.makeDirectory.submit(await files.makeDirectory.prepare(input, read), attempt);
+    },
     path: (name: string) => ({ sandbox, path: join(dir, name) }),
     [Symbol.asyncDispose]: () => rm(dir, { recursive: true, force: true }),
   };
@@ -282,10 +288,10 @@ test("native filesystem primitives preserve dangling links and path errors", asy
   const dangling = f.path("folder/link");
   const file = f.path("folder/data");
 
-  expect(await f.files.makeDirectory({ ...dir, recursive: false }, f.attempt)).toEqual({
+  expect(await f.makeDirectory({ ...dir, recursive: false })).toEqual({
     acknowledged: true,
   });
-  expect(await f.files.makeDirectory({ ...dir, recursive: false }, f.attempt)).toEqual({
+  expect(await f.makeDirectory({ ...dir, recursive: false })).toEqual({
     acknowledged: true,
   });
   await writeFile(file.path, Uint8Array.of(0, 255));
@@ -486,10 +492,10 @@ test("directory mutation does not turn denied writes or observations into succes
   await mkdir(folder.path);
   f.denyMkdir();
 
-  expect(await f.files.makeDirectory({ ...folder, recursive: false }, f.attempt)).toMatchObject({
+  expect(await f.makeDirectory({ ...folder, recursive: false })).toMatchObject({
     code: "FORBIDDEN",
   });
-  expect(f.calls).toEqual(["mkdir"]);
+  expect(f.calls).toEqual(["stat", "mkdir"]);
 
   f.failRmdir("denied");
   expect(await f.files.remove({ ...folder, recursive: false }, f.attempt)).toMatchObject({
