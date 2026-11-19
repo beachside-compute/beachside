@@ -420,6 +420,7 @@ async function observedCreate(
     submission: string,
     nativeDetail?: { id: string; labels?: Record<string, string> },
   ) => Promise<SandboxReference | null>,
+  acknowledgedId?: string,
 ) {
   if (result.status === "completed") {
     if (result.value.kind !== "sandbox") return ctx.unknown("Daytona returned another result kind");
@@ -438,8 +439,15 @@ async function observedCreate(
     };
   }
 
-  if (result.status === "pending")
-    return ctx.pending({ submissionId }, { pollAfterMs: result.observeAfterMs });
+  if (result.status === "pending") {
+    // Keep the acknowledged id on every pending poll: the listing lags creation, so a token
+    // without it would fall back to discovery and could lose a sandbox that already exists.
+    const sandboxId = result.nativeSandbox?.id ?? acknowledgedId;
+
+    return ctx.pending(sandboxId ? { submissionId, sandboxId } : { submissionId }, {
+      pollAfterMs: result.observeAfterMs,
+    });
+  }
 
   return ctx.unknown(
     result.status === "unknown" ? result.reason : "Daytona discovery has no confirmed completion",
@@ -1367,6 +1375,7 @@ export function createDaytonaAdapter(
                   attempt.submissionId,
                   attempt.operationId,
                   referenceFor,
+                  saved.success ? saved.data.sandboxId : undefined,
                 )
               : null;
 

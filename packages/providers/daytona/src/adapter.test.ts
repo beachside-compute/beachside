@@ -1506,7 +1506,8 @@ test("pending create resolves from the acknowledged sandbox while the listing la
       if (route === "/api/sandbox/fresh-box") {
         detailReads++;
 
-        return Response.json(native("started"));
+        // Still starting on the first polls, so the id must survive several pending tokens.
+        return Response.json(native(detailReads < 4 ? "starting" : "started"));
       }
 
       if (route.startsWith("/api/snapshots/")) return new Response(null, { status: 404 });
@@ -1527,7 +1528,7 @@ test("pending create resolves from the acknowledged sandbox while the listing la
 
     expect(box).toMatchObject({ id: "fresh-box" });
     expect(listings).toBe(0);
-    expect(detailReads).toBeGreaterThan(0);
+    expect(detailReads).toBeGreaterThanOrEqual(4);
   } finally {
     await client.close();
   }
