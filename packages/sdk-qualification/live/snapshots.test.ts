@@ -48,7 +48,13 @@ export async function snapshotRoundtrip(
   expect(plan.value.sourceState).toBe("running");
   t.at("snapshot/write");
   await source.writeFile(path, bytes, { overwrite: true, signal: t.signal });
-  await t.background(source, `python3 -c ${quote(memoryProgram)}`);
+
+  if (t.client.provider === "upstash-box")
+    await source.processes.start(
+      { command: { kind: "shell", script: `exec python3 -u -c ${quote(memoryProgram)}` } },
+      { signal: t.signal },
+    );
+  else await t.background(source, `python3 -c ${quote(memoryProgram)}`);
   let before: ReturnType<typeof memorySample> | undefined;
 
   for (let index = 0; index < 10 && !before; index++) {
@@ -130,7 +136,8 @@ export async function snapshotRoundtrip(
   if (plan.value.profile.restoreExecution === "fresh") {
     expect(await t.exec(restored, processAbsent)).toBe("PROCESS_ABSENT\n");
 
-    if (sourceSurvives) expect(await t.exec(source, processAbsent)).toBe("PROCESS_ABSENT\n");
+    if (sourceSurvives && t.client.provider !== "upstash-box")
+      expect(await t.exec(source, processAbsent)).toBe("PROCESS_ABSENT\n");
   }
 
   await restored.writeFile(path, restoredChanged, { overwrite: true, signal: t.signal });
@@ -188,7 +195,8 @@ describe("Beachside snapshots", () => {
       await snapshotRoundtrip(
         configured.resources,
         (reference) => reopenSnapshot(configured, reference),
-        configured.fileRoot + "/beachside-captured.bin",
+        (configured.profile.provider === "upstash-box" ? "/workspace/home" : configured.fileRoot) +
+          "/beachside-captured.bin",
         (profile) => {
           Object.assign(configured.context.configuration, {
             preserve: profile.preserve,

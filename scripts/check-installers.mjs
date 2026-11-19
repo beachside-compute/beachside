@@ -37,6 +37,7 @@ for (const name of [
   "@beachside/freestyle",
   "@beachside/archil",
   "@beachside/exe-dev",
+  "@beachside/upstash-box",
   "@beachside/modal",
   "@beachside/cli",
 ])
@@ -157,6 +158,14 @@ cases.push({
   overrides: [adapterName],
   runtime: `import { exeDevAdapter } from "@beachside/exe-dev"; if (exeDevAdapter.name !== "exe-dev") throw Error("Unexpected adapter");`,
   types: `import { exeDevAdapter } from "@beachside/exe-dev"; const name: string = exeDevAdapter.name; void name;`,
+});
+
+cases.push({
+  name: "upstash-box",
+  packageName: "@beachside/upstash-box",
+  overrides: [adapterName],
+  runtime: `import { upstashBoxAdapter } from "@beachside/upstash-box"; if (upstashBoxAdapter.name !== "upstash-box") throw Error("Unexpected adapter");`,
+  types: `import { upstashBox } from "@beachside/upstash-box"; const adapter = upstashBox({ apiKey: "fixture" }); void adapter;`,
 });
 
 cases.push({
