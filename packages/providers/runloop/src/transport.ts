@@ -385,7 +385,7 @@ export function createRunloopClient(apiKey: string, fetch: Fetch = globalThis.fe
       json(Devbox, "POST", `/v1/devboxes/${encode(id)}/suspend`, signal),
     resume: (id: string, signal: AbortSignal) =>
       json(Devbox, "POST", `/v1/devboxes/${encode(id)}/resume`, signal),
-    /** Installs a fresh key on the devbox and returns its private half; never log the answer. */
+    /** Returns the devbox's one key pair, issued at creation and kept across suspend and resume; never log the answer. */
     createSshKey: (id: string, signal: AbortSignal) =>
       json(SshKey, "POST", `/v1/devboxes/${encode(id)}/create_ssh_key`, signal),
     execute: (

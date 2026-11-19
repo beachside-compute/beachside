@@ -434,12 +434,13 @@ export function runloopFixture() {
       return json(200, view(box));
     }
 
+    // Runloop issues one key pair per devbox at creation and returns that same pair every time.
     if (method === "POST" && rest === "create_ssh_key") {
       sshKeys++;
 
       return json(200, {
         id,
-        ssh_private_key: `-----BEGIN OPENSSH PRIVATE KEY-----\nkey-${sshKeys}\n-----END OPENSSH PRIVATE KEY-----\n`,
+        ssh_private_key: `-----BEGIN OPENSSH PRIVATE KEY-----\nkey-${id}\n-----END OPENSSH PRIVATE KEY-----\n`,
         ssh_user: "user",
         url: `${id}.ssh.runloop.ai`,
       });

@@ -42,6 +42,6 @@ A target can hold a credential: a token, a password or a private key. Keep it in
 | Freestyle   | Token as password                                 | sandbox | no        | `ssh.expiresInMinutes` (default 60) | `beta-ssh.freestyle.sh`, VM id as user. Each call mints a token on an identity granted this VM only.                         |
 | exe.dev     | Your exe.dev account keys                         | account | no        | none                                | `<vm>.exe.xyz:22`; any username works. No key is added.                                                                      |
 | Boat        | Your key, authorized on the sandbox (`required`)  | sandbox | when sent | none                                | User `user` unless Boat names another.                                                                                       |
-| Runloop     | Minted private key                                | sandbox | no        | none                                | Through the TLS gateway `ssh.runloop.ai:443`. Each call installs a new key on the devbox.                                    |
+| Runloop     | The devbox's private key                          | sandbox | no        | none                                | Through the TLS gateway `ssh.runloop.ai:443`. Every call returns the devbox's one key; it is not rotated.                    |
 
 E2B, Vercel, Modal and Archil have no managed SSH endpoint: run your own SSH server and expose it, or use the CLI's Tailscale SSH add-on (`beachside create --with herdr`), which is a separate connection path.

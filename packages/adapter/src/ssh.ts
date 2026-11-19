@@ -5,7 +5,8 @@ import { z } from "zod";
  *
  * - `publicKey`: the client presents its own key, one the provider already trusts (a key linked to
  *   the account, or the `publicKey` passed to `sshTarget()`).
- * - `privateKey`: the provider minted a key pair for this target; use the returned private key.
+ * - `privateKey`: use the returned private key, which the provider supplies (it may be one the
+ *   sandbox keeps for its whole life, not one made for this call).
  * - `password`: answer the password prompt with the returned value.
  * - `none`: the credential travels in `username`; no further prompt is expected.
  */

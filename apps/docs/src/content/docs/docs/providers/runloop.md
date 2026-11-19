@@ -61,7 +61,7 @@ Everything below is tested against a simulated Runloop API on every change. **No
 
 ## SSH
 
-`box.sshTarget()` asks Runloop for a new key pair on the devbox and returns its private key, user and host, plus the TLS gateway (`ssh.runloop.ai:443`) to run SSH through, for example with `ProxyCommand openssl s_client -quiet -servername %h -connect ssh.runloop.ai:443`. Runloop publishes no host key. See [SSH access](/docs/guides/ssh-access/).
+`box.sshTarget()` returns the devbox's SSH private key, user and host, plus the TLS gateway (`ssh.runloop.ai:443`) to run SSH through, for example with `ProxyCommand openssl s_client -quiet -servername %h -connect ssh.runloop.ai:443`. Runloop issues one key pair per devbox when it is created and returns that same pair on every call; it survives suspend and resume, and there is no way to rotate it, so treat a disclosed key as valid until the devbox is destroyed. Runloop publishes no host key. See [SSH access](/docs/guides/ssh-access/).
 
 ## How streamed commands work
 
