@@ -3,7 +3,7 @@ title: Preview access
 description: Access an HTTP service running inside a sandbox.
 ---
 
-Use `await box.preview(3000)` to get access to an HTTP service on port 3000 inside a running sandbox. Choose public or protected access when configuring the adapter. The available modes depend on the provider, and each adapter defaults to the mode it can serve: Daytona, Modal, Runloop, Archil and exe.dev default to protected (Daytona's public mode signs expiring per-port links); E2B, boxd, Vercel, Boat and Freestyle default to public, and Boat and Freestyle offer public only. boxd publishes port 3000 by default; Vercel publishes only the `ports` you configure.
+Use `await box.preview(3000)` to get access to an HTTP service on port 3000 inside a running sandbox. Choose public or protected access when configuring the adapter. Daytona, Modal, Runloop, Archil, exe.dev and Upstash Box default to protected access. E2B, boxd, Vercel, Boat and Freestyle default to public access, and Boat and Freestyle offer public access only. boxd publishes port 3000 by default. Vercel publishes only the `ports` you configure.
 
 This example uses Daytona's default protected access. Replace `existing-server-snapshot` with a prepared image whose startup configuration launches an HTTP server on port 3000:
 
@@ -44,7 +44,7 @@ try {
 
 `preview()` does not start a server or wait for it to be ready. Start your service through the image's startup configuration or the [process API](/docs/guides/text-streaming/). A preview URL can be available before the service starts listening, so handle failed HTTP requests and check readiness in your application.
 
-Preview lookup also does not resume a suspended sandbox, extend its lifetime, replace it, or change its outbound network policy. Outbound network policy and inbound preview access are separate settings.
+Preview lookup preserves sandbox identity, lifetime and outbound network policy. Outbound network policy and inbound preview access are separate settings.
 
 Ports must be integers from **1 through 65535**. Lookup has a **30-second deadline**. Pass `preview(port, { signal })` to cancel local waiting. Cancellation does not stop the remote service, and the signal does not apply to later `fetch()` calls; pass a signal to those separately if needed.
 
@@ -79,6 +79,12 @@ Each call signs a new URL; earlier ones keep working until they expire, and they
 Modal defaults to protected access: each `preview(port)` mints a Modal connect token for that port and returns it as an `Authorization: Bearer` header. For public links, set `preview: { access: "public", ports: [3000] }` together with `network: "internet"` or an allowlist; Modal publishes those ports as HTTPS tunnels when the sandbox is created or restored, and cannot add more later. Modal refuses tunnels on a blocked network, so public setup with the default `blocked` network rejects at connect. Neither mode has been live-tested. See the [Modal adapter README](https://github.com/beachside-compute/beachside/tree/main/packages/providers/modal#previews).
 
 Some providers' previews carry an `expiresAt` timestamp. When it is present, ask for a new preview before it passes.
+
+## Preview tokens with Upstash Box
+
+Set `boxKind: "regular"` to enable previews. Protected access is the default. Calling `preview(port)` again republishes that protected route and rotates its bearer token. Previously returned `Authorization` headers for that port stop working. With `preview: { access: "public" }`, lookup reuses an existing public route. See [Upstash Box](/docs/providers/upstash-box/).
+
+Beachside requires a running box when it checks preview readiness. Upstash can resume a paused box if it receives traffic on an existing route or if the box pauses while publication is in flight.
 
 ## Public and protected access with E2B
 

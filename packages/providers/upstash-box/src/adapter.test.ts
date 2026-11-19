@@ -70,6 +70,8 @@ function apiFixture() {
   let destroys = 0;
   let next: "normal" | "lost" | "held" = "normal";
   let ttlOverride: number | undefined;
+  let failReadinessCheck = false;
+  let loseDeleteResponse = false;
   let deleteReadFailed = false;
   let failDeleteRead = false;
   let failedDetailStatus = 403;
@@ -77,6 +79,7 @@ function apiFixture() {
   let fileVersion = "1";
   let detailClass: "native" | boolean | undefined = "native";
   const ranges: { offset: number; length: number }[] = [];
+  const additionalListRows: unknown[] = [];
 
   const fetch = Object.assign(
     async (url: RequestInfo | URL, options?: RequestInit) => {
@@ -98,8 +101,12 @@ function apiFixture() {
         if (request.method === "GET") {
           const label = target.searchParams.get("label");
 
+          const rows = [...boxes.values()];
+
           return Response.json(
-            [...boxes.values()].filter((box) => !label || box.labels.includes(label)),
+            label
+              ? rows.filter((box) => box.labels.includes(label))
+              : [...rows, ...additionalListRows],
           );
         }
 
@@ -108,16 +115,14 @@ function apiFixture() {
         if (target.pathname.endsWith("/from-snapshot"))
           expect(snapshots.has(body.snapshot_id ?? "")).toBe(true);
         const id = `box_${++creates}`;
+        const createdAt = Math.floor(Date.now() / 1000);
 
         const box = {
           ...body,
           id,
           status: "idle",
-          created_at: Math.floor(Date.now() / 1000),
-          expires_at:
-            body.ttl === undefined
-              ? undefined
-              : Math.floor(Date.now() / 1000) + (ttlOverride ?? body.ttl),
+          created_at: createdAt,
+          expires_at: body.ttl === undefined ? undefined : createdAt + (ttlOverride ?? body.ttl),
         };
 
         boxes.set(id, box);
@@ -131,7 +136,7 @@ function apiFixture() {
             held = resolve;
           });
 
-        return Response.json(box);
+        return Response.json(failReadinessCheck ? { ...box, status: "creating" } : box);
       }
 
       const path = target.pathname.split("/");
@@ -212,10 +217,14 @@ function apiFixture() {
         if (deleteReadFailed) failDeleteRead = true;
         else box.status = "deleted";
 
+        if (loseDeleteResponse) throw new Error("fixture discarded delete response");
+
         return new Response(null, { status: 204 });
       }
 
       if (failDeleteRead) return new Response(null, { status: failedDetailStatus });
+
+      if (failReadinessCheck) return new Response(null, { status: 503 });
 
       return Response.json({
         ...box,
@@ -228,6 +237,7 @@ function apiFixture() {
   return {
     fetch,
     boxes,
+    additionalListRows,
     data,
     ranges,
     counters: () => ({ create: creates, destroy: destroys, release: 0 }),
@@ -243,11 +253,15 @@ function apiFixture() {
     reportDetailClass(value: boolean | undefined) {
       detailClass = value;
     },
-    badTtl() {
-      ttlOverride = 259_200;
+    overrideTtl(seconds: number) {
+      ttlOverride = seconds;
     },
-    denyReadAfterDelete() {
+    loseReadinessEvidence() {
+      failReadinessCheck = true;
+    },
+    denyReadAfterDelete(loseResponse: boolean) {
       deleteReadFailed = true;
+      loseDeleteResponse = loseResponse;
     },
     changeFailedDetailStatus(status: number) {
       failedDetailStatus = status;
@@ -361,13 +375,13 @@ test("creates at the requested size and policy, checks TTL, and reopens by exact
 
   const box = await client.sandboxes.create({
     labels: { app: "test" },
-    lifecycle: { lifetimeSeconds: 600 },
+    lifecycle: { lifetimeSeconds: 60 },
   });
 
   const native = fixture.boxes.get(box.id);
   expect(native).toMatchObject({
     size: "medium",
-    ttl: 600,
+    ttl: 60,
     network_policy: {
       mode: "custom",
       allowed_domains: ["api.example.com"],
@@ -392,8 +406,39 @@ test("creates at the requested size and policy, checks TTL, and reopens by exact
   await reopened.destroy();
   expect(fixture.counters().destroy).toBe(1);
 
-  fixture.badTtl();
-  await expect(client.sandboxes.create()).rejects.toMatchObject({ code: "OUTCOME_UNKNOWN" });
+  for (const ttl of [899, 901]) {
+    fixture.overrideTtl(ttl);
+    await expect(client.sandboxes.create()).rejects.toMatchObject({ code: "OUTCOME_UNKNOWN" });
+  }
+});
+
+test("expiry acknowledgment survives a failed readiness read and fresh recovery", async () => {
+  const fixture = apiFixture();
+  const adapter = createUpstashBoxAdapter({ fetch: fixture.fetch });
+  const credentials = { apiKey: "fixture" };
+  const client = tracked(await Beachside.connect({ adapter, config: {}, credentials }));
+  fixture.loseReadinessEvidence();
+  let unknown;
+
+  try {
+    await client.sandboxes.create();
+  } catch (error) {
+    unknown = error;
+  }
+
+  if (!(unknown instanceof OutcomeUnknownError) || !unknown.reference)
+    throw new Error("Expected allocation to retain a recovery reference");
+
+  const partial = {
+    code: "OUTCOME_UNKNOWN",
+    outcome: { setup: { expiry: "acknowledged", readiness: "unconfirmed" } },
+  };
+
+  expect(unknown).toMatchObject(partial);
+  const fresh = tracked(await Beachside.connect({ adapter, config: {}, credentials }));
+  const recovery = await fresh.recover(unknown.reference);
+  await expect(recovery.observe()).rejects.toMatchObject(partial);
+  expect(fixture.counters().create).toBe(1);
 });
 
 test("regular boxes preserve runtime and create env, list, pause, resume, and publish protected previews", async () => {
@@ -425,13 +470,29 @@ test("regular boxes preserve runtime and create env, list, pause, resume, and pu
   expect(native?.env_vars).toEqual({ EXAMPLE: "configured" });
   expect(native?.ttl).toBeUndefined();
   expect(native?.ephemeral).toBeUndefined();
+  expect((await box.inspect()).expires).toEqual({ status: "none" });
+
+  fixture.additionalListRows.push(
+    { id: "foreign_box", status: "future-status", size: "future-size", labels: 42 },
+    { id: "other_box", status: "idle", size: "future-size", ephemeral: false },
+    { id: "bad/id" },
+  );
 
   const listing = await client.sandboxes.list();
+  expect(listing.items).toHaveLength(3);
+  expect(listing.items[1]).toMatchObject({
+    id: "foreign_box",
+    state: "unknown",
+    reference: null,
+    labels: null,
+  });
+  expect(listing.items[2]).toMatchObject({ id: "other_box", state: "running", reference: null });
   expect(listing.items[0]?.labels).toEqual({ job: "test" });
   const listed = listing.items[0]?.reference;
   expect(listed?.ownership).toBe("borrowed");
   expect((await client.sandboxes.get(listed!)).id).toBe(box.id);
   expect((await box.suspend()).observation.state).toBe("stopped");
+  expect((await client.sandboxes.list()).items[0]?.state).toBe("stopped");
   expect((await box.resume()).observation.state).toBe("running");
   expect(await box.preview(3000)).toEqual({
     access: "protected",
@@ -661,46 +722,49 @@ test("exec truncates combined output and retains the exit code", async () => {
   await box.destroy();
 });
 
-test("a recovered delete requires authorized evidence and can confirm a tombstone without replay", async () => {
-  const fixture = apiFixture();
-  const adapter = createUpstashBoxAdapter({ fetch: fixture.fetch });
+for (const acknowledged of [true, false]) {
+  test(`recovers an ${acknowledged ? "acknowledged" : "unacknowledged"} delete without replay`, async () => {
+    const fixture = apiFixture();
+    const adapter = createUpstashBoxAdapter({ fetch: fixture.fetch });
 
-  const client = tracked(
-    await Beachside.connect({
-      adapter,
-      config: {},
-      credentials: { apiKey: "fixture" },
-    }),
-  );
+    const client = tracked(
+      await Beachside.connect({ adapter, config: {}, credentials: { apiKey: "fixture" } }),
+    );
 
-  const box = await client.sandboxes.create();
-  fixture.denyReadAfterDelete();
-  let unknown;
+    const box = await client.sandboxes.create();
+    fixture.denyReadAfterDelete(!acknowledged);
+    let unknown;
 
-  try {
-    await box.destroy();
-  } catch (error) {
-    unknown = error;
-  }
+    try {
+      await box.destroy();
+    } catch (error) {
+      unknown = error;
+    }
 
-  if (!(unknown instanceof OutcomeUnknownError) || !unknown.reference)
-    throw new Error("Expected the acknowledged deletion to retain a recovery reference");
+    if (!(unknown instanceof OutcomeUnknownError) || !unknown.reference)
+      throw new Error("Expected deletion to retain a recovery reference");
 
-  fixture.changeFailedDetailStatus(404);
+    const fresh = tracked(
+      await Beachside.connect({ adapter, config: {}, credentials: { apiKey: "fixture-current" } }),
+    );
 
-  const fresh = tracked(
-    await Beachside.connect({
-      adapter,
-      config: {},
-      credentials: { apiKey: "fixture-current" },
-    }),
-  );
+    const recovery = await fresh.recover(unknown.reference);
 
-  const recovery = await fresh.recover(unknown.reference);
-  await expect(recovery.observe()).rejects.toMatchObject({ code: "OUTCOME_UNKNOWN" });
-  expect(fixture.counters().destroy).toBe(1);
+    for (const status of [401, 403]) {
+      fixture.changeFailedDetailStatus(status);
+      await expect(recovery.observe()).rejects.toMatchObject({ code: "OUTCOME_UNKNOWN" });
+    }
 
-  fixture.exposeTombstone(box.id);
-  expect(await recovery.observe()).toMatchObject({ computeStopped: true });
-  expect(fixture.counters().destroy).toBe(1);
-});
+    fixture.changeFailedDetailStatus(404);
+
+    if (acknowledged) {
+      expect(await recovery.observe()).toMatchObject({ computeStopped: true });
+    } else {
+      await expect(recovery.observe()).rejects.toMatchObject({ code: "OUTCOME_UNKNOWN" });
+      fixture.exposeTombstone(box.id);
+      expect(await recovery.observe()).toMatchObject({ computeStopped: true });
+    }
+
+    expect(fixture.counters().destroy).toBe(1);
+  });
+}

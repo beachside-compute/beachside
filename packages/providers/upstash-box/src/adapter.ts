@@ -48,8 +48,7 @@ const PROVIDER = "upstash-box";
 const REGION = "us-east-1";
 const IMAGE = "node";
 
-// The shipped Upstash disposable execution example uses 120 seconds.
-const LIFETIME = { minSeconds: 120, maxSeconds: 259_200 };
+const LIFETIME = { minSeconds: 1, maxSeconds: 259_200 };
 
 const Runtime = z.enum([
   "node",
@@ -144,6 +143,16 @@ const Detail = z.object({
 
 type Detail = z.infer<typeof Detail>;
 
+const ListEntry = z.object({
+  id: Id,
+  ephemeral: Detail.shape.ephemeral.catch(undefined),
+  keep_alive: Detail.shape.keep_alive.catch(undefined),
+  created_at: Detail.shape.created_at.catch(undefined),
+  status: Detail.shape.status.optional().catch(undefined),
+  labels: Detail.shape.labels.catch(undefined),
+  expires_at: Detail.shape.expires_at,
+});
+
 const Preparation = z.strictObject({
   size: Size,
   ttl: z.number().int().min(LIFETIME.minSeconds).max(LIFETIME.maxSeconds).optional(),
@@ -161,7 +170,8 @@ const CreateToken = z.strictObject({
   size: Size,
   labels: z.array(NativeLabel).max(4),
   policy: z.string().regex(/^[a-f0-9]{64}$/),
-  expiry: z.tuple([z.number().int().safe(), z.number().int().safe()]).optional(),
+  ttl: Preparation.shape.ttl,
+  expiryAcknowledged: z.literal(true).optional(),
   runtime: Runtime,
   boxKind: BoxKind,
   keepAlive: z.boolean(),
@@ -191,7 +201,9 @@ function marker(submissionId: string, kind?: BoxKind) {
   );
 }
 
-function nativeKind(box: Detail): BoxKind | undefined {
+function nativeKind(
+  box: Pick<Detail, "ephemeral" | "expires_at" | "labels" | "keep_alive">,
+): BoxKind | undefined {
   if (box.ephemeral !== undefined) return box.ephemeral ? "ephemeral" : "regular";
 
   if (box.expires_at !== undefined) return "ephemeral";
@@ -290,16 +302,14 @@ function policyDigest(policy: Policy = { mode: "allow-all" }) {
     .digest("hex");
 }
 
-function hasRequestedExpiry(detail: Detail, token: CreateToken) {
-  const expires = detail.expires_at;
-  const range = token.expiry;
-
+function hasRequestedExpiry(detail: Detail, token: CreateToken, submissionId: string) {
   return (
-    !range ||
-    (expires !== undefined &&
-      expires >= range[0] &&
-      expires <= range[1] &&
-      expires * 1000 > Date.now())
+    token.ttl !== undefined &&
+    detail.created_at !== undefined &&
+    detail.expires_at !== undefined &&
+    detail.expires_at - detail.created_at === token.ttl &&
+    nativeKind(detail) === "ephemeral" &&
+    detail.labels?.includes(marker(submissionId, token.boxKind)) === true
   );
 }
 
@@ -309,7 +319,9 @@ function ready(detail: Detail, token: CreateToken, submissionId: string) {
     (detail.status === "idle" || detail.status === "running") &&
     detail.runtime === token.runtime &&
     detail.size === token.size &&
-    hasRequestedExpiry(detail, token) &&
+    (token.boxKind === "regular" ||
+      (hasRequestedExpiry(detail, token, submissionId) &&
+        (detail.expires_at ?? 0) * 1000 > Date.now())) &&
     Boolean(detail.keep_alive) === token.keepAlive &&
     detail.labels?.includes(marker(submissionId, token.boxKind)) &&
     token.labels.every((label) => detail.labels?.includes(label)) &&
@@ -317,9 +329,7 @@ function ready(detail: Detail, token: CreateToken, submissionId: string) {
   );
 }
 
-function sandboxInfo(detail: Detail, reference: SandboxReference | null): SandboxInfo {
-  const size = SIZES.find((entry) => entry.name === detail.size);
-
+function sandboxState(status: Detail["status"] | undefined): SandboxInfo["state"] {
   const state = {
     idle: "running",
     running: "running",
@@ -329,10 +339,16 @@ function sandboxInfo(detail: Detail, reference: SandboxReference | null): Sandbo
     error: "unknown",
   } as const;
 
+  return status === undefined ? "unknown" : state[status];
+}
+
+function sandboxInfo(detail: Detail, reference: SandboxReference | null): SandboxInfo {
+  const size = SIZES.find((entry) => entry.name === detail.size);
+
   return {
     ...unknownSandboxFacts(),
     reference,
-    state: state[detail.status],
+    state: sandboxState(detail.status),
     nativeState: detail.status,
     observedAt: new Date().toISOString(),
     ...(nativeKind(detail) === "regular" && { expires: { status: "none" } }),
@@ -545,7 +561,6 @@ export function defineUpstashBoxAdapter(origin: string, options: UpstashBoxAdapt
 
       async function submitAllocation(prepared: Preparation, ctx: AttemptContext<CreateToken>) {
         let raw: unknown;
-        const sentAt = Math.floor(Date.now() / 1000);
 
         try {
           raw = await transport.json(
@@ -579,15 +594,15 @@ export function defineUpstashBoxAdapter(origin: string, options: UpstashBoxAdapt
           boxKind: config.boxKind,
           keepAlive: config.keepAlive,
           ...(prepared.snapshot_id && { restore: true }),
-          ...(prepared.ttl !== undefined && {
-            expiry: [sentAt + prepared.ttl - 5, Math.ceil(Date.now() / 1000) + prepared.ttl + 5],
-          }),
+          ...(prepared.ttl !== undefined && { ttl: prepared.ttl }),
         };
 
         const native = Detail.safeParse(raw);
 
         const hasExpiry =
-          native.success && hasRequestedExpiry(native.data, token) && !!token.expiry;
+          native.success && hasRequestedExpiry(native.data, token, ctx.submissionId);
+
+        if (hasExpiry) token.expiryAcknowledged = true;
 
         try {
           await ctx.checkpoint(token);
@@ -628,23 +643,29 @@ export function defineUpstashBoxAdapter(origin: string, options: UpstashBoxAdapt
 
         if (!token) return ctx.unknown("Upstash Box allocation did not return an ID");
         const ref = reference(token.id, attempt);
+        let hasExpiry = token.expiryAcknowledged === true;
 
         try {
           const box = await detail(token.id, ctx.signal);
+          hasExpiry ||= hasRequestedExpiry(box, token, attempt.submissionId);
 
           if (ready(box, token, attempt.submissionId))
             return { id: token.id, reference: ref, state: "running" as const };
 
-          if (box.status === "creating") return ctx.pending(token, { pollAfterMs: 2_000 });
+          if (box.status === "creating") {
+            return ctx.pending(hasExpiry ? { ...token, expiryAcknowledged: true } : token, {
+              pollAfterMs: 2_000,
+            });
+          }
 
           return ctx.unknown(
             "Upstash Box setup could not be confirmed",
-            partial(ref, !!token.expiry && hasRequestedExpiry(box, token), !!token.restore),
+            partial(ref, hasExpiry, !!token.restore),
           );
         } catch {
           return ctx.unknown(
             "Upstash Box setup could not be observed",
-            partial(ref, false, !!token.restore),
+            partial(ref, hasExpiry, !!token.restore),
           );
         }
       }
@@ -691,12 +712,11 @@ export function defineUpstashBoxAdapter(origin: string, options: UpstashBoxAdapt
         if (!rows.success) throw new AdapterError("UNAVAILABLE", "Upstash Box list is invalid");
 
         const candidates = rows.data.flatMap((raw) => {
-          const box = Detail.safeParse(raw);
+          const box = ListEntry.safeParse(raw);
 
-          if (!box.success)
-            throw new AdapterError("UNAVAILABLE", "Upstash Box list entry is invalid");
-
-          return !cursor || box.data.id > cursor.data ? [box.data] : [];
+          return box.success && (!cursor || box.data.id > cursor.data)
+            ? [{ ...box.data, validDetail: Detail.safeParse(raw).success }]
+            : [];
         });
 
         candidates.sort((left, right) => (left.id < right.id ? -1 : left.id === right.id ? 0 : 1));
@@ -841,9 +861,9 @@ export function defineUpstashBoxAdapter(origin: string, options: UpstashBoxAdapt
             nextCursor,
             items: page.map((box) => ({
               id: box.id,
-              state: sandboxInfo(box, null).state,
+              state: sandboxState(box.status),
               reference:
-                nativeKind(box) === config.boxKind && box.status !== "deleted"
+                box.validDetail && box.status !== "deleted" && nativeKind(box) === config.boxKind
                   ? validateResourceReference({
                       version: 1,
                       kind: "sandbox",
@@ -906,7 +926,7 @@ export function defineUpstashBoxAdapter(origin: string, options: UpstashBoxAdapt
 
             if (!token.success || token.data.id !== attempt.sandbox?.id) return null;
 
-            if (await deleted(token.data.id, false, ctx.signal))
+            if (await deleted(token.data.id, token.data.acknowledged, ctx.signal))
               return { computeStopped: true, retainedResources: [] };
 
             return ctx.unknown(

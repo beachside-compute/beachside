@@ -30,9 +30,9 @@ try {
 
 ## Box kinds and setup
 
-Beachside defaults to `boxKind: "ephemeral"` in AWS us-east-1. Set `lifecycle.lifetimeSeconds` to choose the native TTL. The default is 900 seconds. The adapter accepts 120 to 259,200 seconds.
+Beachside defaults to `boxKind: "ephemeral"` in AWS us-east-1. Ephemeral boxes use a native TTL of 900 seconds by default. Set `lifecycle.lifetimeSeconds` to request a positive whole number of seconds, up to Upstash's 259,200-second maximum.
 
-Set `boxKind: "regular"` for HTTP previews and explicit pause and resume. Upstash keeps regular boxes until you delete them. The adapter rejects a configured TTL for regular boxes before allocation. With `keepAlive: true`, Upstash keeps regular compute active on an eligible paid plan and disables pause and resume.
+Set `boxKind: "regular"` for HTTP previews and explicit pause and resume. Regular boxes have no automatic deletion deadline. The adapter rejects a configured TTL for regular boxes before allocation. With `keepAlive: true`, Upstash keeps regular compute active on an eligible paid plan and disables pause and resume.
 
 Select a prepared `image` from `node`, `python`, `golang`, `ruby`, `rust` and their `-alpine` variants. The default is Debian `node`. Set `resources` to select the smallest Upstash size that meets your CPU and memory requirements. The default is small (2 vCPUs, 4 GiB). Your account controls size availability.
 
@@ -41,8 +41,8 @@ Both kinds accept create-time env. Upstash reserves system variables such as `PA
 ## Commands, files and previews
 
 - Finite exec accepts argv or shell commands and per-command env. It captures up to 1 MiB of combined output and accepts up to 1 MiB of binary stdin. Live processes also support incremental stdin, separate output, signals and PTYs. Upstash ends the native session when its socket closes.
-- File reads use bounded native ranges. The file hooks expose streaming writes, directory operations, metadata, copy and overwrite moves. A default no-clobber write stages bytes and publishes the file exclusively. The destination filesystem must support hard links. Upstash's rename endpoint supports overwrite moves.
-- Regular previews default to protected access. Set `preview: { access: "public" }` for an unauthenticated HTTPS route. A public lookup reuses an existing public route. Requesting a protected route again rotates its bearer token. The adapter rejects a different access mode in the observed route. Upstash can resume a paused box on preview traffic or publication, including if it pauses while a preview is being published.
+- File reads use bounded native ranges. The file hooks expose streaming writes, directory operations, metadata, copy and overwrite moves. A default no-clobber write stages bytes and publishes the file exclusively. The destination filesystem must support hard links, and the runtime must provide `ln -T` for exact-path publication. This flag is available in GNU coreutils and current Alpine BusyBox. Upstash's rename endpoint supports overwrite moves.
+- Regular previews default to protected access. Set `preview: { access: "public" }` for an unauthenticated HTTPS route. A public lookup reuses an existing public route. Requesting a protected route again rotates its bearer token and invalidates previously returned headers for that port. The adapter rejects a different access mode in the observed route and requires a running box at the readiness check. Upstash can resume a paused box on traffic to an existing route or if the box pauses during publication.
 - Up to four user labels fit alongside a correlation marker. Each encoded `key:value` must fit Upstash's 20-character limit and use letters, digits, periods, underscores, colons or hyphens. Colons in keys and the reserved `bs:` prefix are unsupported.
 
 ## Recovery and snapshots
