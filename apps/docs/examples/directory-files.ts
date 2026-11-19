@@ -24,6 +24,7 @@ export async function artifactFiles(
   destination: { write(chunk: Uint8Array): Promise<void> },
   root = "/home/user/beachside-artifacts",
   signal?: AbortSignal,
+  overwriteMove = false,
 ) {
   await box.makeDirectory(`${root}/results`, { recursive: true, signal });
 
@@ -34,7 +35,10 @@ export async function artifactFiles(
     const directory = await box.readDirectory(`${root}/results`, { signal });
     const info = await box.statFile(`${root}/results/report.json`, { signal });
     await box.copyFile(`${root}/results/report.json`, `${root}/copy.json`, { signal });
-    await box.moveFile(`${root}/copy.json`, `${root}/final.json`, { signal });
+    await box.moveFile(`${root}/copy.json`, `${root}/final.json`, {
+      signal,
+      overwrite: overwriteMove,
+    });
     const uploaded = await box.writeFileStream(`${root}/archive.bin`, input, { signal });
 
     for await (const chunk of box.readFileStream(`${root}/archive.bin`, { signal })) {

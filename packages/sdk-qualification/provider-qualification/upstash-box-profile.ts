@@ -5,15 +5,11 @@ import { defineProviderProfile } from "./profile";
 import { upstashBoxSupport } from "./support";
 
 const Routing = z.strictObject({
-  imageId: z.literal("node"),
-  networkPolicy: z.literal("internet"),
+  imageId: z.enum(["node", "python", "python-alpine"]),
+  networkPolicy: z.enum(["internet", "allow"]),
   nativeLifetimeSeconds: z.literal(900),
-});
-
-const defaults = Routing.parse({
-  imageId: "node",
-  networkPolicy: "internet",
-  nativeLifetimeSeconds: 900,
+  boxKind: z.enum(["ephemeral", "regular"]).default("ephemeral"),
+  previewAccess: z.enum(["protected", "public"]).optional(),
 });
 
 export default defineProviderProfile({
@@ -22,16 +18,28 @@ export default defineProviderProfile({
   configuredEnvironment: true,
   fileNoClobber: true,
   credentialVariables: ["UPSTASH_BOX_API_KEY"],
-  bounds: { nativeLifetimeSeconds: 900, exerciseMs: 120000, cleanupMs: 60000 },
+  bounds: { nativeLifetimeSeconds: 900, exerciseMs: 240000, cleanupMs: 60000 },
   support: upstashBoxSupport,
-  configure(_environment, saved) {
-    return Routing.parse(saved ?? defaults);
+  configure(environment, saved) {
+    return Routing.parse(
+      saved ?? {
+        imageId: environment.BEACHSIDE_UPSTASH_IMAGE ?? "node",
+        networkPolicy: environment.BEACHSIDE_UPSTASH_NETWORK ?? "internet",
+        nativeLifetimeSeconds: 900,
+        boxKind: environment.BEACHSIDE_UPSTASH_BOX_KIND,
+        ...(environment.BEACHSIDE_UPSTASH_PREVIEW && {
+          previewAccess: environment.BEACHSIDE_UPSTASH_PREVIEW,
+        }),
+      },
+    );
   },
   configuration(routing) {
     const config = Routing.parse(routing);
 
     return {
       imageClass: "prepared",
+      imageVariant: config.imageId,
+      sandboxVariant: config.boxKind,
       fileRoot: "/tmp",
       authorityClass: "api-key",
       network: `${config.networkPolicy}-requested`,
@@ -47,8 +55,12 @@ export default defineProviderProfile({
         credentials: { apiKey: credentials.UPSTASH_BOX_API_KEY },
         config: {
           image: config.imageId,
-          network: config.networkPolicy,
-          lifecycle: { lifetimeSeconds: config.nativeLifetimeSeconds },
+          boxKind: config.boxKind,
+          network: config.networkPolicy === "allow" ? { allow: ["example.com"] } : "internet",
+          ...(config.boxKind === "ephemeral" && {
+            lifecycle: { lifetimeSeconds: config.nativeLifetimeSeconds },
+          }),
+          ...(config.previewAccess && { preview: { access: config.previewAccess } }),
         },
         onReference,
         onDiagnostic,
