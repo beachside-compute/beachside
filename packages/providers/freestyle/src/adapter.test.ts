@@ -628,3 +628,50 @@ test("create-time env rejects invalid names before any Freestyle effect", async 
     await client.close();
   }
 });
+
+test("SSH targets mint expiring tokens on one VM-scoped identity, deleted with the VM", async () => {
+  const { fixture, connect } = setup();
+  const client = await connect({ ssh: { expiresInMinutes: 5 } });
+
+  try {
+    expect((await client.capabilities()).ssh).toMatchObject({
+      status: "supported",
+      value: { auth: "password", publicKey: "unused", scope: "sandbox", expires: true },
+    });
+    expect(fixture.identities.size).toBe(0);
+
+    const box = await client.sandboxes.create();
+    const before = Date.now();
+    const first = await box.sshTarget();
+    const second = await box.sshTarget();
+
+    expect(first).toMatchObject({
+      host: "beta-ssh.freestyle.sh",
+      port: 22,
+      username: box.id,
+      auth: { method: "password" },
+    });
+    expect(Date.parse(first.expiresAt ?? "")).toBeLessThanOrEqual(before + 5 * 60_000 + 1000);
+
+    // One identity, granted this VM only, carries every token.
+    expect(fixture.identities.size).toBe(1);
+    const [identity] = [...fixture.identities.values()];
+    expect([...(identity?.grants ?? [])]).toEqual([box.id]);
+    expect(identity?.tokens.map((token) => token.token)).toEqual(
+      [first, second].map((target) =>
+        target.auth.method === "password" ? target.auth.password : "",
+      ),
+    );
+
+    // The token never lands in the reference or the capability report.
+    expect(JSON.stringify(box.reference)).not.toContain("fs-token");
+
+    await box.suspend();
+    await expect(box.sshTarget()).rejects.toMatchObject({ code: "CONFLICT" });
+    await box.resume();
+    await box.destroy();
+    expect(fixture.identities.size).toBe(0);
+  } finally {
+    await client.close();
+  }
+});
