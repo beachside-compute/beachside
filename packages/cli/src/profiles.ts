@@ -31,7 +31,7 @@ export type ValueSource =
   | { from: "env-reference"; env: string; set: boolean }
   | { from: "secret-manager"; manager: string; reference: string }
   | { from: "env"; env: string }
-  | { from: "missing"; env: string | null; url: string | null };
+  | { from: "missing"; env: string | null; url: string | null; choices: readonly string[] };
 
 const EnvReference = /^env:([A-Za-z_][A-Za-z0-9_]*)$/;
 
@@ -70,7 +70,7 @@ function describeSource(source: ValueSource): string {
     case "env":
       return `from $${source.env}`;
     case "missing":
-      return `missing${source.env ? `: set ${source.env}` : ""}${source.url ? ` (${source.url})` : ""}`;
+      return `missing${source.env ? `: set ${source.env}` : ""}${source.choices.length ? ` to one of ${source.choices.join(", ")}` : ""}${source.url ? ` (${source.url})` : ""}`;
   }
 }
 
@@ -228,12 +228,18 @@ async function showProfile(session: Session, names: string[]): Promise<number> {
         const required = kind === "credentials" || ("required" in entry && entry.required === true);
 
         const alternative = (setup?.alternatives ?? []).some((group) => group.includes(key));
+        const choices = kind === "config" ? setup?.config?.[key]?.choices : undefined;
 
         return required && !alternative
           ? [
               [
                 key,
-                { from: "missing", env: entry.env, url: entry.url ?? null } satisfies ValueSource,
+                {
+                  from: "missing",
+                  env: entry.env,
+                  url: entry.url ?? null,
+                  choices: choices ?? [],
+                } satisfies ValueSource,
               ],
             ]
           : [];

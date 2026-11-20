@@ -103,7 +103,14 @@ export type SetupNeed = {
   label: string;
   description: string | null;
   url: string | null;
+  /** Known values the adapter offers for a config setting, such as regions. */
+  choices: readonly string[];
 };
+
+/** `ARCHIL_REGION: one of aws-us-east-1, aws-us-west-2`, or null when the adapter lists none. */
+function choicesLine(item: SetupNeed): string | null {
+  return item.choices.length ? `${item.label}: one of ${item.choices.join(", ")}` : null;
+}
 
 /** Whether a profile already has a setting, wherever it came from. */
 export type HasSetting = (kind: "credential" | "config", key: string) => boolean;
@@ -111,7 +118,7 @@ export type HasSetting = (kind: "credential" | "config", key: string) => boolean
 function need(
   kind: SetupNeed["kind"],
   key: string,
-  value: AdapterSetupValue | undefined,
+  value: (AdapterSetupValue & { readonly choices?: readonly string[] }) | undefined,
   label?: string,
 ): SetupNeed {
   return {
@@ -121,6 +128,7 @@ function need(
     label: label ?? value?.env ?? `${kind === "credential" ? "credentials" : "config"}.${key}`,
     description: value?.description ?? null,
     url: value?.url ?? null,
+    choices: value?.choices ?? [],
   };
 }
 
@@ -379,6 +387,7 @@ async function fromProfile(
         [
           "set the environment variables, or put the values in the profile in beachside.json",
           ...missing.flatMap((item) => (item.url ? [`${item.label}: ${item.url}`] : [])),
+          ...missing.flatMap((item) => choicesLine(item) ?? []),
         ].join("; "),
       );
   }

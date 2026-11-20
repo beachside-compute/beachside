@@ -130,6 +130,21 @@ test("a Free-plan policy refusal is UNSUPPORTED, and a managed allowlist never p
   }
 });
 
+test("a Free-plan lifetime over the cap is a bad argument with the cap, not an unsupported sandbox", async () => {
+  const { fixture, connect } = setup({ plan: "free" });
+  const client = await connect({ network: "archil-managed" });
+
+  try {
+    const refused = client.sandboxes.create({ lifecycle: { lifetimeSeconds: 3600 } });
+    await expect(refused).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+    await expect(refused).rejects.toThrow(/Free plan at 30 minutes/);
+    await expect(refused).rejects.not.toThrow(/unsupported/);
+    expect(fixture.effects.create).toBe(0);
+  } finally {
+    await client.close();
+  }
+});
+
 test("archil-managed takes the Free plan's managed allowlist and is refused as open egress", async () => {
   const free = setup({ plan: "free" });
   const freeClient = await free.connect({ network: "archil-managed" });

@@ -265,6 +265,13 @@ export function archilFixture(options: { plan?: "free" | "developer" } = {}) {
         if (body.network !== undefined && plan === "free")
           return failure(403, "sandbox_network_plan_required", "Network policies need a paid plan");
 
+        if ((body.max_ttl_seconds ?? 0) > 1800 && plan === "free")
+          return failure(
+            403,
+            "sandbox_ttl_limit_exceeded",
+            "max_ttl_seconds exceeds the plan limit",
+          );
+
         if (body.image_id !== undefined && images.get(body.image_id)?.status !== "ready")
           return failure(409, "image_not_ready");
 

@@ -29,7 +29,7 @@ Archil keys are scoped to one account and one region, and Archil authorizes ever
 
 | Setting                         | Behavior                                                                                                                       |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `region`                        | Required: `aws-us-east-1`, `aws-us-west-2` or `aws-eu-west-1`.                                                                 |
+| `region`                        | `aws-us-east-1` (default), `aws-us-west-2` or `aws-eu-west-1`. A key works only in its own region.                             |
 | `network` | `internet` (default) sends no policy and checks that egress is open; `blocked` sends `egress.default: "deny"`; `{ allow: [...] }` sends `default: "deny"` with those hosts and IPv4 ranges and checks them back (all three need a paid plan); `archil-managed` sends no policy and checks for Archil's managed allowlist (the Free plan). |
 | `image`                         | `node:24-bookworm`, always sent explicitly. Any amd64 OCI image, or a 64-hex image id from an image build.                      |
 | `resources`                     | Exact `{ vcpus, memoryMiB }`; vCPUs rounded up to whole numbers, 1–32 vCPU and 256–65536 MiB. Default 1 vCPU, 2 GiB.            |

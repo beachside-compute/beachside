@@ -614,6 +614,15 @@ async function createOnce(session: Session, request: CreateRequest): Promise<Cre
       // Adapters without a default image reject an argument-free create in SDK terms, but so
       // does any other bad input (an E2B lifetime over its cap), so the message stays the
       // provider's and only the hint suggests an image.
+      if (report.code === "INVALID_ARGUMENT" && request.lifetimeSeconds !== undefined)
+        throw new CliError(
+          "INVALID_ARGUMENT",
+          `${profile.provider} rejected this sandbox: ${report.message}`,
+          !input.environment && !source
+            ? "if the provider caps sandbox lifetimes, pass a shorter --ttl; if it needs an image, pass --prepared <id> or --image <oci-ref>"
+            : "if the provider caps sandbox lifetimes, pass a shorter --ttl",
+        );
+
       if (report.code === "INVALID_ARGUMENT" && !input.environment && !source)
         throw new CliError(
           "INVALID_ARGUMENT",
@@ -641,7 +650,7 @@ async function createOnce(session: Session, request: CreateRequest): Promise<Cre
     throw new CliError(
       report.outcome === "partial" ? "PARTIAL" : "OUTCOME_UNKNOWN",
       report.message,
-      kept,
+      request.addons.length ? `${withNeedsInternet(request.addons)}; ${kept}` : kept,
       { sandbox: claimed.record.name, reference, recovery },
       report.outcome,
     );
@@ -663,6 +672,11 @@ async function createOnce(session: Session, request: CreateRequest): Promise<Cre
   }
 
   return { client, box, record, existing: false };
+}
+
+/** `--with` always asks for internet access, so a provider's other network advice cannot apply. */
+function withNeedsInternet(addons: readonly string[]): string {
+  return `if the provider could not give internet access, --with ${addons.join(",")} needs a plan or tier that allows it; no other network policy can run --with`;
 }
 
 /** The sandbox exists but the store does not know it: report it, never hide it. */
@@ -2979,6 +2993,7 @@ export async function providersCommand(session: Session): Promise<number> {
             env: item.label,
             description: item.description,
             url: item.url,
+            choices: item.choices,
           }))
         : null;
 
@@ -3018,6 +3033,11 @@ export async function providersCommand(session: Session): Promise<number> {
           row.experimental ? "  (experimental)" : "",
           ...row.needs.flatMap((need) =>
             need.url ? [`\n${" ".repeat(width + 2)}${need.env}: ${need.url}`] : [],
+          ),
+          ...row.needs.flatMap((need) =>
+            need.choices.length
+              ? [`\n${" ".repeat(width + 2)}${need.env}: one of ${need.choices.join(", ")}`]
+              : [],
           ),
         ].join(""),
       )
