@@ -21,8 +21,12 @@ export async function provisionOpenCodeBroker(
 
   const openrouter = await admin.integrations.create({
     id: "router-work",
-    kind: "openrouter",
-    credential: { source: "encrypted-store", value: upstream.openrouter },
+    kind: "http",
+    endpoint: {
+      baseURL: "https://openrouter.ai/api/v1",
+      headers: [{ name: "Authorization", secret: true, prefix: "Bearer " }],
+    },
+    credential: { source: "encrypted-store", values: { Authorization: upstream.openrouter } },
   });
 
   return admin.issuerPermissions.set([github.id, openrouter.id]);
@@ -42,7 +46,13 @@ export async function runOpenCode(
       network: "internet",
       credentials: broker.sandbox({
         github: "github-work",
-        openrouter: "router-work",
+        endpoints: [
+          {
+            integration: "router-work",
+            baseURLEnv: "OPENROUTER_BASE_URL",
+            apiKeyEnv: "OPENROUTER_API_KEY",
+          },
+        ],
         ttlSeconds: 900,
       }),
       setup: [["git", "clone", `https://github.com/${repository}.git`, project]],
