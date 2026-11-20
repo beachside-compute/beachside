@@ -160,6 +160,20 @@ test("environment-only Archil setup names its region and can opt into blocked eg
   const env = { HOME: home, ARCHIL_API_KEY: "key" };
 
   expect(missingEnv(await setupOf("archil"), env)).toEqual(["ARCHIL_REGION"]);
+  expect(missingSettings(await setupOf("archil"), env)[0]!.choices).toEqual([
+    "aws-us-east-1",
+    "aws-us-west-2",
+    "aws-eu-west-1",
+  ]);
+
+  // A profile missing its region names the regions to pick from.
+  await expect(
+    resolveProfile({ provider: "archil" }, await loadConfig(undefined, env), env, home),
+  ).rejects.toMatchObject({
+    hint: expect.stringContaining(
+      "ARCHIL_REGION: one of aws-us-east-1, aws-us-west-2, aws-eu-west-1",
+    ),
+  });
 
   const ready = { ...env, ARCHIL_REGION: "aws-eu-west-1", ARCHIL_NETWORK: "blocked" };
 

@@ -575,6 +575,77 @@ describe("the routable IPv4 check", () => {
   });
 });
 
+describe("the herdr host name", () => {
+  /** Run the naming step against a fake `hostname`; returns the name it set, if any. */
+  async function renamedTo(current: string): Promise<string | undefined> {
+    const { shell, calls } = scriptedShell([
+      [/status --json/, { stdout: `root\n{"Self":{"DNSName":"beachside-web.tail1.ts.net."}}` }],
+    ]);
+
+    await setupAddons(
+      shell,
+      "web",
+      ["herdr"],
+      "k",
+      AbortSignal.timeout(5000),
+      quietOutput(),
+      async () => {},
+    );
+
+    const step = calls.find((call) => call.script.includes("hostname 2>/dev/null"));
+    expect(step).toBeDefined();
+
+    const dir = await mkdtemp(join(tmpdir(), "beachside-host-"));
+    const log = join(dir, "set");
+
+    try {
+      await writeFile(
+        join(dir, "hostname"),
+        `#!/bin/sh
+if [ $# -eq 0 ]; then echo ${JSON.stringify(current)}; else echo "$1" > ${log}; fi
+`,
+        { mode: 0o755 },
+      );
+      // /etc/hosts is the test machine's: the append goes to a throwaway tee.
+      await writeFile(
+        join(dir, "tee"),
+        `#!/bin/sh
+cat >/dev/null
+`,
+        { mode: 0o755 },
+      );
+      await writeFile(
+        join(dir, "sudo"),
+        `#!/bin/sh
+shift
+exec "$@"
+`,
+        { mode: 0o755 },
+      );
+
+      const done = Bun.spawnSync(["sh", "-c", step!.script], {
+        env: { PATH: `${dir}:/usr/bin:/bin` },
+      });
+
+      expect(done.exitCode).toBe(0);
+
+      return (await readdir(dir)).includes("set")
+        ? (await readFile(log, "utf8")).trim()
+        : undefined;
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  }
+
+  test("a host named after its IP takes its tailnet name, so Herdr does not show 192 (Archil)", async () => {
+    expect(await renamedTo("192.168.42.7")).toBe("beachside-web");
+  });
+
+  test("a host with a real name keeps it", async () => {
+    expect(await renamedTo("freestyle-vm")).toBeUndefined();
+  });
+});
+
 describe("create --with", () => {
   const token = "local-test-token-12345";
   let root: string;

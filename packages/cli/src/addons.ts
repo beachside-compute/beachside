@@ -342,6 +342,8 @@ async function setupHerdr(
     signal,
   );
 
+  await run(shell, { what: "Naming the host", script: nameHostScript(hostname) }, signal);
+
   await run(
     shell,
     {
@@ -404,6 +406,22 @@ async function setupHerdr(
   if (knownHosts.length) record.knownHosts = knownHosts;
 
   return record;
+}
+
+/**
+ * Herdr shows a machine's host by the first label of its hostname, so a sandbox named after its
+ * private IP (Archil) shows up as "192". Such a host takes its tailnet name instead; a named
+ * host keeps its own. Best effort: a sandbox that cannot rename itself still works.
+ */
+function nameHostScript(hostname: string): string {
+  const name = shellQuote(hostname);
+
+  return [
+    asRoot,
+    `case "$(hostname 2>/dev/null)" in ""|*[!0-9.]*) exit 0 ;; esac`,
+    `$S hostname ${name} 2>/dev/null || exit 0`,
+    `grep -qw -- ${name} /etc/hosts 2>/dev/null || echo 127.0.1.1 ${name} | $S tee -a /etc/hosts >/dev/null 2>&1 || true`,
+  ].join("\n");
 }
 
 /**

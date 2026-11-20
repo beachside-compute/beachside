@@ -805,7 +805,7 @@ export function draftFromFlags(
       if (fromEnv) draft.config[key] = fromEnv;
       else if (entry.required && draft.config[key] === undefined)
         missing.push(
-          `${key === "network" ? "--network <policy>" : `--set ${key}=...`} (or ${entry.env})`,
+          `${key === "network" ? "--network <policy>" : `--set ${key}=${entry.choices?.length ? `<${entry.choices.join("|")}>` : "..."}`} (or ${entry.env})`,
         );
     }
   }

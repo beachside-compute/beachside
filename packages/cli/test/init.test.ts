@@ -186,7 +186,7 @@ test("a missing answer exits 2 with the flags it needs and writes nothing", asyn
 
   expect(error.known.missing).toEqual([
     "--credential token=... (or FAKE_TOKEN)",
-    "--set region=... (or FAKE_REGION)",
+    "--set region=<north|south> (or FAKE_REGION)",
   ]);
   expect(error.hint).toContain("FAKE_TOKEN: https://fake.example/keys");
   await expect(stat(configPath())).rejects.toThrow();

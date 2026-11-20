@@ -45,10 +45,21 @@ const codes = new Map<number, AdapterErrorCode>([
 ]);
 
 /** Plan and quota refusals that name a capability the account lacks. */
-const planCodes = new Set([
-  "sandbox_network_plan_required",
-  "sandbox_ttl_limit_exceeded",
-  "allowance_insufficient",
+const planCodes = new Set(["sandbox_network_plan_required", "allowance_insufficient"]);
+
+/** Plan limits a smaller request meets: the request is too big, the feature is not missing. */
+const limitCodes = new Set(["sandbox_ttl_limit_exceeded"]);
+
+/** What to do about a refusal Archil names, appended to its message. */
+const advice = new Map([
+  [
+    "sandbox_network_plan_required",
+    "; network policies need a paid Archil plan; on the Free plan, use network archil-managed",
+  ],
+  [
+    "sandbox_ttl_limit_exceeded",
+    "; the plan caps each session's lifetime (the Free plan at 30 minutes); ask for a shorter lifetime or use a paid Archil plan",
+  ],
 ]);
 
 /** 503 codes Archil documents as "retry": the request did nothing. */
@@ -133,7 +144,9 @@ function failureFor(
 ): NativeFailure {
   const code: AdapterErrorCode = planCodes.has(nativeCode)
     ? "UNSUPPORTED"
-    : (codes.get(status) ?? (status >= 500 ? "UNAVAILABLE" : "INTERNAL"));
+    : limitCodes.has(nativeCode)
+      ? "INVALID_ARGUMENT"
+      : (codes.get(status) ?? (status >= 500 ? "UNAVAILABLE" : "INTERNAL"));
 
   const label = clean(nativeCode, secrets).slice(0, 128);
   const detail = clean(message, secrets);
@@ -144,9 +157,7 @@ function failureFor(
     error: new AdapterError(
       code,
       `Archil API ${status}${label ? ` ${label}` : ""}${detail ? `: ${detail}` : ""}${
-        nativeCode === "sandbox_network_plan_required"
-          ? "; on the Free plan, use network archil-managed"
-          : ""
+        advice.get(nativeCode) ?? ""
       }`,
     ),
   };
