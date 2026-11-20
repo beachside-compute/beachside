@@ -9,7 +9,7 @@ The Beachside credential broker stores upstream credentials and issues short-liv
 
 ## Deploy the broker
 
-Configure three Worker secrets. `BROKER_ADMIN_KEY` authorizes integration and issuance settings. `BROKER_ISSUER_KEY` authorizes grant requests. `BROKER_ENCRYPTION_KEYS` maps version labels to base64url-encoded 32-byte encryption keys. The `BROKER_ENCRYPTION_KEY_VERSION` setting selects the active version for writes. Keep prior encryption versions configured until their stored credentials have been rotated. [Worker deployment and bootstrap](https://github.com/beachside-compute/credential-broker/tree/7ecc64903522001201c96a35f62320c75e2e56cf/services/credential-broker).
+Configure three Worker secrets. `BROKER_ADMIN_KEY` authorizes integration and issuance settings. `BROKER_ISSUER_KEY` authorizes grant requests. `BROKER_ENCRYPTION_KEYS` maps version labels to base64url-encoded 32-byte encryption keys. The `BROKER_ENCRYPTION_KEY_VERSION` setting selects the active version for writes. Keep prior encryption versions configured until their stored credentials have been rotated. [Worker deployment and bootstrap](https://github.com/beachside-compute/credential-broker/tree/57e54957dc45c9bde315536ac7d5f33e0a6e984c/services/credential-broker).
 
 The new deployment starts with no integrations or issuer permissions. Add integrations and authorize issuance before launching a credentialed sandbox.
 
@@ -20,7 +20,7 @@ Build a client tarball from the separate broker repository before installing it 
 ```sh
 git clone https://github.com/beachside-compute/credential-broker.git
 cd credential-broker
-git checkout 7ecc64903522001201c96a35f62320c75e2e56cf
+git checkout 57e54957dc45c9bde315536ac7d5f33e0a6e984c
 bun install --frozen-lockfile
 bun run build
 bun pm pack
@@ -100,7 +100,9 @@ await client.sandboxes.with(
 );
 ```
 
-Git uses the broker for HTTPS URLs under `https://github.com/`. For `gh`, the environment sets `GH_HOST` to the broker hostname and `GH_ENTERPRISE_TOKEN` to the grant. An explicitly selected `github.com` GitHub CLI host takes precedence over `GH_HOST`. Use `gh api --hostname "$GH_HOST"` or `gh ... --repo "$GH_HOST/owner/repo"` to explicitly select the broker. The Worker accepts supported GitHub routes. The configured upstream GitHub credential determines repository access and write permissions. See the [broker route and permission reference](https://github.com/beachside-compute/credential-broker/tree/7ecc64903522001201c96a35f62320c75e2e56cf/services/credential-broker).
+Git uses the broker for HTTPS URLs under `https://github.com/`. For `gh`, the environment sets `GH_HOST` to the broker hostname and `GH_ENTERPRISE_TOKEN` to the grant. An explicitly selected `github.com` GitHub CLI host takes precedence over `GH_HOST`. Use `gh api --hostname "$GH_HOST"` or `gh ... --repo "$GH_HOST/owner/repo"` to explicitly select the broker. The Worker accepts supported GitHub routes. The configured upstream GitHub credential determines repository access and write permissions. See the [broker route and permission reference](https://github.com/beachside-compute/credential-broker/tree/57e54957dc45c9bde315536ac7d5f33e0a6e984c/services/credential-broker).
+
+For repositories owned by the GitHub account `gateway`, include the `.git` suffix in the HTTPS Git URL, for example `https://github.com/gateway/project.git`.
 
 A broker can hold multiple GitHub integrations. Choose one per grant, such as `github: "github-tools"` for a sandbox working with the tools account. Git and GitHub CLI use that grant's selected GitHub credential on the shared broker host. A grant can include HTTPS endpoints alongside GitHub.
 
