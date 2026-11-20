@@ -1261,9 +1261,10 @@ console.log("Packed Freestyle imports and local validation passed without provid
 import { Beachside } from "beachside";
 import { archilAdapter } from "@beachside/archil";
 if (archilAdapter.name !== "archil") throw Error("External adapter identity mismatch");
-if (archilAdapter.config.parse({ region: "aws-us-east-1" }).network !== "internet") throw Error("Egress must default to internet");
+if (archilAdapter.config.parse({}).network !== "internet") throw Error("Egress must default to internet");
+if (archilAdapter.config.parse({}).region !== "aws-us-east-1") throw Error("Region must default to aws-us-east-1");
 try {
-  await Beachside.connect({ adapter: archilAdapter, config: {}, credentials: { apiKey: "fixture" } });
+  await Beachside.connect({ adapter: archilAdapter, config: { region: "gcp-us-central1" }, credentials: { apiKey: "fixture" } });
   throw Error("Invalid configuration accepted");
 } catch (error) { if (error.code !== "INVALID_ARGUMENT") throw error; }
 console.log("Packed Archil imports and local validation passed without provider IO");
