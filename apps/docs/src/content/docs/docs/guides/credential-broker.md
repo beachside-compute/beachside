@@ -73,16 +73,18 @@ Run this in a private terminal. The output includes the temporary `token`, the g
 bun run broker grant issue router-work
 ```
 
-To verify the grant, append `/key` to the returned gateway URL. This OpenRouter request checks authentication and uses no model tokens. In Bash or Zsh, paste the grant token when prompted. The command prints the HTTP status. [OpenRouter current key endpoint](https://openrouter.ai/docs/api/api-reference/api-keys/get-current-key).
+To verify the grant, run this block in Bash or Zsh. Paste the gateway URL and token from the grant output when prompted. The request checks OpenRouter authentication without using model tokens and prints the HTTP status. [OpenRouter current key endpoint](https://openrouter.ai/docs/api/api-reference/api-keys/get-current-key).
 
 ```sh
+printf 'Paste the gateway URL and press Enter: '
+read -r GATEWAY_URL
 printf 'Paste the grant token and press Enter: '
 read -rs GRANT_TOKEN
 printf '\n'
 printf 'Authorization: Bearer %s\n' "$GRANT_TOKEN" |
   curl --fail --silent --show-error --output /dev/null --write-out '%{http_code}\n' \
-    --header @- https://your-broker.example.com/gateway/router-work/key
-unset GRANT_TOKEN
+    --header @- --url "${GATEWAY_URL%/}/key"
+unset GATEWAY_URL GRANT_TOKEN
 ```
 
 When you're done, copy the `id` from the grant output.
