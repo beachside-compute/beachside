@@ -87,7 +87,7 @@ beachside-broker issuer set router-work
 
 ## Try a temporary grant
 
-The `grant` commands require version 0.1.1 or later. With version 0.1.0, continue to the SDK example to issue and revoke grants automatically. [Give a sandbox a grant](#give-a-sandbox-a-grant).
+The `grant` commands require version 0.1.1 or later. If you installed an older version, rerun `npm install -g @beachside/credential-client` to upgrade.
 
 In a private Bash or Zsh terminal with `BEACHSIDE_BROKER_URL` set, load the separate `BROKER_ISSUER_KEY` from `.env.deploy` or your secret manager.
 
