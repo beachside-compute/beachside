@@ -175,6 +175,9 @@ Import from `@beachside/credential-client`.
 
 | Export                         | Kind      |
 | ------------------------------ | --------- |
+| `BrokerEndpoint`               | type      |
+| `BrokerEndpointCredential`     | type      |
+| `BrokerEndpointHeader`         | type      |
 | `BrokerGrant`                  | interface |
 | `BrokerGrantRequest`           | interface |
 | `BrokerIntegration`            | type      |
@@ -189,6 +192,7 @@ Import from `@beachside/credential-client`.
 | `CredentialBrokerError`        | re-export |
 | `CredentialBrokerOptions`      | interface |
 | `githubActionsOidc`            | function  |
+| `SandboxEndpoint`              | interface |
 | `SandboxGrant`                 | interface |
 | `SandboxIntegrations`          | interface |
 
