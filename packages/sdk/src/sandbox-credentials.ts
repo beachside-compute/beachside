@@ -326,6 +326,8 @@ export async function renewSandboxGrant(
   const timeout = AbortSignal.timeout(brokerBudget);
   const signal = AbortSignal.any([client.signal, timeout, ...(workSignal ? [workSignal] : [])]);
   const renew = installed.renew;
+  // A completed revocation replaces installed.revoke with a no-op, so keep the source's own.
+  const revoke = installed.revoke;
 
   await client.telemetry.run(
     "beachside.credentials.renew",
@@ -346,9 +348,23 @@ export async function renewSandboxGrant(
             "Credential source returned an invalid expiry",
           );
 
+        // Destruction may have revoked the grant while the renewal was in flight, and the broker
+        // could have applied the renewal second: revoke again so the grant cannot outlive it.
+        if (!installed.env) {
+          await raceAbort(
+            Promise.resolve().then(() => revoke(AbortSignal.timeout(brokerBudget))),
+            AbortSignal.timeout(brokerBudget),
+          ).catch(() => undefined);
+          throw new BeachsideError("UNAUTHENTICATED", "The grant was revoked during renewal");
+        }
+
         installed.expiresAt = Date.parse(parsed.data);
       } catch (error) {
-        if (error instanceof BeachsideError && error.code === "INVALID_RESPONSE") throw error;
+        if (
+          error instanceof BeachsideError &&
+          (error.code === "INVALID_RESPONSE" || error.code === "UNAUTHENTICATED")
+        )
+          throw error;
 
         if (workSignal?.aborted || client.signal.aborted)
           throw new BeachsideError("WAIT_ABORTED", "Sandbox grant renewal was cancelled");

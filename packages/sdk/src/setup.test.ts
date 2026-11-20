@@ -971,6 +971,44 @@ test("a grant reports its status without the token and renews at its source", as
   }
 });
 
+test("a renewal that races destruction revokes the grant again", async () => {
+  const f = fixture({ credentialEgress: true });
+  const client = await f.connect();
+  const revocations: string[] = [];
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+
+  const grant: SandboxCredentials = {
+    async acquire() {
+      return {
+        env: { OPENROUTER_API_KEY: brokerToken },
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        async revoke() {
+          revocations.push("revoke");
+        },
+        async renew() {
+          await held;
+
+          return new Date(Date.now() + 600_000).toISOString();
+        },
+      };
+    },
+  };
+
+  try {
+    const box = await client.sandboxes.create({ network: "internet", grant });
+    const renewal = box.renewGrant({ ttlSeconds: 600 });
+    await box.destroy();
+    expect(revocations).toEqual(["revoke"]);
+    release();
+    await expect(renewal).rejects.toMatchObject({ code: "UNAUTHENTICATED" });
+    expect(revocations).toEqual(["revoke", "revoke"]);
+    expect(box.grant()).toMatchObject({ status: "revoked" });
+  } finally {
+    await client.close();
+  }
+});
+
 test("a refused grant names the integration and the fix without echoing the source's message", async () => {
   const f = fixture({ credentialEgress: true });
   const client = await f.connect();

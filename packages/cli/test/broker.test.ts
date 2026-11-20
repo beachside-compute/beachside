@@ -370,6 +370,19 @@ test("a refused grant names the fix and leaves nothing behind", async () => {
   expect(missing.stderr).toContain("No credential broker is set up");
   expect(missing.stderr).toContain("beachside broker add");
 
+  for (const [args, message] of [
+    [["create", "--grant", "claude", "--cache"], "--grant cannot be combined with --cache"],
+    [["create", "--grant", `a${"b".repeat(32)}`], "Invalid --grant"],
+    [
+      ["broker", "add", "x", "--url", "http://example.com", "--issuer-key", "k", "--no-check"],
+      "not an HTTPS origin",
+    ],
+  ] as const) {
+    const refusedLocally = await cli([...args], env);
+    expect(refusedLocally.code).toBe(2);
+    expect(refusedLocally.stderr).toContain(message);
+  }
+
   const invalid = await cli(["create", "--grant", "claude", "--grant-ttl", "8d"], env);
   expect(invalid.code).toBe(2);
   expect(invalid.stderr).toContain("at most 7d");

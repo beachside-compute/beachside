@@ -230,7 +230,7 @@ export function grantRequest(flags: Flags): GrantRequest | null {
 
   for (const spec of specs) {
     const match =
-      /^([a-z0-9][a-z0-9-]{0,62})(?:=([A-Z_][A-Z0-9_]{0,63}),([A-Z_][A-Z0-9_]{0,63}))?$/.exec(spec);
+      /^([a-z][a-z0-9-]{0,31})(?:=([A-Z_][A-Z0-9_]{0,63}),([A-Z_][A-Z0-9_]{0,63}))?$/.exec(spec);
 
     if (!match)
       throw usage(
@@ -410,9 +410,16 @@ async function addBroker(session: Session, args: string[]): Promise<number> {
   let origin: string;
 
   try {
-    origin = new URL(config.url).origin;
+    const url = new URL(config.url);
+    const loopback = ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+
+    if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback)) throw new Error();
+    origin = url.origin;
   } catch {
-    throw usage(`--url ${config.url} is not a URL`);
+    throw usage(
+      `--url ${config.url} is not an HTTPS origin`,
+      "use https://, or http:// only for localhost while running the broker locally",
+    );
   }
 
   const loaded = await session.config();
@@ -682,7 +689,7 @@ async function managedCommand(session: Session, flags: Flags, args: string[]): P
 
   // The broker's own help needs no broker.
   if (args.includes("--help") || args.includes("-h"))
-    return runBrokerCli(["--help"], {
+    return runBrokerCli(args, {
       env: {},
       prefix,
       stdout: (text) => out.streams.stdout(`${text}\n`),

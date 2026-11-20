@@ -216,6 +216,12 @@ function createRequest(flags: Flags, env: Record<string, string> = {}): CreateRe
 
   const grant = grantRequest(flags);
 
+  if (grant && (flags.bool("cache") || flags.bool("refresh-cache")))
+    throw usage(
+      "--grant cannot be combined with --cache or --refresh-cache",
+      "a cache snapshot would keep the grant's token; build the cache without --grant",
+    );
+
   if (grant && network === "blocked")
     throw usage(
       "--grant needs a network that reaches the credential broker",
@@ -848,6 +854,14 @@ async function prepareCaching(
     setup?.cache !== undefined;
 
   if (!wanted) return null;
+
+  // A cache snapshot would keep the grant's token and hand it to later sandboxes.
+  if (request.grant) {
+    if (setup?.cache !== undefined)
+      session.ctx.out.note("setup cache skipped: a sandbox with --grant is never cached");
+
+    return null;
+  }
 
   const profile = await session.profile();
   const client = await session.connect(profile);

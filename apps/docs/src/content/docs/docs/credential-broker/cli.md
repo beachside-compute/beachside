@@ -51,7 +51,7 @@ Each `--grant` names an integration. The variables it sets depend on the integra
 
 To pick the names yourself, add them after the ID: `--grant openrouter=OPENAI_BASE_URL,OPENAI_API_KEY` points an OpenAI client at OpenRouter.
 
-The grant lasts an hour unless you pass `--grant-ttl`, up to `7d`. It is part of the sandbox's environment, which the provider stores like any `--env` value; that is what lets later commands use it. Keep its lifetime as short as the work allows, and let `rm` revoke it. `--env` cannot override a variable the grant sets. `beachside run --grant ...` works the same way and revokes the grant when it destroys the sandbox.
+The grant lasts an hour unless you pass `--grant-ttl`, up to `7d`. It is part of the sandbox's environment, which the provider stores like any `--env` value; that is what lets later commands use it. Keep its lifetime as short as the work allows, and let `rm` revoke it. `--env` cannot override a variable the grant sets, and a sandbox with a grant is never saved as a setup cache, since the snapshot would keep the token. `beachside run --grant ...` works the same way and revokes the grant when it destroys the sandbox.
 
 ## Always-on agents
 

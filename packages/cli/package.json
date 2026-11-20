@@ -18,7 +18,7 @@
   "scripts": {
     "check": "bun run credential-client:build && tsc -p tsconfig.json",
     "build": "bun run credential-client:build && rm -rf dist && bun build src/main.ts --target node --format esm --outdir dist --external beachside --external @beachside/adapter --external zod",
-    "credential-client:build": "tsc -p node_modules/@beachside/credential-client/tsconfig.build.json --typeRoots ../../node_modules/@types --types bun"
+    "credential-client:build": "test ! -f node_modules/@beachside/credential-client/tsconfig.build.json || tsc -p node_modules/@beachside/credential-client/tsconfig.build.json --typeRoots ../../node_modules/@types --types bun"
   },
   "dependencies": {
     "@beachside/adapter": "workspace:*",
