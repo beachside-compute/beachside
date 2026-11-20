@@ -24,7 +24,7 @@
     "posthog-js": "^1.448.0"
   },
   "devDependencies": {
-    "@beachside/credential-client": "github:beachside-compute/credential-broker#fea7d391dc7d43be1bf40f2bef803570786e953a",
+    "@beachside/credential-client": "github:beachside-compute/credential-broker#0a09e9d2dd32aa348cf112c4d9d90429d5c3a97a",
     "@astrojs/check": "0.9.6",
     "beachside": "workspace:*",
     "@beachside-internal/provider-fake": "workspace:*",

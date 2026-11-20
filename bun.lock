@@ -38,7 +38,7 @@
         "@beachside/archil": "workspace:*",
         "@beachside/boat": "workspace:*",
         "@beachside/boxd": "workspace:*",
-        "@beachside/credential-client": "github:beachside-compute/credential-broker#fea7d391dc7d43be1bf40f2bef803570786e953a",
+        "@beachside/credential-client": "github:beachside-compute/credential-broker#0a09e9d2dd32aa348cf112c4d9d90429d5c3a97a",
         "@beachside/daytona": "workspace:*",
         "@beachside/e2b": "workspace:*",
         "@beachside/exe-dev": "workspace:*",
@@ -359,7 +359,7 @@
 
     "@beachside/cli": ["@beachside/cli@workspace:packages/cli"],
 
-    "@beachside/credential-client": ["@beachside/credential-client@github:beachside-compute/credential-broker#fea7d39", { "bin": { "beachside-broker": "./dist/cli.js" } }, "beachside-compute-credential-broker-fea7d39", "sha512-UUen3zDE8bg+BU2J3KM6gFASaOM7+UM0VWUrKZi1uvNDDo5KU2XTE483lHP4FWlHieffuotnA3tL3mcoHcooow=="],
+    "@beachside/credential-client": ["@beachside/credential-client@github:beachside-compute/credential-broker#0a09e9d", { "bin": { "beachside-broker": "./dist/cli.js" } }, "beachside-compute-credential-broker-0a09e9d", "sha512-DSGzRAaxEr7VELoWB6VzYrcAkYVSHuXkOcBsqrx10a0gYgi1JeFUsew3EhV8EWp9T7SQMUUDkDBuPEryUudfwg=="],
 
     "@beachside/daytona": ["@beachside/daytona@workspace:packages/providers/daytona"],
 
