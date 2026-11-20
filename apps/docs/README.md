@@ -18,7 +18,7 @@ The credential broker example and generated API index use the external client re
 
 ## Cloudflare Worker and static assets
 
-`wrangler.jsonc` points at `./dist` and configures `404-page` fallback. A small Worker (`worker/index.ts`) sits in front of the assets: it answers `POST /api/beta-signup` and hands every other request to the `ASSETS` binding. The signup route accepts only requests from the site's origins, rate limits each client IP through the `SIGNUP_LIMITER` binding, and adds the email to the Resend 1.0 beta segment. It reads `RESEND_API_KEY` from the Cloudflare Secrets Store binding and answers 503 until that secret exists. Tests: `bun test apps/docs/worker`.
+`wrangler.jsonc` points at `./dist` and configures `404-page` fallback. A small Worker (`worker/index.ts`) sits in front of the assets: it answers `/beta` and `/beta/` with a 301 to `https://beachsidecompute.com/beta/`, keeping the query string so ad UTM tags survive, and hands every other request to the `ASSETS` binding. The 1.0 beta page and its signup endpoint live in the `beachside-landing` repository. Assets are served before the Worker runs, so no page may be built at `/beta/`. Tests: `bun test apps/docs/worker`.
 
 To inspect routing locally after a build, use a Wrangler 4 installation and run `wrangler dev --config apps/docs/wrangler.jsonc` from the repository root (or run it in `apps/docs` with `--config wrangler.jsonc`). Unknown paths should return HTTP 404 with the generated `404.html`.
 

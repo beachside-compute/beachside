@@ -1,200 +1,38 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 
 import worker, { type Env } from "./index";
 
-const realFetch = globalThis.fetch;
-
-const testKey: Env["RESEND_API_KEY"] = { get: async () => "re_test" };
-
 const assets: Env["ASSETS"] = { fetch: async () => new Response("asset") };
 
-type SignupBody = { email: string; source: string; website?: string };
+const get = (url: string) => worker.fetch(new Request(url), { ASSETS: assets });
 
-function post(body: SignupBody, origin = "https://beachside.run"): Request {
-  return new Request("https://beachside.run/api/beta-signup", {
-    method: "POST",
-    headers: { "content-type": "application/json", origin },
-    body: JSON.stringify(body),
-  });
-}
-
-function stubResend(contactStatus: number, contactBody = "{}") {
-  const calls: { url: string; body: string }[] = [];
-
-  const fetcher: typeof fetch = Object.assign(
-    async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-
-      calls.push({ url, body: String(init?.body) });
-
-      if (url.endsWith("/contacts")) return new Response(contactBody, { status: contactStatus });
-
-      return new Response("{}", { status: 202 });
-    },
-    { preconnect() {} },
-  );
-
-  globalThis.fetch = fetcher;
-
-  return calls;
-}
-
-afterEach(() => {
-  globalThis.fetch = realFetch;
-});
-
-describe("beta signup worker", () => {
+describe("docs worker", () => {
   test("serves assets for other paths", async () => {
-    const response = await worker.fetch(new Request("https://beachside.run/beta/"), {
-      ASSETS: assets,
+    for (const path of ["/", "/docs/", "/remote/", "/beta-other", "/betas/", "/beta/x"]) {
+      const response = await get(`https://beachside.run${path}`);
+
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe("asset");
+    }
+  });
+
+  for (const path of ["/beta", "/beta/"]) {
+    test(`redirects ${path} to the beta page on beachsidecompute.com`, async () => {
+      const response = await get(`https://beachside.run${path}`);
+
+      expect(response.status).toBe(301);
+      expect(response.headers.get("location")).toBe("https://beachsidecompute.com/beta/");
     });
 
-    expect(await response.text()).toBe("asset");
-  });
+    test(`keeps the query string when redirecting ${path}`, async () => {
+      const response = await get(
+        `https://www.beachside.sh${path}?utm_source=reddit&utm_campaign=rex%20launch`,
+      );
 
-  test("saves the contact in the beta segment and sends the signup event", async () => {
-    const calls = stubResend(200);
-
-    const response = await worker.fetch(
-      post({ email: "a@example.com", source: "beachside.run/beta reddit rex" }),
-      {
-        ASSETS: assets,
-        RESEND_API_KEY: testKey,
-      },
-    );
-
-    expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true });
-    expect(calls.map((call) => call.url)).toEqual([
-      "https://api.resend.com/contacts",
-      "https://api.resend.com/events/send",
-    ]);
-    expect(JSON.parse(calls[0]?.body ?? "{}")).toMatchObject({
-      email: "a@example.com",
-      segments: [{ id: "6f4eb137-076b-4d92-a8a6-8120d59d91a1" }],
-      properties: { signup_source: "beachside.run/beta reddit rex" },
+      expect(response.status).toBe(301);
+      expect(response.headers.get("location")).toBe(
+        "https://beachsidecompute.com/beta/?utm_source=reddit&utm_campaign=rex%20launch",
+      );
     });
-    expect(JSON.parse(calls[1]?.body ?? "{}")).toMatchObject({
-      event: "beta.signed_up",
-      email: "a@example.com",
-    });
-  });
-
-  test("treats an existing contact as a signup", async () => {
-    stubResend(409, '{"message":"Contact already exists"}');
-
-    const response = await worker.fetch(post({ email: "a@example.com", source: "x" }), {
-      ASSETS: assets,
-      RESEND_API_KEY: testKey,
-    });
-
-    expect(response.status).toBe(200);
-  });
-
-  test("rejects bad email, foreign origins and missing keys", async () => {
-    const calls = stubResend(200);
-
-    const env = { ASSETS: assets, RESEND_API_KEY: testKey };
-
-    expect((await worker.fetch(post({ email: "nope", source: "x" }), env)).status).toBe(400);
-    expect(
-      (
-        await worker.fetch(
-          post({ email: "a@example.com", source: "x" }, "https://evil.example"),
-          env,
-        )
-      ).status,
-    ).toBe(403);
-    expect(
-      (await worker.fetch(post({ email: "a@example.com", source: "x" }), { ASSETS: assets }))
-        .status,
-    ).toBe(503);
-    expect(calls).toEqual([]);
-  });
-
-  test("rejects requests without an Origin header", async () => {
-    const calls = stubResend(200);
-
-    const request = new Request("https://beachside.run/api/beta-signup", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email: "a@example.com", source: "x" }),
-    });
-
-    const response = await worker.fetch(request, { ASSETS: assets, RESEND_API_KEY: testKey });
-
-    expect(response.status).toBe(403);
-    expect(calls).toEqual([]);
-  });
-
-  test("answers 429 when the client is over its rate limit", async () => {
-    const calls = stubResend(200);
-    const keys: string[] = [];
-
-    const limiter: Env["SIGNUP_LIMITER"] = {
-      limit: async ({ key }) => {
-        keys.push(key);
-
-        return { success: false };
-      },
-    };
-
-    const request = post({ email: "a@example.com", source: "x" });
-
-    request.headers.set("cf-connecting-ip", "203.0.113.7");
-
-    const response = await worker.fetch(request, {
-      ASSETS: assets,
-      RESEND_API_KEY: testKey,
-      SIGNUP_LIMITER: limiter,
-    });
-
-    expect(response.status).toBe(429);
-    expect(keys).toEqual(["203.0.113.7"]);
-    expect(calls).toEqual([]);
-  });
-
-  test("a Resend network failure answers 502, and a failed event still saves the signup", async () => {
-    const env = { ASSETS: assets, RESEND_API_KEY: testKey };
-
-    globalThis.fetch = Object.assign(
-      async () => {
-        throw new TypeError("network down");
-      },
-      { preconnect() {} },
-    );
-
-    const failed = await worker.fetch(post({ email: "a@example.com", source: "x" }), env);
-
-    expect(failed.status).toBe(502);
-    expect(await failed.json()).toMatchObject({ ok: false });
-
-    globalThis.fetch = Object.assign(
-      async (input: RequestInfo | URL) => {
-        if (String(input).endsWith("/contacts")) return new Response("{}", { status: 200 });
-
-        throw new TypeError("network down");
-      },
-      { preconnect() {} },
-    );
-
-    expect((await worker.fetch(post({ email: "a@example.com", source: "x" }), env)).status).toBe(
-      200,
-    );
-  });
-
-  test("honeypot submissions get a quiet success and save nothing", async () => {
-    const calls = stubResend(200);
-
-    const response = await worker.fetch(
-      post({ email: "a@example.com", source: "x", website: "spam" }),
-      {
-        ASSETS: assets,
-        RESEND_API_KEY: testKey,
-      },
-    );
-
-    expect(response.status).toBe(200);
-    expect(calls).toEqual([]);
-  });
+  }
 });

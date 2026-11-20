@@ -7,7 +7,7 @@ description: The SDK does not track usage. Learn what the website and CLI teleme
 
 ## Website analytics
 
-The docs and the `/beta/` and `/remote/` pages ask before recording anything. Until you accept, they send no analytics and set no analytics cookies. If you accept, they use PostHog to record page views, clicks and errors, and the `/beta/` and `/remote/` pages also load the Reddit Pixel so we can measure our Reddit ads. A beta signup or a copied install command is reported as a conversion. Your email address is never sent to PostHog or Reddit.
+The docs and the `/remote/` page ask before recording anything. Until you accept, they send no analytics and set no analytics cookies. If you accept, they use PostHog to record page views, clicks and errors, and the `/remote/` page also loads the Reddit Pixel so we can measure our Reddit ads. A copied install command is reported as a conversion.
 
 To change your choice, use **Analytics preferences** at the bottom of the page. Rejecting stops capture and removes the stored analytics data.
 

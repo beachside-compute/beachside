@@ -6,4 +6,4 @@ It uses the striped sunset from `apps/docs/src/components/Logo.astro`, the docs 
 
 This is the Beachside product identity; parent-company assets are in `../beachside-compute/`.
 
-`src/beta-social-1200x630.html` is the source for the 1200 × 630 X / Open Graph link preview of beachside.run/beta/, published as `apps/docs/public/brand/beachside/beta-social-1200x630.png`. Render it at a 1200 × 630 viewport after its fonts load.
+`src/beta-social-1200x630.html` is the source for the 1200 × 630 X / Open Graph link preview of the 1.0 beta page, now at https://beachsidecompute.com/beta/ (beachside.run/beta redirects there). It is published as `apps/docs/public/brand/beachside/beta-social-1200x630.png`, kept so earlier shares still show their preview, and copied to the `beachside-landing` repository. Render it at a 1200 × 630 viewport after its fonts load.

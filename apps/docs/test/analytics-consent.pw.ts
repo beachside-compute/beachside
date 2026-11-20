@@ -214,7 +214,7 @@ test("desktop consent notice fits its content in the bottom-right corner", async
 
 for (const [path, choice] of [
   ["/docs/", "Accept"],
-  ["/beta/", "Accept"],
+  ["/remote/", "Accept"],
   ["/remote/", "Reject"],
 ] as const) {
   test(`${path} keeps the scroll position when ${choice} is chosen`, async ({ page }) => {
@@ -253,7 +253,7 @@ const adsConsentKey = "beachside-ads-analytics-consent-v1";
 // The pixel.js request is blocked, so the stub keeps every Reddit call in its queue.
 const redditQueue = (page: Page) => page.evaluate(() => window.rdt?.callQueue);
 
-for (const path of ["/beta/", "/remote/"]) {
+for (const path of ["/remote/"]) {
   test(`${path} asks first and sends nothing until accepted`, async ({ page, context }) => {
     const { requests, libraries, reddit } = await observe(page);
     await page.goto(path);
@@ -294,27 +294,9 @@ test("docs acceptance does not turn on the ad pages", async ({ page }) => {
   await bar(page).getByRole("button", { name: "Accept", exact: true }).click();
   await expect.poll(() => captured.some((event) => event.event === "$pageview")).toBe(true);
   captured.length = 0;
-  await page.goto("/beta/");
+  await page.goto("/remote/");
   await expect(bar(page)).toBeVisible();
   await page.waitForTimeout(700);
   expect(captured).toHaveLength(0);
   expect(reddit).toHaveLength(0);
-});
-
-test("a beta signup is a conversion only after acceptance, and never sends the email", async ({
-  page,
-}) => {
-  const { captured } = await observe(page);
-  await page.route("**/api/beta-signup", (route) => route.fulfill({ json: { ok: true } }));
-  await page.goto("/beta/");
-  await bar(page).getByRole("button", { name: "Accept", exact: true }).click();
-  await expect.poll(() => captured.some((event) => event.event === "$pageview")).toBe(true);
-  await page.locator("#email-hero").fill("person@example.com");
-  await page.locator("#email-hero").press("Enter");
-  await expect.poll(() => captured.some((event) => event.event === "beta_signup")).toBe(true);
-  expect(JSON.stringify(captured)).not.toContain("person@example.com");
-
-  const queued = await redditQueue(page);
-
-  expect(queued).toContainEqual(["track", "SignUp"]);
 });
