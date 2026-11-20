@@ -3,7 +3,13 @@ title: Credential broker
 description: Give sandbox commands short-lived GitHub and model access through a self-hosted credential broker.
 ---
 
-The Beachside credential broker stores upstream keys and issues short-lived grants for GitHub and HTTPS APIs. A sandbox receives a temporary grant and the broker URL for its integration.
+Use the credential broker when a sandbox needs to call GitHub, OpenRouter, or another HTTPS API and you want to keep the real credential out of the sandbox and away from its provider. You run the broker in your Cloudflare account, where it stores the upstream keys encrypted.
+
+## How it works
+
+Beachside gives the sandbox a broker URL and a short-lived token called a **grant**. The grant only works with the integrations you approved for that sandbox. The broker checks the grant, swaps it for the real key on the upstream request, and relays the response. You can let a grant expire or revoke it early while keeping the upstream key in place for other workloads.
+
+![A sandbox sends its temporary grant to your broker. The broker checks the grant, sends the real key to OpenRouter, and relays the response back to the sandbox.](/images/credential-broker/architecture.png)
 
 ## Deploy the broker
 
@@ -100,8 +106,6 @@ Install both packages in your sandbox application.
 ```sh
 npm install beachside @beachside/credential-client
 ```
-
-![The sandbox sends a temporary grant to the Cloudflare broker. The broker validates it, calls OpenRouter with the stored upstream API key, and forwards the response to the sandbox.](/images/credential-broker/architecture.png)
 
 On the trusted orchestrator host, set `BEACHSIDE_BROKER_URL` to the deployed origin and `BEACHSIDE_BROKER_ISSUER_KEY` to the `BROKER_ISSUER_KEY` from `.env.deploy` or your secret manager. Beachside supplies the temporary grant to sandbox commands. For a model-only setup, use just the endpoint mapping. [Model endpoint example](/docs/guides/model-gateways/#select-the-endpoint-in-a-sandbox).
 
