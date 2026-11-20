@@ -38,7 +38,7 @@
         "@beachside/archil": "workspace:*",
         "@beachside/boat": "workspace:*",
         "@beachside/boxd": "workspace:*",
-        "@beachside/credential-client": "github:beachside-compute/credential-broker#3085ab54c5025f5fbe3dae67756b9aba59f36547",
+        "@beachside/credential-client": "github:beachside-compute/credential-broker#9f28ce81f1cce424b22d218d83ff0ab2229b8546",
         "@beachside/daytona": "workspace:*",
         "@beachside/e2b": "workspace:*",
         "@beachside/exe-dev": "workspace:*",
@@ -86,7 +86,7 @@
         "@beachside/archil": "workspace:*",
         "@beachside/boat": "workspace:*",
         "@beachside/boxd": "workspace:*",
-        "@beachside/credential-client": "github:beachside-compute/credential-broker#3085ab54c5025f5fbe3dae67756b9aba59f36547",
+        "@beachside/credential-client": "github:beachside-compute/credential-broker#9f28ce81f1cce424b22d218d83ff0ab2229b8546",
         "@beachside/daytona": "workspace:*",
         "@beachside/e2b": "workspace:*",
         "@beachside/exe-dev": "workspace:*",
@@ -361,7 +361,7 @@
 
     "@beachside/cli": ["@beachside/cli@workspace:packages/cli"],
 
-    "@beachside/credential-client": ["@beachside/credential-client@github:beachside-compute/credential-broker#3085ab5", { "dependencies": { "@clack/prompts": "1.9.0" }, "bin": { "beachside-broker": "./dist/cli.js" } }, "beachside-compute-credential-broker-3085ab5", "sha512-RjlCxaE1uAYdAwF9+VTO9O4FusiLC203Oy/sARBULqBWNxC/MaubbTmKtD8YOqUW5O62nQNB2uK4EJQmUqFSIw=="],
+    "@beachside/credential-client": ["@beachside/credential-client@github:beachside-compute/credential-broker#9f28ce8", { "dependencies": { "@clack/prompts": "1.9.0" }, "bin": { "beachside-broker": "./dist/cli.js" } }, "beachside-compute-credential-broker-9f28ce8", "sha512-ZK8rtLxkGbMHvyzaywBA8f9+XrH14F1LtJ11gWO+nrmR7bLa5EISaqhWKQJuFJCJcVIf/xXCfh0TIjQM4KTwrg=="],
 
     "@beachside/daytona": ["@beachside/daytona@workspace:packages/providers/daytona"],
 
