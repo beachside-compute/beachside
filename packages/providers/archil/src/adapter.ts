@@ -156,7 +156,7 @@ const Lifetime = z.number().int().min(60).max(MAX_SESSION_SECONDS);
 const Configuration = z
   .strictObject({
     /** Archil region that runs the sandboxes; each has its own control plane. */
-    region: z.enum(REGION_NAMES),
+    region: z.enum(REGION_NAMES).default("aws-us-east-1"),
     /** Control-plane URL override, for tests and private deployments. */
     baseUrl: z.url().optional(),
     /**
@@ -521,10 +521,10 @@ export function createArchilAdapter(options: ArchilAdapterOptions = {}) {
       config: {
         region: {
           env: "ARCHIL_REGION",
-          required: true,
+          required: false,
           choices: REGION_NAMES,
           description:
-            "The Archil region: aws-us-east-1, aws-us-west-2 or aws-eu-west-1. Each region has its own control plane.",
+            "The Archil region: aws-us-east-1 (default), aws-us-west-2 or aws-eu-west-1. Each region has its own control plane, and an API key works only in its own region.",
         },
         network: {
           env: "ARCHIL_NETWORK",

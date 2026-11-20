@@ -156,24 +156,16 @@ test("environment-only Freestyle setup needs only a key and can opt into blocked
   expect(bound.name).toBe("freestyle");
 });
 
-test("environment-only Archil setup names its region and can opt into blocked egress", async () => {
+test("environment-only Archil setup defaults its region and can opt into blocked egress", async () => {
   const env = { HOME: home, ARCHIL_API_KEY: "key" };
 
-  expect(missingEnv(await setupOf("archil"), env)).toEqual(["ARCHIL_REGION"]);
-  expect(missingSettings(await setupOf("archil"), env)[0]!.choices).toEqual([
+  // The region is optional (aws-us-east-1 by default) but its choices are still offered.
+  expect(missingEnv(await setupOf("archil"), env)).toEqual([]);
+  expect((await setupOf("archil")).config?.region?.choices).toEqual([
     "aws-us-east-1",
     "aws-us-west-2",
     "aws-eu-west-1",
   ]);
-
-  // A profile missing its region names the regions to pick from.
-  await expect(
-    resolveProfile({ provider: "archil" }, await loadConfig(undefined, env), env, home),
-  ).rejects.toMatchObject({
-    hint: expect.stringContaining(
-      "ARCHIL_REGION: one of aws-us-east-1, aws-us-west-2, aws-eu-west-1",
-    ),
-  });
 
   const ready = { ...env, ARCHIL_REGION: "aws-eu-west-1", ARCHIL_NETWORK: "blocked" };
 

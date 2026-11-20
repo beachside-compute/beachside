@@ -157,7 +157,10 @@ function failureFor(
     error: new AdapterError(
       code,
       `Archil API ${status}${label ? ` ${label}` : ""}${detail ? `: ${detail}` : ""}${
-        advice.get(nativeCode) ?? ""
+        advice.get(nativeCode) ??
+        (status === 401
+          ? "; an Archil API key works only in its own region, so check the region (aws-us-east-1 unless set)"
+          : "")
       }`,
     ),
   };
