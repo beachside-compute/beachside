@@ -6,12 +6,23 @@
   "scripts": {
     "hello": "bun --env-file=.env.local agent-hello-world/main.ts",
     "edit": "bun --env-file=.env.local agent-edit-file/main.ts",
+    "pi:trace": "bun pi-tracing/main.ts",
     "check": "tsc -p tsconfig.json",
     "test": "bun test"
   },
   "dependencies": {
-    "beachside": "workspace:*",
+    "@beachside/boxd": "workspace:*",
     "@beachside/daytona": "workspace:*",
-    "@beachside/e2b": "workspace:*"
+    "@beachside/e2b": "workspace:*",
+    "@earendil-works/pi-ai": "1.6.0",
+    "@earendil-works/pi-coding-agent": "1.6.0",
+    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/context-async-hooks": "2.11.0",
+    "@opentelemetry/core": "2.11.0",
+    "@opentelemetry/exporter-trace-otlp-http": "0.222.0",
+    "@opentelemetry/exporter-trace-otlp-proto": "0.222.0",
+    "@opentelemetry/resources": "2.11.0",
+    "@opentelemetry/sdk-trace-base": "2.11.0",
+    "beachside": "workspace:*"
   }
 }
