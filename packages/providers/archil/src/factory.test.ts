@@ -21,6 +21,7 @@ test("archil() validates credentials and region at connect, before any provider 
 
 test("the region defaults to aws-us-east-1, and a refused key points at the region", async () => {
   const seen: string[] = [];
+
   const adapter = createArchilAdapter({
     fetch: async (input) => {
       seen.push(String(input));
