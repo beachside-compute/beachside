@@ -15,8 +15,8 @@ const host = import.meta.env.PUBLIC_POSTHOG_HOST || project.host;
 
 const persistenceName = "beachside_docs";
 
-// Pages that ask for consent and record analytics: the docs and the ad landing pages.
-const landingPages = ["/beta", "/remote"];
+// Pages that ask for consent and record analytics: the docs and the ad landing page.
+const landingPages = ["/remote"];
 
 export function analyticsPage(pathname: string): boolean {
   if (pathname === "/docs" || pathname.startsWith("/docs/")) return true;
