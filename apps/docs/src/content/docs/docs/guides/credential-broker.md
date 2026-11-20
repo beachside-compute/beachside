@@ -140,9 +140,7 @@ For OpenCode V2, add the settings for the integrations your grant includes to th
 
 OpenCode v2.2.7 also accepts the same JSON through `OPENCODE_CONFIG_CONTENT` in the environment of the sandbox command that starts OpenCode. Keep the `{env:...}` references so OpenCode resolves the broker URL and temporary grant at startup. [OpenCode CLI environment variables](https://github.com/anomalyco/opencode/blob/v2.2.7/packages/web/src/content/docs/cli.mdx#environment-variables).
 
-![OpenCode’s OpenRouter provider settings map baseURL to the provider-specific broker URL ending in /v1 and apiKey to the temporary grant. The settings can be passed as inline JSON in OPENCODE_CONFIG_CONTENT.](/images/credential-broker/opencode-openrouter.png)
-
-The illustration uses the provider-specific OpenRouter URL, which ends in `/v1`. For the generic OpenRouter integration in this guide, use `OPENROUTER_BASE_URL` exactly as supplied.
+![OpenCode v2 OpenRouter settings use {env:OPENROUTER_BASE_URL} for baseURL and {env:OPENROUTER_API_KEY} for apiKey. Pass the settings as inline JSON in OPENCODE_CONFIG_CONTENT.](/images/credential-broker/opencode-openrouter.png)
 
 ```json
 {
