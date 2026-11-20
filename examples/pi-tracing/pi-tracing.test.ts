@@ -119,7 +119,7 @@ describe("cross-process Pi tracing", () => {
     const requests: { path: string; contentType: string | null; authorization: string | null }[] =
       [];
 
-    const receiver = Bun.serve({
+    const server = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
       async fetch(request) {
@@ -137,7 +137,7 @@ describe("cross-process Pi tracing", () => {
     try {
       const parent = Bun.spawn([process.execPath, entrypoint("main.ts"), "--offline"], {
         env: {
-          OTEL_EXPORTER_OTLP_ENDPOINT: new URL("/otlp", receiver.url).href,
+          OTEL_EXPORTER_OTLP_ENDPOINT: new URL("/otlp", server.url).href,
           OTEL_EXPORTER_OTLP_HEADERS: "Authorization=Basic%20Zml4dHVyZQ==",
         },
         stdout: "ignore",
@@ -156,13 +156,13 @@ describe("cross-process Pi tracing", () => {
       expect(batches[0].includes("pi.tool.read")).toBe(true);
       expect(batches[1].includes("demo.verify")).toBe(true);
     } finally {
-      await receiver.stop(true);
+      await server.stop(true);
     }
   });
   test("fails safely when the OTLP endpoint rejects both processes' exports", async () => {
     let requests = 0;
 
-    const receiver = Bun.serve({
+    const server = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
       fetch() {
@@ -174,7 +174,7 @@ describe("cross-process Pi tracing", () => {
 
     try {
       const parent = Bun.spawn([process.execPath, entrypoint("main.ts"), "--offline"], {
-        env: { OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: new URL("/v1/traces", receiver.url).href },
+        env: { OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: new URL("/v1/traces", server.url).href },
         stdout: "pipe",
         stderr: "pipe",
         timeout: 10_000,
@@ -192,7 +192,7 @@ describe("cross-process Pi tracing", () => {
       expect(stderr).toContain("OTLP export failed for beachside-pi-demo.");
       expect(stderr).not.toContain("fixture receiver detail");
     } finally {
-      await receiver.stop(true);
+      await server.stop(true);
     }
   });
 
