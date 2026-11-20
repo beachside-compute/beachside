@@ -1,9 +1,9 @@
 ---
 title: Credential broker
-description: Give sandboxes short-lived, revocable access to GitHub and model APIs without putting the real keys in the sandbox.
+description: Give sandboxes short-lived, revocable access to GitHub and model APIs without handing your real keys to the sandbox or its provider.
 ---
 
-A sandbox runs code you may not fully trust, and anything in its environment can leak. The credential broker keeps your real GitHub, OpenRouter, Anthropic or other API keys out of the sandbox. You run the broker in your own Cloudflare account. It stores the keys encrypted, and sandboxes get a **grant**: a token that only works through the broker, only for the integrations you picked, and only until it expires or you revoke it.
+Putting an API key in a sandbox hands it to two parties: the code running inside, which you may not fully trust, and the sandbox provider, which now holds your key in its environment, logs or snapshots. The credential broker avoids both. You run the broker in your own Cloudflare account and it stores your GitHub, OpenRouter, Anthropic or other API keys encrypted. Your real keys never reach the sandbox or the provider. Sandboxes get a **grant** instead: a token that only works through your broker, only for the integrations you picked, and only until it expires or you revoke it.
 
 ![A sandbox sends its temporary grant to your broker. The broker checks the grant, sends the real key to OpenRouter, and relays the response back to the sandbox.](/images/credential-broker/architecture.png)
 
@@ -11,12 +11,12 @@ The sandbox's client talks to the broker as if it were the API. A grant set up f
 
 ## Should you use it?
 
-| You want                                                      | Use                                                                   |
-| ------------------------------------------------------------- | --------------------------------------------------------------------- |
-| A quick experiment with your own key in a sandbox you control | `--env OPENROUTER_API_KEY` on `beachside create`, or `env` in the SDK |
-| Agents or untrusted code that should never see the real key   | The credential broker                                                 |
-| One key shared by many sandboxes, revocable per sandbox       | The credential broker                                                 |
-| Always-on agents that need access for days                    | The credential broker, with 7-day grants you renew                    |
+| You want                                                          | Use                                                                   |
+| ----------------------------------------------------------------- | --------------------------------------------------------------------- |
+| A quick experiment with your own key in a sandbox you control     | `--env OPENROUTER_API_KEY` on `beachside create`, or `env` in the SDK |
+| Real keys that neither the sandbox code nor the provider ever see | The credential broker                                                 |
+| One key shared by many sandboxes, revocable per sandbox           | The credential broker                                                 |
+| Always-on agents that need access for days                        | The credential broker, with 7-day grants you renew                    |
 
 ## Three keys, three places
 
@@ -26,7 +26,7 @@ Deploying the broker creates three keys. Each lives in one place.
 - The **issuer key** only mints, renews and revokes grants. It goes wherever sandboxes are created: your laptop, a server or CI.
 - The **encryption key** stays in the Worker and encrypts the upstream keys.
 
-Sandboxes never get any of them. They only get grants.
+Sandboxes and sandbox providers never get any of them. They only get grants.
 
 ## Grants
 
