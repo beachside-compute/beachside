@@ -557,7 +557,8 @@ function session(env: Record<string, string> = {}) {
   const lines: string[] = [];
 
   return new Session({
-    env: baseEnv(env),
+    // Only tests that install a fixture keychain tool should detect an OS keychain.
+    env: baseEnv({ PATH: dir, ...env }),
     cwd: dir,
     out: new Output(false, {
       stdout: (text) => lines.push(String(text)),

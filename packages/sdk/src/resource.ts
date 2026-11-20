@@ -1,4 +1,4 @@
-import type { OperationOutcome } from "@beachside/adapter";
+import type { DestroyValue, OperationOutcome } from "@beachside/adapter";
 import { SnapshotRequest, MountSpec } from "@beachside/adapter";
 import type {
   AdapterDirectClient,
@@ -10,6 +10,7 @@ import type { OperationKind, RetainedArtifact, Scope } from "@beachside/adapter"
 import { z } from "zod";
 import type { AdapterImage, AdapterSnapshot, AdapterVolume } from "./resources";
 import type { SetupCreateOptions } from "./setup";
+import type { SandboxCredentials } from "./sandbox-credentials";
 import {
   CreateEnv,
   CreateSandboxInput,
@@ -64,6 +65,8 @@ export const Image = {
 export type NetworkPolicy = "blocked" | "internet" | "allow" | (string & {});
 
 export type CreateInput = {
+  /** Short-lived credentials applied to commands started through this connection. */
+  credentials?: SandboxCredentials;
   environment?: ImageInput;
   requirements?: { snapshot: SnapshotRequest };
   mounts?: MountSpec[];
@@ -353,11 +356,15 @@ export class WaitAbortedError<
     readonly reference: R,
     reason: AbortSignal["reason"],
     outcome?: OperationOutcome,
+    /** Present when compute destruction was confirmed before waiting for grant revocation stopped. */
+    readonly destroyOutcome?: DestroyValue,
   ) {
     super(
       "WAIT_ABORTED",
-      "Waiting stopped after submission; recover with this reference",
-      "possible",
+      destroyOutcome
+        ? "Compute destruction confirmed; stopped waiting for sandbox credential revocation"
+        : "Waiting stopped after submission; recover with this reference",
+      destroyOutcome ? "applied" : "possible",
       outcome,
     );
     this.name = "AbortError";

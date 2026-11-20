@@ -77,6 +77,7 @@ async function pack(directory) {
     [
       "beachside",
       "@beachside/adapter",
+      "@beachside/credential-client",
       "@beachside/daytona",
       "@beachside/e2b",
       "@beachside/boxd",
@@ -146,7 +147,29 @@ async function consumer(directory, dependencies, overrides, source) {
 async function checkTypes(directory, mode) {
   let source;
 
-  if (mode === "observability")
+  if (mode === "credential-client")
+    source = `
+import { type BeachsideClient } from "beachside";
+import { createCredentialBroker, githubActionsOidc, type BrokerGrant } from "@beachside/credential-client";
+
+async function workflow(client: BeachsideClient) {
+  const broker = createCredentialBroker({
+    url: "https://broker.example.invalid",
+    auth: githubActionsOidc({
+      audience: "beachside-broker",
+      env: { ACTIONS_ID_TOKEN_REQUEST_URL: "https://runner.example.invalid/token", ACTIONS_ID_TOKEN_REQUEST_TOKEN: "runner-token" },
+    }),
+  });
+  const grant: BrokerGrant = await broker.issue({ integrations: ["github"], ttlSeconds: 120 });
+  await broker.revoke(grant.id);
+
+  return client.sandboxes.with({ credentials: broker.sandbox({ github: "github" }), network: "internet" }, (box) =>
+    box.exec(["git", "clone", "https://github.com/acme/project.git"]),
+  );
+}
+void workflow;
+`;
+  else if (mode === "observability")
     source = `
 import { type TracerProvider } from "@opentelemetry/api";
 import { Beachside, type ObservabilityOptions, diagnosticContext } from "beachside";
@@ -1322,6 +1345,29 @@ console.log("Packed Upstash Box imports and local validation passed without prov
   for (const runtime of ["node", "bun"])
     console.log(`${runtime}: ${run(runtime, ["consumer.mjs"], upstash)}`);
 
+  // Exercise the separately maintained client with the packed SDK.
+  const docs = join(root, "apps/docs");
+  run("bun", ["run", "credential-client:build"], docs);
+  const externalClient = await pack(join(docs, "node_modules/@beachside/credential-client"));
+
+  const credentialClient = join(temporary, "credential-client-consumer");
+  await consumer(
+    credentialClient,
+    {
+      ...sdkDeps,
+      "@beachside/adapter": archiveOverrides["@beachside/adapter"],
+      "@beachside/credential-client": `file:${externalClient}`,
+      zod: "4.6.6",
+    },
+    archiveOverrides,
+    await readFile(join(root, "packages/sdk-qualification/credential-client-packed.mjs"), "utf8"),
+  );
+  await checkTypes(credentialClient, "credential-client");
+  inspectGraph(credentialClient, ["beachside", "@beachside/credential-client"]);
+
+  for (const runtime of ["node", "bun"])
+    console.log(`${runtime}: ${run(runtime, ["consumer.mjs"], credentialClient)}`);
+
   const e2bDeps = { ...sdkDeps, "@beachside/e2b": archiveOverrides["@beachside/e2b"] };
 
   const custom = join(temporary, "custom-consumer");
@@ -1355,6 +1401,9 @@ console.log("Packed Upstash Box imports and local validation passed without prov
     `import { Beachside, Image } from "beachside"; if (typeof Beachside.connect !== "function" || Image.prepared("base").kind !== "prepared") throw Error("Core imports failed");`,
   );
   const coreGraph = inspectGraph(core, ["beachside"]);
+
+  if (coreGraph.includes("@beachside/credential-client"))
+    throw Error("Core installed the optional credential client");
 
   if (
     coreGraph.some((name) =>

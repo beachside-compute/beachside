@@ -105,6 +105,7 @@ export default defineConfig({
           items: [
             { slug: "docs/guides/resources" },
             { slug: "docs/guides/setup" },
+            { slug: "docs/guides/credential-broker" },
             { slug: "docs/guides/snapshots-and-volumes" },
             { slug: "docs/guides/files-and-output" },
             { slug: "docs/guides/text-streaming", label: "Processes and streaming" },

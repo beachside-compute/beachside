@@ -1,7 +1,9 @@
-import { readdir, readFile } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 
 const root = new URL("../src/content/docs/", import.meta.url);
+
+const publicRoot = new URL("../public/", import.meta.url);
 
 async function files(directory) {
   const output = [];
@@ -42,6 +44,14 @@ for (const path of markdown) {
     const route = pathname.endsWith("/") ? pathname : pathname + "/";
 
     if (!routes.has(route)) {
+      const asset = new URL(pathname.slice(1), publicRoot);
+
+      if (
+        !anchor &&
+        asset.href.startsWith(publicRoot.href) &&
+        (await stat(asset).catch(() => undefined))?.isFile()
+      )
+        continue;
       errors.push(`${path}: missing route ${href}`);
       continue;
     }

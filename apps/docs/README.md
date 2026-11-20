@@ -14,6 +14,8 @@ bun run --cwd apps/docs dev
 
 `docs:check` builds public workspace packages, checks Astro content and TypeScript examples, validates Markdown routes and anchors, checks generated TypeScript and provider evidence, builds the static site and Pagefind index, checks output, and runs SDK quickstart flows against temporary fake provider processes. The fake is a simulation only.
 
+The credential broker example and generated API index use the external client revision pinned in this workspace. The docs check builds that client with Beachside's TypeScript compiler. To update the pin, change the commit in `package.json`, refresh the root lockfile, and regenerate the TypeScript API index.
+
 ## Cloudflare Worker and static assets
 
 `wrangler.jsonc` points at `./dist` and configures `404-page` fallback. A small Worker (`worker/index.ts`) sits in front of the assets: it answers `POST /api/beta-signup` and hands every other request to the `ASSETS` binding. The signup route accepts only requests from the site's origins, rate limits each client IP through the `SIGNUP_LIMITER` binding, and adds the email to the Resend 1.0 beta segment. It reads `RESEND_API_KEY` from the Cloudflare Secrets Store binding and answers 503 until that secret exists. Tests: `bun test apps/docs/worker`.

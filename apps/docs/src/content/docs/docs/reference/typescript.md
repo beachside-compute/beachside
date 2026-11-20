@@ -149,7 +149,7 @@ An SDK operation exposes `reference`, `durability: "process"`, `observe()`, and 
 
 `beachside.recover(reference)` imports a saved reference in the same verified scope and returns an operation handle. It never resubmits. `observe()` and `wait()` read existing evidence; advanced `continue({ signal? })` may dispatch a proven never-submitted next stage and must be serialized by the application. Aborting a wait stops local waiting, not provider compute.
 
-`BeachsideError` exposes `code` and `effect`. `OutcomeUnknownError` and `WaitAbortedError` carry recovery references. `NonzeroExitError` carries a completed command's output; `NoExitCodeError` means its exit code is unconfirmed. See [Errors and recovery](/docs/guides/recovery/).
+`BeachsideError` exposes `code` and `effect`. `OutcomeUnknownError` and `WaitAbortedError` carry recovery references. If waiting for grant revocation stops after confirmed compute destruction, `WaitAbortedError.destroyOutcome` contains that result and `effect` is `"applied"`. `NonzeroExitError` carries a completed command's output; `NoExitCodeError` means its exit code is unconfirmed. See [Errors and recovery](/docs/guides/recovery/).
 
 ## Advanced lifecycle
 
