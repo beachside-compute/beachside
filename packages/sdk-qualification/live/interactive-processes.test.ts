@@ -8,7 +8,8 @@ import {
 import { liveEnabled, setupLive, finishLive } from "./providers";
 
 const enabled =
-  liveEnabled && ["daytona", "e2b", "vercel"].includes(process.env.BEACHSIDE_QUAL_PROVIDER ?? "");
+  liveEnabled &&
+  ["daytona", "e2b", "vercel", "upstash-box"].includes(process.env.BEACHSIDE_QUAL_PROVIDER ?? "");
 
 describe("Beachside sustained and interactive processes", () => {
   let fixture: Awaited<ReturnType<typeof setupLive>> | undefined;

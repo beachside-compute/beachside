@@ -26,7 +26,7 @@ try {
 }
 ```
 
-Create an API key in the [Freestyle dashboard](https://dash.freestyle.sh). `connect` checks it with one read-only `GET /v5/vms`. Freestyle does not tell an API key which account it belongs to, so the scope is a one-way fingerprint of the key: a saved sandbox reference reopens with the same key, not with a rotated one.
+Create an API key in the [Freestyle dashboard](https://dash.freestyle.sh). `connect` checks it with one read-only `GET /v5/vms`. Freestyle authorizes every call with the current key, so saved references name only the Freestyle service and resource ID, never the key: a rotated key for the same account reopens them.
 
 The package also exports `freestyle()`, which takes credentials and config in one object and returns an adapter you pass straight to `Beachside.connect`: `Beachside.connect(freestyle({ apiKey }))`. It is the same setup; use whichever reads better.
 
@@ -41,6 +41,7 @@ The package also exports `freestyle()`, which takes credentials and config in on
 | `lifecycle.idleSeconds`      | none               | Pause the VM after this many seconds without network activity. Traffic or `resume()` wakes it.                                                                                                                                                                                                        |
 | `preview.access`             | `public`           | Freestyle previews are public `style.dev` URLs; `protected` rejects at connect.                                                                                                                                                                                                                       |
 | `preview.ports`              | none               | Ports to publish at create. Any other port is published the first time you call `preview(port)`. Each port claims one `<slug>-<port>.style.dev` name for your account.                                                                                                                                |
+| `ssh.expiresInMinutes`       | `60`               | Lifetime of each SSH access token `box.sshTarget()` mints, 1 to 1,440 minutes. Reported as `expiresAt` on the target.                                                                                                                                                                                 |
 | `snapshots.preserve`         | memory and disk    | Freestyle snapshots always keep memory and disk, so `Preserve.FILESYSTEM` rejects at connect.                                                                                                                                                                                                         |
 | `snapshots.retentionSeconds` | none               | Delete each snapshot this long after capture (`0` keeps it). Without it, snapshots stay until deleted unless your Freestyle plan removes unused ones sooner.                                                                                                                                          |
 
@@ -84,9 +85,13 @@ On a paused or stopped VM, reads, streamed reads, listings, `stat` and `exists` 
 
 Deadlines run up to 24 hours on VMs whose guest agent supports long execs. Older agents refuse anything over five minutes, and that refusal is reported as `UNSUPPORTED`. A command that passes its deadline is reported as `OUTCOME_UNKNOWN`.
 
+## SSH
+
+`box.sshTarget()` returns Freestyle's SSH gateway, `beta-ssh.freestyle.sh`, with the VM id as the username and an access token as the password. It connects as the VM's default user (`ubuntu` on the Ubuntu bases, otherwise root). The first call for a VM creates a Freestyle identity granted that VM only, and each call mints a new token on it that expires after `ssh.expiresInMinutes`. Destroying the VM through the same client deletes that identity; one created by a client that has since closed stays in your account, with tokens that expire and a grant on a VM that may be gone. A paused VM is refused rather than woken. Freestyle does not publish its gateway host key. See [SSH access](/docs/guides/ssh-access/).
+
 ## Destroy and recovery
 
-`destroy()` deletes the VM, which removes its firewall rules and preview rules with it, and waits until Freestyle no longer returns it.
+`destroy()` deletes the VM, which removes its firewall rules and preview rules with it, and the SSH identity this client created for it, and waits until Freestyle no longer returns it.
 
 Beachside sends each mutation once and the adapter adds no retries; Freestyle's SDK replays only reads. Slow calls run as Freestyle background requests, which the SDK follows until they finish. Each create and each snapshot carries a `beachside-<hash>` slug derived from its submission, so a create or capture whose response was lost is found by that slug instead of being resent. A refusal Freestyle answers with a 4xx is reported as that error; a lost response, a 5xx, or a `VM_NON_RESPONSIVE` command is `OUTCOME_UNKNOWN`. Listed VMs report `ownership: "unknown"`.
 

@@ -79,6 +79,13 @@ export const providers: readonly OfficialProvider[] = [
   official("runloop", "runloopAdapter", true, "Runloop devboxes", "RUNLOOP_API_KEY"),
   official("archil", "archilAdapter", true, "Archil disks with sandboxes", "ARCHIL_API_KEY"),
   official("exe-dev", "exeDevAdapter", true, "exe.dev VMs", "EXE_API_KEY"),
+  official(
+    "upstash-box",
+    "upstashBoxAdapter",
+    false,
+    "Upstash Box ephemeral and regular sandboxes",
+    "UPSTASH_BOX_API_KEY",
+  ),
   official("modal", "modalAdapter", true, "Modal sandboxes", "MODAL_TOKEN_ID"),
 ];
 

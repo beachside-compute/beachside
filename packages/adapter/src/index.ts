@@ -71,6 +71,8 @@ export * from "./lifetime";
 
 export * from "./preview";
 
+export * from "./ssh";
+
 export type CreateInput = {
   image: Image;
   networkPolicy: string;
@@ -503,6 +505,17 @@ export type AdapterSession<
     input: { sandbox: Sandbox; port: number },
     ctx: ReadContext,
   ) => Promise<import("./preview").Preview>;
+  /**
+   * Native SSH access to a running sandbox. `supports` is reported by `capabilities()` without a
+   * provider call; `target` may mint credentials and must never persist them.
+   */
+  ssh?: {
+    supports: import("./ssh").SshCapabilities;
+    target(
+      input: { sandbox: Sandbox; publicKey?: string },
+      ctx: ReadContext,
+    ): Promise<import("./ssh").SshTarget>;
+  };
   processes?: {
     /** Additive behavior declarations; absence retains the finite, closed-input contract. */
     supports?: {
@@ -956,14 +969,15 @@ export async function connectAdapter<
     policy?: { schema: z.ZodType; default: Json };
   },
   input: {
-    config: z.input<C>;
+    // Left out when every config field is optional; validated as `{}`.
+    config?: z.input<C>;
     credentials: z.input<K>;
     // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Cleanup callbacks may throw any JavaScript value; diagnostics preserve that value.
     onDiagnostic?: (error: unknown) => void;
     signal?: AbortSignal;
   },
 ): Promise<AdapterConnection<S>> {
-  const config = parseBoundedSchema(definition.config, input.config, "configuration");
+  const config = parseBoundedSchema(definition.config, input.config ?? {}, "configuration");
   const credentials = parseBoundedSchema(definition.credentials, input.credentials, "credentials");
   const controller = new AbortController();
   const releases: (() => void | Promise<void>)[] = [];

@@ -208,10 +208,7 @@ test("E2B public adapter passes managed compute conformance at its native bounda
     fixture: {
       config: { teamId: "team_one", templateId: "template_1" },
       credentials: { apiKey: "secret_1" },
-      alternate: {
-        config: { teamId: "team_two", templateId: "template_1" },
-        credentials: { apiKey: "secret_2" },
-      },
+      rotatedCredentials: { apiKey: "secret_2" },
       createInput: { image: { kind: "prepared", value: "template_1" }, networkPolicy: "blocked" },
       counters: () => ({ create: creates, destroy: destroys, release: releases }),
       loseNextCreateResponse: () => {
@@ -533,7 +530,7 @@ test.each([
       id: "sandbox_1",
       templateId: "template_1",
       metadata: {
-        beachside_scope: "team_one:template_1",
+        beachside_scope: "beachside",
         beachside_template: "template_1",
         beachside_submission: "sub_seed",
         beachside_operation: "op_seed",
@@ -1324,7 +1321,7 @@ test("uncertain writes and destroy reconcile after reconnect without replay", as
     id: "sandbox_1",
     templateId: "built_template",
     metadata: {
-      beachside_scope: "team_one:template_1",
+      beachside_scope: "beachside",
       beachside_template: "built_template",
       beachside_submission: "sub_seed",
       beachside_operation: "op_seed",
@@ -1577,7 +1574,7 @@ for (const barrier of ["reject-before", "abort-before", "reject-after"] as const
       templateId: "built_template",
       state: "running",
       metadata: {
-        beachside_scope: "team_one:template_1",
+        beachside_scope: "beachside",
         beachside_build: "owned-build",
         beachside_template: "built_template",
         beachside_submission: "seed-sub",
@@ -1728,7 +1725,7 @@ test.each(["prepare", "submit"] as const)(
       templateId: "built_template",
       state: "running",
       metadata: {
-        beachside_scope: "team_one:template_1",
+        beachside_scope: "beachside",
         beachside_build: "owned-build",
         beachside_template: "built_template",
         beachside_submission: "seed-sub",

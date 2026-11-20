@@ -105,6 +105,10 @@ import {
   PreviewResult,
   PreviewPort,
   type Preview,
+  SshPublicKey,
+  SshTargetResult,
+  type SshTarget,
+  type SshCapabilities,
   RenewRequest,
   RenewResult,
   ResolvedRenewInput,
@@ -371,6 +375,16 @@ async function inventoryFromList(page: Promise<import("@beachside/adapter").Sand
     })),
     nextCursor,
   };
+}
+
+/** A target must carry what its adapter's capabilities promise, and nothing they rule out. */
+function sshTargetMatches(target: SshTarget, supports: SshCapabilities): boolean {
+  return (
+    target.auth.method === supports.auth &&
+    (supports.proxy === "tls") === !!target.proxy &&
+    (!supports.hostKeys || !!target.hostKeys) &&
+    (!supports.expires || !!target.expiresAt)
+  );
 }
 
 function unsupported(feature: string): never {
@@ -1020,6 +1034,7 @@ export class AdapterSandbox {
     instrument(this, "checkSnapshot", client.telemetry, "beachside.snapshot.check");
     instrument(this, "checkFork", client.telemetry, "beachside.sandbox.fork.check");
     instrument(this, "preview", client.telemetry, "beachside.sandbox.preview");
+    instrument(this, "sshTarget", client.telemetry, "beachside.sandbox.ssh_target");
     instrument(this, "inspect", client.telemetry, "beachside.sandbox.inspect");
     instrument(this, "submitExec", client.telemetry, "beachside.exec.submit", {
       effect: "possible",
@@ -1640,6 +1655,69 @@ export class AdapterSandbox {
 
       if (error instanceof BeachsideError) throw error;
       throw new BeachsideError("UNAVAILABLE", "Preview access is unavailable");
+    }
+  }
+  /**
+   * A destination a standard SSH client can open on this running sandbox, resolved by the
+   * adapter's provider-native SSH service. With `publicKey`, adapters whose targets authenticate
+   * by the caller's key authorize it first. The target can carry credentials: keep it in memory.
+   */
+  async sshTarget(options: { publicKey?: string; signal?: AbortSignal } = {}): Promise<SshTarget> {
+    this.client.ensureOpen();
+    const ssh = this.client.session.ssh;
+
+    if (!ssh) unsupported("SSH target");
+    let publicKey: string | undefined;
+
+    if (options.publicKey !== undefined) {
+      const parsed = SshPublicKey.safeParse(options.publicKey);
+
+      if (!parsed.success)
+        throw new BeachsideError(
+          "INVALID_ARGUMENT",
+          "publicKey must be an OpenSSH public key line such as ssh-ed25519 AAAA...",
+        );
+
+      if (ssh.supports.publicKey !== "unused") publicKey = parsed.data;
+    } else if (ssh.supports.publicKey === "required")
+      throw new BeachsideError("INVALID_ARGUMENT", "This adapter's SSH targets need publicKey");
+
+    assertSignal(options.signal);
+    const timeout = AbortSignal.timeout(30000);
+
+    const signal = AbortSignal.any([
+      this.client.signal,
+      ...(options.signal ? [options.signal] : []),
+      timeout,
+    ]);
+
+    const request: Parameters<typeof ssh.target>[0] = {
+      sandbox: sandboxInput(this.id, this.reference),
+    };
+
+    if (publicKey) request.publicKey = publicKey;
+
+    try {
+      const result = await readWhileOpen(
+        this.client,
+        raceAbort(ssh.target(request, { signal, deadline: Date.now() + 30000 }), signal),
+      );
+
+      const parsed = SshTargetResult.safeParse(result);
+
+      if (!parsed.success || !sshTargetMatches(parsed.data, ssh.supports))
+        throw new BeachsideError("INVALID_RESPONSE", "Invalid SSH target response");
+
+      return parsed.data;
+    } catch (error) {
+      assertSignal(options.signal);
+
+      if (timeout.aborted) throw new BeachsideError("TIMEOUT", "SSH target timed out");
+
+      if (error instanceof AdapterError) throw new BeachsideError(error.code, error.message);
+
+      if (error instanceof BeachsideError) throw error;
+      throw new BeachsideError("UNAVAILABLE", "SSH target is unavailable");
     }
   }
   async submitExec(
@@ -2867,6 +2945,9 @@ export class AdapterDirectClient {
       writeFile: !!this.session.files?.write,
       maxOutputBytes: support.exec?.maxOutputBytes ?? 0,
       maxFileBytes: this.session.files ? fileReadLimit(this.session.files.maxBytes) : 0,
+      ssh: this.session.ssh
+        ? { status: "supported", value: { ...this.session.ssh.supports } }
+        : { status: "unsupported", reason: "This adapter does not provide SSH targets" },
     });
   }
   async checkCreate(input?: CreateInput): Promise<Support<CreatePlan>> {
@@ -3761,12 +3842,18 @@ export type AdapterConnectOptions<
     connect: (input: never) => Promise<S>;
     policy?: { schema: z.ZodType; default: Json };
   };
-  config: z.input<C>;
   credentials: z.input<K>;
   onReference?: (reference: RecoveryReference) => void | Promise<void>;
   // oxlint-disable-next-line anti-slop/no-unknown-parameters -- A cleanup hook may throw any JavaScript value; the diagnostic receives it intact.
   onDiagnostic?: (error: unknown) => void;
-};
+} & AdapterConfigOption<C>;
+
+/**
+ * `config` may be left out when every field of the adapter's config is optional; it then
+ * defaults to `{}`. Adapters with a required field keep `config` required at compile time.
+ */
+export type AdapterConfigOption<C extends z.ZodType> =
+  Record<never, never> extends z.input<C> ? { config?: z.input<C> } : { config: z.input<C> };
 
 export function connectDirect(
   adapter: BoundAdapter,

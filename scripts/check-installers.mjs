@@ -28,7 +28,6 @@ const selected = new Map(
 for (const name of [
   "@beachside/adapter",
   "beachside",
-  "@beachside/credential-client",
   "@beachside/daytona",
   "@beachside/e2b",
   "@beachside/vercel",
@@ -38,6 +37,7 @@ for (const name of [
   "@beachside/freestyle",
   "@beachside/archil",
   "@beachside/exe-dev",
+  "@beachside/upstash-box",
   "@beachside/modal",
   "@beachside/cli",
 ])
@@ -64,26 +64,6 @@ import { adapterSuite } from ${JSON.stringify(`${adapterName}/testing`)};
 const definition: typeof defineAdapter = defineAdapter;
 const suite: typeof adapterSuite = adapterSuite;
 void [definition, suite];
-`,
-  },
-  {
-    name: "credential-client",
-    packageName: "@beachside/credential-client",
-    overrides: [],
-    runtime: `
-import { execFileSync } from "node:child_process";
-import { createCredentialBroker } from "@beachside/credential-client";
-const help = execFileSync("node_modules/.bin/beachside-broker", ["--help"], { encoding: "utf8" });
-if (!help.includes("integration create")) throw new Error("Packed broker CLI help failed");
-const broker = createCredentialBroker({ url: "https://broker.example.invalid", auth: { apiKey: "fixture_credential_broker_control_key" } });
-if (typeof broker.sandbox({ github: "github" }).acquire !== "function") throw new Error("Packed credential client import failed");
-`,
-    types: `
-import { createCredentialBroker, type BrokerGrant, type CredentialBrokerOptions } from "@beachside/credential-client";
-async function issue(options: CredentialBrokerOptions): Promise<BrokerGrant> {
-  return createCredentialBroker(options).issue({ integrations: ["github"] });
-}
-void issue;
 `,
   },
   {
@@ -178,6 +158,14 @@ cases.push({
   overrides: [adapterName],
   runtime: `import { exeDevAdapter } from "@beachside/exe-dev"; if (exeDevAdapter.name !== "exe-dev") throw Error("Unexpected adapter");`,
   types: `import { exeDevAdapter } from "@beachside/exe-dev"; const name: string = exeDevAdapter.name; void name;`,
+});
+
+cases.push({
+  name: "upstash-box",
+  packageName: "@beachside/upstash-box",
+  overrides: [adapterName],
+  runtime: `import { upstashBoxAdapter } from "@beachside/upstash-box"; if (upstashBoxAdapter.name !== "upstash-box") throw Error("Unexpected adapter");`,
+  types: `import { upstashBox } from "@beachside/upstash-box"; const adapter = upstashBox({ apiKey: "fixture" }); void adapter;`,
 });
 
 cases.push({

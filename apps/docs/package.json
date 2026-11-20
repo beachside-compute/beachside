@@ -3,15 +3,16 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "site:check": "astro check && bun scripts/check-skills.mjs && bun scripts/check-links.mjs && bun run site:build",
+    "credential-client:build": "tsc -p node_modules/@beachside/credential-client/tsconfig.build.json --typeRoots ../../node_modules/@types --types bun",
+    "site:check": "bun run credential-client:build && astro check && bun scripts/check-skills.mjs && bun scripts/check-links.mjs && bun run site:build",
     "dev": "astro dev",
-    "check": "astro check && bun scripts/check-observability-snippets.mjs && bun scripts/check-skills.mjs && tsc -p examples/tsconfig.json && bun scripts/check-links.mjs && bun run typescript:check && bun run cli:check",
+    "check": "bun run credential-client:build && astro check && bun scripts/check-observability-snippets.mjs && bun scripts/check-skills.mjs && tsc -p examples/tsconfig.json && bun scripts/check-links.mjs && bun run typescript:check && bun run cli:check",
     "site:build": "astro build && bun scripts/check-dist.mjs",
     "build": "bun run provider:check && bun run site:build",
     "provider:check": "bun ../../packages/sdk-qualification/provider-qualification/render.ts --check",
     "examples:test": "bun test examples",
     "preview": "astro preview",
-    "typescript:generate": "bun scripts/generate-typescript-reference.mjs",
+    "typescript:generate": "bun run credential-client:build && bun scripts/generate-typescript-reference.mjs",
     "typescript:check": "bun scripts/generate-typescript-reference.mjs --check",
     "cli:generate": "bun scripts/generate-cli-reference.mjs",
     "cli:check": "bun scripts/generate-cli-reference.mjs --check",
@@ -23,7 +24,7 @@
     "posthog-js": "^1.448.0"
   },
   "devDependencies": {
-    "@beachside/credential-client": "workspace:*",
+    "@beachside/credential-client": "github:beachside-compute/credential-broker#fea7d391dc7d43be1bf40f2bef803570786e953a",
     "@astrojs/check": "0.9.6",
     "beachside": "workspace:*",
     "@beachside-internal/provider-fake": "workspace:*",

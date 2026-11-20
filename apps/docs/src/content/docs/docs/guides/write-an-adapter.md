@@ -152,15 +152,15 @@ const beachside = await Beachside.connect(
 
 The [adapter source](https://github.com/beachside-compute/beachside/blob/main/apps/docs/examples/acme-adapter.ts) and [AcmeClient fixture](https://github.com/beachside-compute/beachside/blob/main/apps/docs/examples/acme-native.ts) are copyable files. The [Boat adapter](https://github.com/beachside-compute/beachside/blob/main/packages/providers/boat/src/adapter.ts) is a complete recent example around a real native SDK.
 
-## Connect and verify the account
+## Connect and establish resource scope
 
 `connect` turns validated configuration and credentials into a session:
 
 - Keep secrets in the credentials schema and ordinary choices in the configuration schema. Credentials never appear in the scope, recovery tokens, errors or logs; redact them from native error text you surface.
 - Reject invalid setup before provider IO. For example, `smallestSize` throws `UNSUPPORTED` when no native size meets the requested minimums.
 - Create the native client and register its cleanup with `host.onClose` before any call that can fail. Closing a connection releases local clients; it never destroys remote compute.
-- Verify the account, organization or project with an authenticated read-only call. A caller-supplied account string alone is not verification.
-- Return a `scope` with that verified `authority` and every routing `partition` that changes resource identity, such as a region or endpoint. Check it on every later read and mutation.
+- Use an account, team, organization or project ID only when the provider requires it to route calls or identify resources. Verify required routing with authenticated provider reads. For an endpoint and unique resource ID, authenticate to the service and check the returned ID when reopening with the current credential.
+- Return a `scope` with the native service or tenant `authority` and every routing `partition` that changes resource identity, such as a region or endpoint. Check it on every later read and mutation.
 
 ## Use the shared setup options
 

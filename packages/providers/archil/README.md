@@ -1,6 +1,6 @@
 # @beachside/archil
 
-Experimental Archil Sandboxes adapter for Beachside. Tested on every change against a simulated Archil API and process connection, and checked by hand against the live service (Free plan, `aws-us-east-1`, November 2026); not yet through the provider qualification suite. Install with `npm install beachside @beachside/archil`. Requires Node 22.19+ or Bun, and an Archil API key; on the Free plan, set `network: "archil-managed"`. Built on Archil's official SDK, pinned to `disk@1.12.0`.
+Archil Sandboxes adapter for Beachside. Tested on every change against a simulated Archil API and process connection, and live-qualified against the Archil service (Free plan, `aws-us-east-1`, November 2026). Install with `npm install beachside @beachside/archil`. Requires Node 22.19+ or Bun, and an Archil API key; on the Free plan, set `network: "archil-managed"`. Built on Archil's official SDK, pinned to `disk@1.12.0`.
 
 ```ts
 import { Beachside } from "beachside";
@@ -23,7 +23,7 @@ try {
 }
 ```
 
-Archil does not reveal which account an API key belongs to, so the scope is a one-way fingerprint of the key, partitioned by region and control-plane URL. References hold the sandbox id and scope, never the API key, and reopen with the same key.
+Archil keys are scoped to one account and one region, and Archil authorizes every call with the current key, so the scope is the control-plane service partitioned by region and control-plane URL. References hold the sandbox id and scope, never the API key or a fingerprint of it, so they keep working after a key rotation for the same account.
 
 ## Setup defaults
 

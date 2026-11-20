@@ -23,7 +23,7 @@ try {
 }
 ```
 
-Freestyle does not reveal which account an API key belongs to, so the scope is a one-way fingerprint of the key plus the fixed `https://api.freestyle.sh` endpoint. References hold the VM id and scope, never the API key, and reopen with the same key.
+Freestyle authorizes every call with the current API key, so the scope is the Freestyle service plus the fixed `https://api.freestyle.sh` endpoint. References hold the VM id and scope, never the API key or a fingerprint of it, so they keep working after a key rotation for the same account.
 
 ## Setup defaults
 

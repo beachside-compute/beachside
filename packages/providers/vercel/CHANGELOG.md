@@ -1,5 +1,19 @@
 # @beachside/vercel
 
+## 0.19.0
+
+### Patch Changes
+
+- Updated dependencies [[`27307c6`](https://github.com/beachside-compute/beachside/commit/27307c618714fa6103901f8f31136faee3ffa3ff), [`49fec49`](https://github.com/beachside-compute/beachside/commit/49fec49fa4c7e7cc4d65dfee56cc6e78efe53a62)]:
+  - @beachside/adapter@0.19.0
+
+## 0.18.0
+
+### Patch Changes
+
+- Updated dependencies [[`720d4f7`](https://github.com/beachside-compute/beachside/commit/720d4f73b6a8108ac4621407fe5076393fd9b535)]:
+  - @beachside/adapter@0.18.0
+
 ## 0.17.1
 
 ### Patch Changes

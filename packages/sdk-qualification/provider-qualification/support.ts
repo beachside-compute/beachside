@@ -32,7 +32,7 @@ export const features = {
     workflow: "execution",
     scenarios: ["exec-argv", "exec-shell", "exec-nonzero"],
   },
-  streaming: { label: "Process streams and terminals", scenarios: ["execution-streaming"] },
+  streaming: { label: "Process streaming", scenarios: ["execution-streaming"] },
   finiteStdin: { label: "Finite execution input", scenarios: ["execution-stdin"] },
   files: {
     label: "Binary files and overwrite",
@@ -71,6 +71,76 @@ export const supportMetadataSchema = z.strictObject({
 });
 
 export type SupportMetadata = z.infer<typeof supportMetadataSchema>;
+
+export const upstashBoxSupport: SupportMetadata = {
+  id: "upstash-box",
+  name: "Upstash Box",
+  features: {
+    lifecycle: {
+      support: "supported",
+      note: "The ephemeral us-east-1 baseline passed create, inspect, inventory and destroy with a 900-second native TTL. Regular Debian Python boxes were created and destroyed in the live preview runs and require explicit cleanup.",
+    },
+    execution: {
+      support: "supported",
+      note: "Finite argv and shell with cwd/env, separate binary streams and a 1 MiB combined capture bound. The live baseline exercised argv, shell, separate stderr and a nonzero exit on ephemeral Debian Node.",
+    },
+    finiteStdin: {
+      support: "supported",
+      note: "Up to 1 MiB of binary input followed by EOF over a native live session. The live baseline checked text, binary, empty and omitted input on ephemeral Debian Node.",
+    },
+    files: {
+      support: "supported",
+      note: "Bounded binary ranges and streaming reads, with exclusive creation by default and explicit overwrite. Buffered writes use a 1 MiB limit and larger writes use the file stream. The live baseline checked small binary files and write collisions on ephemeral Debian Node.",
+    },
+    reopening: {
+      support: "conditional",
+      note: "Saved Beachside references reopen the exact Box ID and check the selected class using a currently authorized key. The live baseline reopened from a separate process and checked the original expiry on ephemeral Debian Node.",
+    },
+    network: {
+      support: "unsupported",
+      note: "The HTTPS allowlist reached the configured public host and denied a second host. With native deny-all, the TCP probes connected and the HTTPS follow-up to beachside.run ended during TLS without an HTTP response. Beachside rejects blocked egress pending verification of broader outbound isolation.",
+    },
+    termination: {
+      support: "conditional",
+      note: "The ephemeral Debian Python retest passed running status, signal request, output drain and independently observed terminal exit in one live session.",
+    },
+    renewal: { support: "unsupported", note: "The adapter sets TTL at create." },
+    streaming: {
+      support: "conditional",
+      note: "The Debian Python baseline passed sustained output over 32 MiB, separate streams, and text and binary stdin/EOF. PTY controls have fixture coverage.",
+    },
+    directories: {
+      support: "conditional",
+      note: "The live Python Alpine run passed directory listing, metadata, recursive directory operations, no-clobber copy, explicit-overwrite move and a hash-checked 32 MiB transfer, including the mkdir collision regression.",
+    },
+    suspension: {
+      support: "conditional",
+      note: "Regular Debian Python passed native pause, reopening without waking, explicit resume with preserved files and fresh execution. Keep-alive boxes do not support pause or resume.",
+    },
+    previewProtected: {
+      support: "conditional",
+      note: "Regular Debian Python passed authenticated HTTPS, missing and invalid token denial, bearer rotation, and lookup after deletion.",
+    },
+    previewPublic: {
+      support: "conditional",
+      note: "Regular Debian Python passed public HTTPS, route reuse and lookup after deletion.",
+    },
+    oci: {
+      support: "unsupported",
+      note: "The adapter uses native prepared runtimes on Debian and Alpine.",
+    },
+    snapshots: {
+      support: "conditional",
+      note: "The ephemeral Debian Python roundtrip confirmed files, fresh process state, independent restored writes, fresh-process reopen, restore after source deletion and snapshot cleanup.",
+    },
+    volumes: { support: "unsupported", note: "The adapter exposes no independent volume API." },
+    persistence: { support: "unsupported", note: "The adapter exposes no volume mounts." },
+    storageComposition: {
+      support: "unsupported",
+      note: "The adapter exposes no volume mounts for snapshot composition.",
+    },
+  },
+};
 
 export const officialSupport: SupportMetadata[] = [
   {
@@ -229,6 +299,7 @@ export const officialSupport: SupportMetadata[] = [
       },
     },
   },
+  upstashBoxSupport,
 ];
 
 function validation(
@@ -484,6 +555,20 @@ export const providerStatus: ProviderStatus[] = [
     ],
   },
   {
+    id: "archil",
+    name: "Archil",
+    href: "/docs/providers/archil/",
+    experimental: false,
+    note: "Live-tested on the Free plan across sandboxes, commands, files, renewal, pause/resume, reopening, protected previews and volumes; snapshots and forks were checked live by hand.",
+    limits: [
+      'The Free plan only accepts `network: "archil-managed"`, Archil\'s managed allowlist; `internet`, `blocked` and allowlists need a paid plan and have not been tested live.',
+      "Snapshot restores fork a retained holder sandbox, so `restore()` needs `requireIndependentLifecycle: false`, and a source or snapshot cannot be deleted while things forked from it exist.",
+      "Sandboxes carry no labels.",
+      "A session's lifetime pauses the sandbox when it runs out rather than deleting it; storage is billed while paused.",
+      "Anything a command leaves in the background stops when the command returns; use `processes.start()` and `detach()` for servers.",
+    ],
+  },
+  {
     id: "vercel",
     name: "Vercel Sandbox",
     href: "/docs/providers/vercel/",
@@ -505,18 +590,18 @@ export const providerStatus: ProviderStatus[] = [
     note: "Not yet tested against the live Runloop service; sign-ups are invitation only.",
   },
   {
-    id: "archil",
-    name: "Archil",
-    href: "/docs/providers/archil/",
-    experimental: true,
-    note: "Checked by hand on the Free plan; not yet run through the live qualification suite.",
-  },
-  {
     id: "exe-dev",
     name: "exe.dev",
     href: "/docs/providers/exe-dev/",
     experimental: true,
     note: "Checked by hand against the live exe.dev service; the qualification suite passed streaming and termination but has not yet completed the sandbox workflow.",
+  },
+  {
+    id: "upstash-box",
+    name: "Upstash Box",
+    href: "/docs/providers/upstash-box/",
+    experimental: false,
+    note: "Live-tested on ephemeral and regular boxes, including Alpine files, process control, previews and snapshots. Supports custom egress allowlists. Strict blocked egress is unavailable.",
   },
   {
     id: "modal",
@@ -553,7 +638,7 @@ const overviewLabels: Record<keyof typeof features, string> = {
   renewal: "Extend a sandbox's lifetime",
   suspension: "Pause and resume",
   execution: "Run commands and capture output",
-  streaming: "Stream output and use terminals",
+  streaming: "Stream process output",
   finiteStdin: "Send input to a command",
   termination: "Stop a running command",
   files: "Read and write files",
@@ -574,7 +659,14 @@ export function renderSupportOverview(
   metadata: readonly SupportMetadata[] = officialSupport,
   statuses: readonly ProviderStatus[] = providerStatus,
 ) {
-  const profiles = metadata.map((profile) => supportMetadataSchema.parse(profile));
+  const supportedIds = new Set(
+    statuses.flatMap((status) => (status.experimental ? [] : [status.id])),
+  );
+
+  const profiles = metadata.flatMap((profile) =>
+    supportedIds.has(profile.id) ? [supportMetadataSchema.parse(profile)] : [],
+  );
+
   const records = reports.flatMap((report) => parseReport(report).records);
 
   const live = (status: ProviderStatus) => {

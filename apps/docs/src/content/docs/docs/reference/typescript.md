@@ -74,6 +74,7 @@ Build results contain `prepared`, `retainedResources` and `reference`, an image 
 | `box.reference`                                                      | Verified `SandboxReference`, or `null` for adapters without identity support.     |
 | `box.id`                                                             | Sandbox identifier.                                                               |
 | `box.preview(port, { signal? })`                                     | Resolve ephemeral native HTTP access; availability is not readiness.              |
+| `box.sshTarget({ publicKey?, signal? })`                             | Resolve a native SSH destination; see [SSH access](/docs/guides/ssh-access/).     |
 | `box.inspect({ signal? })`                                           | Read current state where supported.                                               |
 | `box.exec(input, { signal?, onOutput? })`                            | Run a command and return bounded binary output.                                   |
 | `box.submitExec(input, options?)`                                    | Submit execution and return an operation handle.                                  |

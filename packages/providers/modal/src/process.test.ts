@@ -33,7 +33,7 @@ function fixture() {
 
       return "sb-1";
     },
-    async findByName(_app, _env, name) {
+    async findBySubmission(_appId, name) {
       return records.get(name) ?? null;
     },
     async *list() {

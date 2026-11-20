@@ -41,6 +41,7 @@ For example, no native snapshot facility is `unsupported`; documented capture wi
 | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `lifecycle`      | Create, readiness, inspect/reconnect, inventory and confirmed compute deletion.                                                                      |
 | `exec`           | Run commands with results/exit status; record argv/shell, streaming, detached processes and PTY separately.                                          |
+| `ssh`            | Provider-managed SSH access. Record connection method, authentication and eligible sandbox classes. Exclude guest-installed SSH servers.             |
 | `files`          | Read and write sandbox files; record binary fidelity, bounds, transfer and atomic no-clobber separately.                                             |
 | `snapshots`      | Capture, inspect, restore the captured immutable state and safely delete its artifact; record memory, filesystem and mount scope.                    |
 | `volumes`        | Create, inspect, mount, reopen retained storage and delete it independently of compute; record storage guarantees.                                   |

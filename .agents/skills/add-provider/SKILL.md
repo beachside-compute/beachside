@@ -33,7 +33,7 @@ Use a small injectable native client or transport so fixtures exercise real requ
 
 Declare only guarantees the adapter and provider together enforce:
 
-- Verify the account, organization or project with authenticated read-only IO in `connect`. Put every identity-relevant routing partition (region, endpoint) in `scope`; a caller-supplied account string alone is not verification. Keep credentials out of scope, tokens, errors and logs.
+- Build `scope` from the provider’s native addressing. Include an account, team, organization or project ID only when a native call needs it for routing or resource identity. Verify required routing through authenticated provider IO. For an API addressed by endpoint and unique resource ID, use the service authority and routing partition, then fetch the exact resource with the current credential and check its identity. Key rotation within the same native scope preserves references. Keep credentials and their fingerprints out of resource identity.
 - Check that images and resources belong to that scope. Advertise blocked egress only if the native policy actually provides it, including account-tier exceptions.
 - Preserve argv as arguments, shell scripts as shell scripts, and file/output bytes without text conversion. Bound collected output and file reads. Advertise no-clobber writes only with atomic native creation.
 - Confirm compute termination before reporting `computeStopped: true`; report retained resources honestly. Register owned client cleanup with `host.onClose`. Closing a connection or aborting a wait is not destroying compute.

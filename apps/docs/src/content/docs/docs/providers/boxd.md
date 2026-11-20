@@ -26,7 +26,7 @@ try {
 }
 ```
 
-Use a member API key. `connect` checks that `org` is the key's authenticated default org (by ID or slug) and reads the cluster zone; everything is scoped to that org. Userless org keys and custom endpoints are not supported.
+Use a member API key. Each boxd key is fenced to one org; `connect` checks that `org` (by ID or slug) is one the key can see, including a team org that is not your default, and reads the cluster zone. Everything is scoped to that org. Userless org keys and custom endpoints are not supported.
 
 The package also exports `boxd()`, which takes credentials and config in one object and returns an adapter you pass straight to `Beachside.connect`: `Beachside.connect(boxd({ apiKey, org: "my-org" }))`. It is the same setup; use whichever reads better.
 
@@ -97,6 +97,10 @@ boxd runs every command in its own process namespace, so anything a command leav
 Public previews are the default. To route more ports, set `preview: { access: "public", ports: [3000, 8080] }` when connecting. **These routes are open to anyone with the URL.** After starting a server, `box.preview(3000)` returns `{ access: "public", url }`. It only looks up the existing route on a running machine; it does not create routes or wake the machine, and the URL does not prove your server is ready.
 
 With `preview: { access: "protected" }`, preview lookup fails as unsupported. This does not make boxd's own ingress private: native traffic can still reach or wake a machine. See [preview access](/docs/guides/preview-access/).
+
+## SSH
+
+`box.sshTarget()` returns the machine's port on the boxd SSH proxy, user `boxd`, and the proxy's host key. It authenticates with an SSH key linked to your boxd account; `sshTarget({ publicKey })` links that key first, which lets it reach every machine your account can. A machine with SSH turned off is refused. See [SSH access](/docs/guides/ssh-access/).
 
 ## Snapshots
 

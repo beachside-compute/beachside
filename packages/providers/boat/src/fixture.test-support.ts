@@ -174,6 +174,7 @@ export function boatFixture() {
   let savingPolls = 1;
   let saveOutcome: "ready" | "failed" = "ready";
   let loseNextSave = false;
+  const authorizedKeys: string[] = [];
 
   const fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = new URL(input instanceof Request ? input.url : String(input));
@@ -370,6 +371,20 @@ export function boatFixture() {
     const box = sandboxes.get(id);
 
     if (!box || box.createdById !== account) return error(404, "sandbox_not_found");
+
+    if (method === "POST" && rest === "sshkey") {
+      // SAFETY: the fixture reads only the key the adapter sends in its JSON body.
+      authorizedKeys.push((raw as { key: string }).key);
+
+      return json(200, {
+        ok: true,
+        type: "sandbox.sshkey",
+        machineIp: "203.0.113.10",
+        sshUser: "user",
+        sshEndpoint: null,
+        hostKey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl",
+      });
+    }
 
     if (method === "POST" && rest === "host") {
       // SAFETY: the fixture reads only the fields the adapter sends in its JSON body.
@@ -591,6 +606,7 @@ export function boatFixture() {
   };
 
   return {
+    authorizedKeys,
     fetch,
     calls,
     effects,

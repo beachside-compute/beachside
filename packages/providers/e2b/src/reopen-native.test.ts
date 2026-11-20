@@ -134,7 +134,7 @@ test.each([
   if (mode === "paused") f.detail.state = "paused";
   expect(await f.transport.get("sandbox_one")).toMatchObject({ attachmentReady: false });
   Object.assign(f.detail.metadata, {
-    beachside_scope: "team_one:base",
+    beachside_scope: "beachside",
     beachside_operation: "operation_one",
     beachside_submission: "submission_one",
     beachside_template: "template_one",
@@ -237,7 +237,7 @@ test.each([401, 403])(
             templateID: "template_one",
             state: "running",
             metadata: {
-              beachside_scope: "team_one:base",
+              beachside_scope: "beachside",
               beachside_operation: "operation_one",
               beachside_submission: "submission_one",
               beachside_template: "template_one",

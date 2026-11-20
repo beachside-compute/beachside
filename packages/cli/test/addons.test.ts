@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import { mkdir, mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { startFakeProviderServer } from "@beachside-internal/provider-fake/server";
@@ -620,12 +620,16 @@ describe("create --with", () => {
       },
       stdin: "ignore",
       stdout: "pipe",
-      stderr: "ignore",
+      stderr: "pipe",
     });
 
-    const [stdout, code] = await Promise.all([new Response(child.stdout).text(), child.exited]);
+    const [stdout, stderr, code] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
 
-    return { code, json: JSON.parse(stdout) };
+    return { code, stdout, stderr, json: args.includes("--json") ? JSON.parse(stdout) : undefined };
   }
 
   async function stored(): Promise<string[]> {
@@ -652,6 +656,94 @@ describe("create --with", () => {
     );
     expect(await stored()).toEqual([]);
   });
+
+  for (const partial of [false, true]) {
+    test(`registers ready Rex through the local executable${partial ? " even when herdr fails" : ""}`, async () => {
+      const name = partial ? "rex-partial" : "rex-success";
+      const config = join(root, `${name}.json`);
+      const executable = join(root, `${name}-cli`);
+      const calls = join(root, `${name}-calls.json`);
+
+      await writeFile(
+        config,
+        JSON.stringify({
+          default: "fake",
+          profiles: {
+            fake: { module: join(import.meta.dir, "fake-adapter.ts"), export: "rexAddons" },
+          },
+        }),
+      );
+      await writeFile(
+        executable,
+        `#!${process.execPath}
+import { appendFileSync } from "node:fs";
+await Bun.stdin.text();
+const args = process.argv.slice(2);
+appendFileSync(process.env.REX_TEST_CALLS, JSON.stringify(args) + "\\n");
+if (args[1] === "--json") {
+  console.log(JSON.stringify({ hosts: [] }));
+  process.exit(0);
+}
+if (process.env.REX_TEST_EXIT !== "0") console.error("Error: fixture refused the host\\nsecond line");
+process.exit(Number(process.env.REX_TEST_EXIT));
+`,
+        { mode: 0o755 },
+      );
+
+      const result = await run(
+        [
+          "create",
+          "--name",
+          name,
+          "--prepared",
+          "fake-starter",
+          "--with",
+          "rex",
+          ...(partial ? ["--with", "herdr"] : []),
+        ],
+        {
+          BEACHSIDE_CONFIG: config,
+          BEACHSIDE_REX_BIN: executable,
+          TAILSCALE_AUTH_KEY: "fixture-key",
+          REX_TEST_CALLS: calls,
+          REX_TEST_EXIT: partial ? "1" : "0",
+        },
+      );
+
+      const inspected = await run(["inspect", name, "--json"], { BEACHSIDE_CONFIG: config });
+      expect(inspected.code).toBe(0);
+      expect(inspected.json.ok).toBe(true);
+
+      const rex = inspected.json.data.addons.find((addon: AddonRecord) => addon.name === "rex");
+
+      expect(rex.state).toBe("ready");
+      expect(rex.connect).toBe("https://127.0.0.1:1");
+
+      const invoked = (await readFile(calls, "utf8"))
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+
+      expect(invoked).toContainEqual(["hosts", "add", rex.hostname, rex.connect]);
+      expect(result.code).toBe(partial ? 8 : 0);
+      expect(result.stdout + result.stderr).toContain(rex.connect);
+
+      if (partial) {
+        expect(
+          inspected.json.data.addons.find((addon: AddonRecord) => addon.name === "herdr").state,
+        ).toBe("failed");
+        expect(result.stderr).toContain(
+          `could not save ${rex.hostname} for the rex CLI (fixture refused the host)`,
+        );
+        expect(result.stderr).not.toContain("second line");
+        expect(result.stderr).toContain("fixture herdr setup failed");
+      } else {
+        expect(result.stdout).toContain(rex.connect);
+        expect(result.stderr).toContain(`saved ${rex.hostname} for the rex CLI`);
+        expect(result.stderr).toContain("Add Remote Host…");
+      }
+    });
+  }
 
   test("--if-not-exists refuses a sandbox that lacks the requested add-on", async () => {
     const env = { TAILSCALE_AUTH_KEY: "tskey-auth-x" };

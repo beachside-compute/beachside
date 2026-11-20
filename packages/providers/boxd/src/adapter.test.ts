@@ -84,6 +84,28 @@ test("boxd setup offers blocked and internet egress and takes the network once, 
     ).toMatchObject({ code: "INVALID_ARGUMENT" });
 });
 
+test("a key fenced to a non-default team org creates and reopens machines in that org", async () => {
+  const { fixture, adapter } = await setup();
+
+  const client = await Beachside.connect({
+    adapter,
+    config: { org: "team", networkPolicy: "internet" },
+    credentials: { apiKey: "fixture-team" },
+  });
+
+  try {
+    expect(client.scope.authority).toEqual({ kind: "org", id: "org-team" });
+    const box = await client.sandboxes.create();
+    expect(
+      fixture.calls.filter((call) => call.method === "CreateVm").at(-1)?.request,
+    ).toMatchObject({ org: "team" });
+    expect((await client.sandboxes.get(box.reference!)).id).toBe(box.id);
+    await box.destroy();
+  } finally {
+    await client.close();
+  }
+});
+
 test("boxd resources pick the smallest size class and inspect reports the real size", async () => {
   const { fixture, adapter } = await setup();
 
@@ -1747,6 +1769,63 @@ test("guest access on a suspended machine is refused instead of waking it", asyn
     (await expectRejection(box.readFile("/etc/hostname"))).toMatchObject({ code: "UNAVAILABLE" });
     expect(fixture.calls.filter((call) => call.method === "Exec")).toHaveLength(before);
     expect((await box.inspect()).state).toBe("suspended");
+  } finally {
+    await client.close();
+  }
+});
+
+test("SSH targets point at the machine's proxy port with the proxy host key and link keys on request", async () => {
+  const { fixture, connect } = await setup();
+  const client = await connect();
+
+  try {
+    const before = fixture.calls.length;
+    expect((await client.capabilities()).ssh).toEqual({
+      status: "supported",
+      value: {
+        auth: "publicKey",
+        publicKey: "optional",
+        scope: "account",
+        hostKeys: true,
+        expires: false,
+        proxy: "none",
+      },
+    });
+    // Discovery reads the adapter's declaration only.
+    expect(fixture.calls.slice(before).map((call) => call.method)).not.toContain("ListVms");
+
+    const box = await client.sandboxes.create();
+    const machine = fixture.machines.get(box.id)!;
+
+    expect(await box.sshTarget()).toEqual({
+      host: `${machine.name}.boxd.sh`,
+      port: machine.sshPort!,
+      username: "boxd",
+      auth: { method: "publicKey" },
+      hostKeys: [
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl",
+      ],
+    });
+    expect(fixture.linkedKeys).toEqual([]);
+
+    const key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJ6NmfFmPe5F6JfhlRYTwIlb4p6jMlX0E2wl0zyUjC2K";
+    await box.sshTarget({ publicKey: `${key} laptop` });
+    expect(fixture.linkedKeys).toEqual([key]);
+
+    machine.sshDisabled = true;
+    (await expectRejection(box.sshTarget())).toMatchObject({ code: "CONFLICT" });
+    machine.sshDisabled = false;
+
+    // A refused target never links the key.
+    fixture.sshHostKey("");
+    (await expectRejection(box.sshTarget({ publicKey: key }))).toMatchObject({
+      code: "UNAVAILABLE",
+    });
+    expect(fixture.linkedKeys).toEqual([key]);
+
+    machine.status = "suspended";
+    (await expectRejection(box.sshTarget())).toMatchObject({ code: "UNAVAILABLE" });
+    expect(fixture.linkedKeys).toHaveLength(1);
   } finally {
     await client.close();
   }

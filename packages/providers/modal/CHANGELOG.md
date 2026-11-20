@@ -1,5 +1,23 @@
 # @beachside/modal
 
+## 0.19.0
+
+### Patch Changes
+
+- Updated dependencies [[`27307c6`](https://github.com/beachside-compute/beachside/commit/27307c618714fa6103901f8f31136faee3ffa3ff), [`49fec49`](https://github.com/beachside-compute/beachside/commit/49fec49fa4c7e7cc4d65dfee56cc6e78efe53a62)]:
+  - @beachside/adapter@0.19.0
+
+## 0.18.0
+
+### Minor Changes
+
+- [#252](https://github.com/beachside-compute/beachside/pull/252) [`f189cf5`](https://github.com/beachside-compute/beachside/commit/f189cf595e467a4688a28b8607d0aaf6d06d12ca) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - boxd accepts a member key fenced to any org it belongs to, not only the user's default org; machines, disks and snapshots still go to the configured `org`. Modal looks up the App once at connect and no longer repeats the lookup before every list, reopen, create and delete.
+
+### Patch Changes
+
+- Updated dependencies [[`720d4f7`](https://github.com/beachside-compute/beachside/commit/720d4f73b6a8108ac4621407fe5076393fd9b535)]:
+  - @beachside/adapter@0.18.0
+
 ## 0.17.1
 
 ### Patch Changes

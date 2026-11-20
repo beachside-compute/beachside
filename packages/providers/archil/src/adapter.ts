@@ -333,6 +333,8 @@ const DestroyToken = z.strictObject({
 const LifecycleToken = z.strictObject({
   id: Id,
   action: z.enum(["pause", "stop", "resume", "start"]),
+  /** When a resume or start was sent; its new session's deadline counts from here. */
+  sentAt: z.number().int().nonnegative().optional(),
 });
 
 const CaptureToken = z.strictObject({
@@ -629,7 +631,7 @@ export function createArchilAdapter(options: ArchilAdapterOptions = {}) {
       const sandboxPath = (id: string, suffix = "") =>
         `/api/sandboxes/${encodeURIComponent(Id.parse(id))}${suffix}`;
 
-      // Archil exposes no account id to an API key; one authenticated read proves the key.
+      // One authenticated read proves the key before any mutation.
       await read("GET", "/api/sandboxes", readContext(host.signal));
 
       if (defaultImage.kind === "prepared") {
@@ -639,14 +641,10 @@ export function createArchilAdapter(options: ArchilAdapterOptions = {}) {
           throw new AdapterError("NOT_FOUND", "Archil image is unavailable to this API key");
       }
 
+      // Archil keys belong to one account in one region and authorize each call; the regional
+      // control plane identifies resources, so rotated keys keep saved references usable.
       const scope = {
-        authority: {
-          kind: "api-key",
-          id: createHash("sha256")
-            .update("beachside:archil:api-key-scope:v1\0")
-            .update(credentials.apiKey)
-            .digest("hex"),
-        },
+        authority: { kind: "service", id: new URL(control.baseUrl).host },
         partition: { region: config.region, endpoint: control.baseUrl },
       };
 
@@ -787,6 +785,20 @@ export function createArchilAdapter(options: ArchilAdapterOptions = {}) {
             ? { status: "known", value: { vcpus: wire.vcpu_count, memoryMiB: wire.mem_size_mib } }
             : { status: "unknown", reason: "Archil did not report the sandbox size" },
       });
+
+      /** A running sandbox's deadline right after a timeout, resume or start this adapter sent. */
+      const renewed = (info: SandboxInfo, sent: number, seconds: number): SandboxInfo =>
+        info.state === "running"
+          ? {
+              ...info,
+              expires: {
+                status: "known",
+                at: new Date(sent + seconds * 1000).toISOString(),
+                action: "suspend",
+                scope: "running-session",
+              },
+            }
+          : info;
 
       /** Poll a read until it settles, the local wait ends, or the caller aborts. */
       const settle = async <T>(
@@ -1757,13 +1769,25 @@ export function createArchilAdapter(options: ArchilAdapterOptions = {}) {
         observation: observation(wire, reference),
       });
 
-      const resumed = (wire: Wire, reference: SandboxReference, action: "resume" | "start") => ({
-        reference,
-        execution: action === "resume" ? ("resumed" as const) : ("fresh" as const),
-        executionIdentity: unknownSandboxFacts().execution,
-        connections: "dropped" as const,
-        observation: observation(wire, reference),
-      });
+      /** The new session's budget runs from the resume or start sent at `sentAt`, when known. */
+      const resumed = (
+        wire: Wire,
+        reference: SandboxReference,
+        action: "resume" | "start",
+        sentAt?: number,
+      ) => {
+        const info = observation(wire, reference);
+        const budget = wire.max_ttl_seconds;
+
+        return {
+          reference,
+          execution: action === "resume" ? ("resumed" as const) : ("fresh" as const),
+          executionIdentity: unknownSandboxFacts().execution,
+          connections: "dropped" as const,
+          observation:
+            sentAt !== undefined && budget && budget > 0 ? renewed(info, sentAt, budget) : info,
+        };
+      };
 
       const session: AdapterSession<
         CreateInput,
@@ -2409,7 +2433,7 @@ export function createArchilAdapter(options: ArchilAdapterOptions = {}) {
 
             // A paused sandbox resumes its memory; `start` would discard it.
             const action = wire.status === "paused" ? "resume" : "start";
-            const token = { id: Id.parse(input.sandbox.id), action } as const;
+            const token = { id: Id.parse(input.sandbox.id), action, sentAt: Date.now() } as const;
             await ctx.checkpoint(token);
 
             try {
@@ -2428,7 +2452,7 @@ export function createArchilAdapter(options: ArchilAdapterOptions = {}) {
               if (result?.wire) {
                 held.delete(token.id);
 
-                return resumed(result.wire, input.sandbox.reference, action);
+                return resumed(result.wire, input.sandbox.reference, action, token.sentAt);
               }
             } catch {
               /* The request is acknowledged; readiness continues through observation. */
@@ -2454,7 +2478,7 @@ export function createArchilAdapter(options: ArchilAdapterOptions = {}) {
             if (wire.status === "running") {
               held.delete(wire.sandbox_id);
 
-              return resumed(wire, box.reference, token.data.action);
+              return resumed(wire, box.reference, token.data.action, token.data.sentAt);
             }
 
             return wire.status === "pending" ||
@@ -2491,7 +2515,10 @@ export function createArchilAdapter(options: ArchilAdapterOptions = {}) {
             return { ...input, forSeconds };
           },
           async submit(input, ctx) {
-            // `timeout` counts from now for the running session and budgets the next one.
+            // `timeout` counts from receipt for the running session and budgets the next one, so
+            // the deadline is at least the send time plus the window; inspect cannot report it.
+            const sent = Date.now();
+
             try {
               await send(
                 "POST",
@@ -2509,7 +2536,9 @@ export function createArchilAdapter(options: ArchilAdapterOptions = {}) {
               reference: input.sandbox.reference,
               requested: { forSeconds: input.forSeconds },
               acknowledged: true,
-              observation: wire ? observation(wire, input.sandbox.reference) : null,
+              observation: wire
+                ? renewed(observation(wire, input.sandbox.reference), sent, input.forSeconds)
+                : null,
             };
           },
         },

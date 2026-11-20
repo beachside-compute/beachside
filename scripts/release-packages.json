@@ -1,7 +1,6 @@
 [
   "packages/adapter",
   "packages/sdk",
-  "packages/credential-client",
   "packages/providers/daytona",
   "packages/providers/e2b",
   "packages/providers/boxd",
@@ -10,6 +9,7 @@
   "packages/providers/freestyle",
   "packages/providers/archil",
   "packages/providers/exe-dev",
+  "packages/providers/upstash-box",
   "packages/providers/modal",
   "packages/providers/vercel",
   "packages/cli"

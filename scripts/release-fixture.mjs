@@ -60,14 +60,12 @@ try {
     copyTree(join(root, name), join(temporary, name));
   }
 
-  for (const group of ["apps", "services"]) {
-    for (const workspace of readdirSync(join(root, group))) {
-      const manifest = join(root, group, workspace, "package.json");
+  for (const app of readdirSync(join(root, "apps"))) {
+    const manifest = join(root, "apps", app, "package.json");
 
-      if (existsSync(manifest)) {
-        mkdirSync(join(temporary, group, workspace), { recursive: true });
-        cpSync(manifest, join(temporary, group, workspace, "package.json"));
-      }
+    if (existsSync(manifest)) {
+      mkdirSync(join(temporary, "apps", app), { recursive: true });
+      cpSync(manifest, join(temporary, "apps", app, "package.json"));
     }
   }
 

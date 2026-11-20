@@ -13,7 +13,7 @@ const surfaces = [
   [
     "Credential broker client",
     "@beachside/credential-client",
-    "packages/credential-client/dist/index.d.ts",
+    "apps/docs/node_modules/@beachside/credential-client/dist/index.d.ts",
   ],
   ["Daytona adapter", "@beachside/daytona", "packages/providers/daytona/dist/index.d.ts"],
   ["E2B adapter", "@beachside/e2b", "packages/providers/e2b/dist/index.d.ts"],

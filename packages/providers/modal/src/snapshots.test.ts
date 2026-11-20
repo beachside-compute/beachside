@@ -30,7 +30,7 @@ function fixture() {
 
       return record.id;
     },
-    async findByName(_app, _environment, name) {
+    async findBySubmission(_appId, name) {
       return records.get(name) ?? null;
     },
     async *list() {

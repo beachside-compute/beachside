@@ -303,10 +303,13 @@ test("overview provider rows count live-passed features and mark experimental pr
   expect(row("Daytona")).toMatch(/Supported +\| 1 feature, last run September 29, 2026/);
   expect(row("E2B")).toMatch(/Supported +\| None yet/);
   expect(row("Boat")).toMatch(/Experimental +\| None yet/);
-  // boxd and Freestyle are supported with their profiles and results beside their packages.
+  expect(row("Upstash Box")).toMatch(/Supported +\| None yet/);
+  const liveFeatureHeader = page.split("\n").find((line) => line.startsWith("| Feature "));
+  expect(liveFeatureHeader).toBeDefined();
+  expect(liveFeatureHeader).toContain("Upstash Box");
   expect(
     providerStatus.filter((status) => !status.experimental).map((status) => status.id),
-  ).toEqual(["boxd", "freestyle", ...officialSupport.map((profile) => profile.id)]);
+  ).toEqual(["boxd", "freestyle", "daytona", "e2b", "archil", "upstash-box"]);
 });
 
 test("official declarations and caveats move to the evidence page with stable anchors", () => {
@@ -317,5 +320,7 @@ test("official declarations and caveats move to the evidence page with stable an
   expect(details).toContain("[Conditional · passed at aaaaaaaa](#daytona-oci)");
   expect(details).toContain('<a id="daytona-oci"></a>');
   expect(details).toContain("### Daytona caveats");
+  expect(details).toContain("[Supported · not-run](#upstash-box-execution)");
+  expect(details).toContain("### Upstash Box caveats");
   expect(details).not.toContain("---\ntitle:");
 });

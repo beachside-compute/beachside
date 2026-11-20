@@ -231,7 +231,14 @@ export async function directories(t: TestResources, box: AdapterSandbox, fileRoo
   await expect(
     box.copyFile(sentinel, `${root}/copy.bin`, { signal: t.signal }),
   ).rejects.toMatchObject({ code: "CONFLICT" });
-  await box.moveFile(`${root}/copy.bin`, `${root}/moved.bin`, { signal: t.signal });
+  const overwrite = t.client.provider === "upstash-box";
+  const moveOptions = { signal: t.signal };
+
+  if (overwrite)
+    await expect(
+      box.moveFile(`${root}/copy.bin`, `${root}/moved.bin`, moveOptions),
+    ).rejects.toMatchObject({ code: "UNSUPPORTED" });
+  await box.moveFile(`${root}/copy.bin`, `${root}/moved.bin`, { ...moveOptions, overwrite });
   expect(await box.fileExists(`${root}/copy.bin`, { signal: t.signal })).toBe(false);
   expect(await box.readFile(`${root}/moved.bin`, { signal: t.signal })).toEqual(bytes);
 
@@ -263,6 +270,7 @@ export async function directories(t: TestResources, box: AdapterSandbox, fileRoo
     },
     `${root}/artifacts`,
     t.signal,
+    overwrite,
   );
 
   expect(artifact.uploaded).toBe(size);

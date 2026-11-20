@@ -515,6 +515,36 @@ describe("beachside CLI against the fake provider", () => {
     expect(await fakeResources()).toHaveLength(0);
   });
 
+  test("doctor reports SSH target support without requesting a target", async () => {
+    const plain = envelope(await cli(["doctor", "--json"]));
+
+    expect(plain.data.capabilities.ssh).toEqual({
+      status: "unsupported",
+      reason: "This adapter does not provide SSH targets",
+    });
+
+    await writeConfig({
+      default: "fake",
+      profiles: { fake: { module: fixture, export: "withSsh" } },
+    });
+
+    const run = await cli(["doctor", "--json"]);
+
+    expect(run.code).toBe(0);
+    expect(envelope(run).data.capabilities.ssh).toEqual({
+      status: "supported",
+      value: {
+        auth: "password",
+        publicKey: "unused",
+        scope: "sandbox",
+        hostKeys: false,
+        expires: false,
+        proxy: "none",
+      },
+    });
+    expect(`${run.stdout}${run.stderr}`).not.toContain("must not request");
+  });
+
   test("doctor checks the credentials with a read and reports it", async () => {
     const result = envelope(await cli(["doctor", "--json"]));
 
@@ -1327,6 +1357,7 @@ describe("beachside CLI against the fake provider", () => {
         "runloop",
         "archil",
         "exe-dev",
+        "upstash-box",
         "modal",
       ]);
       expect((await values("--config", "")).directive).toBe(":2");

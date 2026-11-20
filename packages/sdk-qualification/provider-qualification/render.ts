@@ -55,11 +55,11 @@ const reports = await Promise.all(
   }),
 );
 
-// Experimental official adapters keep their results beside their own packages.
+// boxd, Freestyle, Archil and the experimental official adapters keep their results beside their own packages.
 const packageReports = external
   ? []
   : await Promise.all(
-      ["boxd", "freestyle", "vercel"].map(async (name) =>
+      ["boxd", "freestyle", "archil", "vercel"].map(async (name) =>
         parseReport(
           JSON.parse(
             await readFile(
@@ -76,13 +76,17 @@ const packageReports = external
       ),
     );
 
-// boxd and Freestyle are supported; their profiles and results live beside their packages.
+// boxd, Freestyle and Archil are supported; their profiles and results live beside their packages.
 const boxd = await loadProviderProfile(
   fileURLToPath(new URL("./boxd-profile.ts", import.meta.url)),
 );
 
 const freestyle = await loadProviderProfile(
   fileURLToPath(new URL("./freestyle-profile.ts", import.meta.url)),
+);
+
+const archil = await loadProviderProfile(
+  fileURLToPath(new URL("./archil-profile.ts", import.meta.url)),
 );
 
 const outputDirectory = option("--output");
@@ -112,7 +116,7 @@ const targets = [
       ? renderSupportMatrix(reports, metadata)
       : renderSupportOverview(
           [...reports, ...packageReports],
-          [boxd.support, freestyle.support, ...metadata],
+          [boxd.support, freestyle.support, ...metadata, archil.support],
         ),
   ],
 ] as const;

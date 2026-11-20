@@ -1445,6 +1445,95 @@ test.each(["immediate", "pending", "lost"] as const)(
   },
 );
 
+test("pending create resolves from the acknowledged sandbox while the listing lags", async () => {
+  let name = "";
+  let labels: Record<string, string> = {};
+  let detailReads = 0;
+  let listings = 0;
+
+  const native = (state: string) => ({
+    id: "fresh-box",
+    name,
+    labels,
+    state,
+    organizationId: "org-1",
+    target: "us",
+    networkBlockAll: true,
+    public: false,
+  });
+
+  const fetcher = Object.assign(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      const route = new URL(String(input)).pathname;
+      const method = init?.method ?? "GET";
+
+      if (route === "/api/api-keys/current") return Response.json({ organizationId: "org-1" });
+
+      if (route === "/api/regions")
+        return Response.json([{ id: "us", name: "US", regionType: "shared" }]);
+
+      if (route === "/api/organizations/org-1")
+        return Response.json({ id: "org-1", sandboxLimitedNetworkEgress: false });
+
+      if (route === "/api/snapshots/base")
+        return Response.json({
+          id: "base",
+          organizationId: "org-1",
+          state: "active",
+          general: true,
+          regionIds: ["us"],
+          sandboxClass: "container",
+        });
+
+      if (route === "/api/sandbox" && method === "POST") {
+        const body = z
+          .object({ name: z.string(), labels: z.record(z.string(), z.string()) })
+          .parse(JSON.parse(String(init?.body)));
+
+        name = body.name;
+        labels = body.labels;
+
+        return Response.json(native("starting"));
+      }
+
+      // Daytona's listing trails creation: the new sandbox is not listed yet.
+      if (route === "/api/sandbox") {
+        listings++;
+
+        return Response.json({ items: [], nextCursor: null });
+      }
+
+      if (route === "/api/sandbox/fresh-box") {
+        detailReads++;
+
+        // Still starting on the first polls, so the id must survive several pending tokens.
+        return Response.json(native(detailReads < 4 ? "starting" : "started"));
+      }
+
+      if (route.startsWith("/api/snapshots/")) return new Response(null, { status: 404 });
+
+      throw new Error(`Unexpected route ${route}`);
+    },
+    { preconnect: fetch.preconnect },
+  );
+
+  const client = await Beachside.connect({
+    adapter: createDaytonaAdapter(fetcher),
+    config: { target: "us", networkPolicy: "blocked" },
+    credentials: { apiKey: "fixture" },
+  });
+
+  try {
+    const box = await client.sandboxes.create({ environment: Image.prepared("base") });
+
+    expect(box).toMatchObject({ id: "fresh-box" });
+    expect(listings).toBe(0);
+    expect(detailReads).toBeGreaterThanOrEqual(4);
+  } finally {
+    await client.close();
+  }
+});
+
 test.each([
   [497, "tombstone"],
   [498, "tombstone"],

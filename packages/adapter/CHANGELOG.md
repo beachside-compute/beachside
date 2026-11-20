@@ -1,5 +1,23 @@
 # @beachside/adapter
 
+## 0.19.0
+
+### Minor Changes
+
+- [#257](https://github.com/beachside-compute/beachside/pull/257) [`49fec49`](https://github.com/beachside-compute/beachside/commit/49fec49fa4c7e7cc4d65dfee56cc6e78efe53a62) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add provider-native SSH targets. `client.capabilities().ssh` reports whether the adapter returns them, without contacting the provider, and `box.sshTarget({ publicKey? })` resolves host, port, username, authentication, host keys, TLS proxy and expiry for a running sandbox. boxd, Daytona, Upstash Box, Freestyle, exe.dev, Boat and Runloop implement it; adapters without the hook report `unsupported`.
+
+### Patch Changes
+
+- [#254](https://github.com/beachside-compute/beachside/pull/254) [`27307c6`](https://github.com/beachside-compute/beachside/commit/27307c618714fa6103901f8f31136faee3ffa3ff) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - `Beachside.connect` no longer needs `config: {}` when every field of the adapter's config is optional (E2B, Freestyle and others); a left-out `config` is validated as `{}`. Adapters with a required config field still require `config` at compile time, and a missing field is named in the error (`Invalid configuration: target`) instead of a bare `Invalid configuration`.
+
+## 0.18.0
+
+### Minor Changes
+
+- [#251](https://github.com/beachside-compute/beachside/pull/251) [`720d4f7`](https://github.com/beachside-compute/beachside/commit/720d4f73b6a8108ac4621407fe5076393fd9b535) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - **Breaking:** E2B, Freestyle and Archil scopes no longer fingerprint the API key. Each provider authorizes every call with the current key, so scope is now the service plus its endpoint (and region for Archil), and saved references keep working after a key rotation. E2B also drops the default template from its scope and sandbox markers. References and E2B sandboxes saved by earlier versions do not reopen; recreate them.
+
+  `adapterSuite` fixtures can now omit `alternate` when a provider has one fixed endpoint, and can pass `rotatedCredentials` to check that another key for the same account keeps the scope.
+
 ## 0.17.1
 
 No changes in this release.

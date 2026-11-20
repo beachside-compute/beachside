@@ -107,6 +107,12 @@ const Configuration = z
         expiresInSeconds: z.number().int().min(1).max(86_400).default(3600),
       })
       .default({ access: "protected", expiresInSeconds: 3600 }),
+    ssh: z
+      .strictObject({
+        /** Lifetime of each SSH access token `sshTarget()` mints; Daytona's default is 60. */
+        expiresInMinutes: z.number().int().min(1).max(1440).default(60),
+      })
+      .default({ expiresInMinutes: 60 }),
     lifecycle: z
       .strictObject({
         lifetimeSeconds: z.number().int().positive().safe().optional(),
@@ -243,6 +249,9 @@ function suspendOutcome(
 const Credentials = z.strictObject({ apiKey: z.string().min(1) });
 
 const Token = z.strictObject({ submissionId: z.string().min(1).max(128) });
+
+/** A pending create also keeps the sandbox id Daytona acknowledged, when it sent one. */
+const CreateToken = Token.extend({ sandboxId: z.string().min(1).max(512).optional() });
 
 const RestoreToken = Token.extend({ sandboxId: z.string().min(1).max(512).optional() });
 
@@ -390,7 +399,12 @@ async function createResult(
   }
 
   if (result.status === "pending")
-    return ctx.pending({ submissionId: ctx.submissionId }, { pollAfterMs: result.observeAfterMs });
+    return ctx.pending(
+      result.nativeSandbox?.id
+        ? { submissionId: ctx.submissionId, sandboxId: result.nativeSandbox.id }
+        : { submissionId: ctx.submissionId },
+      { pollAfterMs: result.observeAfterMs },
+    );
 
   return failure(result, ctx);
 }
@@ -406,6 +420,7 @@ async function observedCreate(
     submission: string,
     nativeDetail?: { id: string; labels?: Record<string, string> },
   ) => Promise<SandboxReference | null>,
+  acknowledgedId?: string,
 ) {
   if (result.status === "completed") {
     if (result.value.kind !== "sandbox") return ctx.unknown("Daytona returned another result kind");
@@ -424,8 +439,15 @@ async function observedCreate(
     };
   }
 
-  if (result.status === "pending")
-    return ctx.pending({ submissionId }, { pollAfterMs: result.observeAfterMs });
+  if (result.status === "pending") {
+    // Keep the acknowledged id on every pending poll: the listing lags creation, so a token
+    // without it would fall back to discovery and could lose a sandbox that already exists.
+    const sandboxId = result.nativeSandbox?.id ?? acknowledgedId;
+
+    return ctx.pending(sandboxId ? { submissionId, sandboxId } : { submissionId }, {
+      pollAfterMs: result.observeAfterMs,
+    });
+  }
 
   return ctx.unknown(
     result.status === "unknown" ? result.reason : "Daytona discovery has no confirmed completion",
@@ -1011,6 +1033,7 @@ export function createDaytonaAdapter(
               submissionId: attempt.submissionId,
               operationId: attempt.operationId,
               expectedSnapshotId: attempt.resource.nativeId,
+              sandboxId: known?.id,
             });
           } catch {
             value = null;
@@ -1262,7 +1285,7 @@ export function createDaytonaAdapter(
           },
         },
         create: {
-          recovery: { version: 1, token: Token },
+          recovery: { version: 1, token: CreateToken },
           async prepare(input) {
             if ("beachside.imageSnapshot" in (input.labels ?? {}))
               throw new AdapterError("INVALID_ARGUMENT", "Reserved Daytona snapshot label");
@@ -1336,10 +1359,13 @@ export function createDaytonaAdapter(
             return { ...result, mounts: input.mounts };
           },
           async observe(attempt, ctx) {
+            const saved = CreateToken.safeParse(attempt.token);
+
             const result = await driver.observe({
               scope,
               submissionId: attempt.submissionId,
               operationId: attempt.operationId,
+              sandboxId: saved.success ? saved.data.sandboxId : undefined,
             });
 
             const value = result
@@ -1349,6 +1375,7 @@ export function createDaytonaAdapter(
                   attempt.submissionId,
                   attempt.operationId,
                   referenceFor,
+                  saved.success ? saved.data.sandboxId : undefined,
                 )
               : null;
 
@@ -2407,6 +2434,108 @@ export function createDaytonaAdapter(
             if (error instanceof AdapterError) throw error;
             throw new AdapterError("UNAVAILABLE", "Daytona preview access response is unavailable");
           }
+        },
+        ssh: {
+          supports: {
+            auth: "none",
+            publicKey: "unused",
+            scope: "sandbox",
+            hostKeys: false,
+            expires: true,
+            proxy: "none",
+          },
+          async target(input, ctx) {
+            if (!input.sandbox.reference)
+              throw new AdapterError(
+                "UNSUPPORTED",
+                "Daytona SSH requires a verified sandbox reference; inspect and reopen using its reference first",
+              );
+            const info = await inspection(input.sandbox.id, input.sandbox.reference, ctx);
+
+            if (info.state === "destroyed")
+              throw new AdapterError(
+                "NOT_FOUND",
+                "Daytona sandbox is destroyed; SSH is unavailable",
+              );
+
+            if (info.state !== "running")
+              throw new AdapterError(
+                "UNAVAILABLE",
+                "Daytona SSH requires running compute; resume explicitly before requesting access",
+              );
+
+            const minutes = config.ssh.expiresInMinutes;
+            const requestedAt = Date.now();
+
+            try {
+              const response = await (fetchImpl ?? fetch)(
+                `${config.apiUrl}/sandbox/${encodeURIComponent(input.sandbox.id)}/ssh-access?expiresInMinutes=${minutes}`,
+                {
+                  method: "POST",
+                  headers: { Authorization: `Bearer ${credentials.apiKey}` },
+                  signal: ctx.signal,
+                  redirect: "error",
+                },
+              );
+
+              if (!response.ok) {
+                void response.body?.cancel().catch(() => undefined);
+                throw new AdapterError(
+                  response.status === 404
+                    ? "NOT_FOUND"
+                    : [401, 403].includes(response.status)
+                      ? "FORBIDDEN"
+                      : "UNAVAILABLE",
+                  "Daytona SSH access request failed",
+                );
+              }
+
+              // The answer holds the token: bound it and never put its body in errors.
+              const bytes = await boundedBytes(response, 32768, ctx.signal);
+
+              const native = z
+                .object({
+                  sandboxId: z.string(),
+                  token: z
+                    .string()
+                    .min(1)
+                    .max(1024)
+                    .regex(/^[A-Za-z0-9_-]+$/),
+                  sshCommand: z.string().max(4096),
+                  expiresAt: z.string().optional(),
+                })
+                .parse(JSON.parse(new TextDecoder().decode(bytes)));
+
+              if (native.sandboxId !== input.sandbox.id)
+                throw new AdapterError("CONFLICT", "Daytona SSH response identity differs");
+
+              // `ssh [-p PORT] TOKEN@HOST`: the gateway, which self-hosted Daytona can move.
+              const command =
+                /^ssh(?:\s+-p\s+(\d{1,5}))?\s+([A-Za-z0-9_-]+)@([A-Za-z0-9.-]+)\s*$/.exec(
+                  native.sshCommand.trim(),
+                );
+
+              if (!command || command[2] !== native.token)
+                throw new AdapterError("UNAVAILABLE", "Daytona SSH command is not recognised");
+
+              const expires = Date.parse(native.expiresAt ?? "");
+              const ceiling = requestedAt + minutes * 60_000;
+
+              return {
+                host: command[3]!,
+                port: command[1] ? Number(command[1]) : 22,
+                username: native.token,
+                auth: { method: "none" as const },
+                // Never report a time later than the one requested, measured from before the call.
+                expiresAt: new Date(
+                  Number.isFinite(expires) ? Math.min(expires, ceiling) : ceiling,
+                ).toISOString(),
+              };
+            } catch (error) {
+              if (error instanceof AdapterError) throw error;
+              throw new AdapterError("UNAVAILABLE", "Daytona SSH access response is unavailable");
+            }
+          },
         },
         files: {
           maxBytes: 16_777_216,

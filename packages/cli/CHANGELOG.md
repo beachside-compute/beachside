@@ -1,5 +1,29 @@
 # @beachside/cli
 
+## 0.19.0
+
+### Minor Changes
+
+- [#253](https://github.com/beachside-compute/beachside/pull/253) [`a1426a9`](https://github.com/beachside-compute/beachside/commit/a1426a9fca72ae2767ae00745a2c73a6ea99a5c7) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add the separately installed Upstash Box adapter for ephemeral and regular boxes, with live commands, binary files, snapshots, previews, and reopening by Box ID.
+
+### Patch Changes
+
+- Updated dependencies [[`27307c6`](https://github.com/beachside-compute/beachside/commit/27307c618714fa6103901f8f31136faee3ffa3ff), [`519d61a`](https://github.com/beachside-compute/beachside/commit/519d61ae9a27be2b0fdc148fdaf63c00b2f9a682), [`49fec49`](https://github.com/beachside-compute/beachside/commit/49fec49fa4c7e7cc4d65dfee56cc6e78efe53a62)]:
+  - beachside@0.19.0
+  - @beachside/adapter@0.19.0
+
+## 0.18.0
+
+### Minor Changes
+
+- [#247](https://github.com/beachside-compute/beachside/pull/247) [`26437cc`](https://github.com/beachside-compute/beachside/commit/26437ccc396b52b4ec463279e37695e5cdb15193) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - `create --with rex` saves the instance as a `rex hosts` label (`rex -S beachside-<name>`) when a local Rex CLI is available, and `rm` removes it again. The Rex app still needs Add Remote Host…, and the connection address is always printed.
+
+### Patch Changes
+
+- Updated dependencies [[`720d4f7`](https://github.com/beachside-compute/beachside/commit/720d4f73b6a8108ac4621407fe5076393fd9b535)]:
+  - @beachside/adapter@0.18.0
+  - beachside@0.18.0
+
 ## 0.17.1
 
 ### Patch Changes

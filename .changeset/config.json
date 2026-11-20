@@ -11,7 +11,6 @@
     [
       "@beachside/adapter",
       "beachside",
-      "@beachside/credential-client",
       "@beachside/daytona",
       "@beachside/e2b",
       "@beachside/boxd",
@@ -20,6 +19,7 @@
       "@beachside/freestyle",
       "@beachside/archil",
       "@beachside/exe-dev",
+      "@beachside/upstash-box",
       "@beachside/modal",
       "@beachside/vercel",
       "@beachside/cli"

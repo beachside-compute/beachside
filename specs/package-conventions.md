@@ -14,7 +14,7 @@
 | Boat adapter (experimental) | `@beachside/boat` | `@beachside/boat` |
 | Runloop adapter (experimental) | `@beachside/runloop` | `@beachside/runloop` |
 | Freestyle adapter (experimental) | `@beachside/freestyle` | `@beachside/freestyle` |
-| Archil adapter (experimental) | `@beachside/archil` | `@beachside/archil` |
+| Archil adapter | `@beachside/archil` | `@beachside/archil` |
 | exe.dev adapter (experimental) | `@beachside/exe-dev` | `@beachside/exe-dev` |
 | Official Vercel adapter | `@beachside/vercel` | `@beachside/vercel` |
 | Credential broker client and administration (`beachside-broker` binary) | `@beachside/credential-client` | `@beachside/credential-client` |
@@ -69,7 +69,9 @@ Private implementation workspaces may be bundled into adapter artifacts. Their u
 
 ## Implementation and release acceptance
 
-The initial 0.1.0 fixed, lockstep public release group is `@beachside/adapter`, `beachside`, `@beachside/daytona`, `@beachside/e2b`, `@beachside/boxd`, `@beachside/boat`, `@beachside/runloop`, and `@beachside/vercel`; `@beachside/cli` joins the group from its first release, experimental `@beachside/modal` from 0.7.0 and experimental `@beachside/freestyle` and `@beachside/archil` from their first releases. `@beachside/credential-client` joins the lockstep group from its first release. Separate installation does not require independent release infrastructure. Keep the existing release machinery and release the actual distributable graph.
+The [credential broker repository](https://github.com/beachside-compute/credential-broker) owns `@beachside/credential-client`, the `beachside-broker` CLI, and their independent release cycle. Beachside qualifies its own SDK against the external client.
+
+The initial 0.1.0 fixed, lockstep public release group is `@beachside/adapter`, `beachside`, `@beachside/daytona`, `@beachside/e2b`, `@beachside/boxd`, `@beachside/boat`, `@beachside/runloop`, and `@beachside/vercel`; `@beachside/cli` joins the group from its first release, experimental `@beachside/modal` from 0.7.0 and experimental `@beachside/freestyle` and `@beachside/archil` from their first releases. Separate installation does not require independent release infrastructure. Keep the existing release machinery and release the actual distributable graph.
 
 Qualify real tarballs in isolated consumers: core alone, core plus each released provider, combined Daytona/E2B, and an independently authored adapter. Verify strict NodeNext declarations, Node/Bun execution, private-workspace isolation and npm/pnpm/Bun installation. Archive overrides may resolve transitive local packages without adding undeclared root dependencies.
 

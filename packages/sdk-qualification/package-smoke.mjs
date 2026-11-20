@@ -21,10 +21,10 @@ const packages = [
   ["@beachside/freestyle", "packages/providers/freestyle"],
   ["@beachside/archil", "packages/providers/archil"],
   ["@beachside/exe-dev", "packages/providers/exe-dev"],
+  ["@beachside/upstash-box", "packages/providers/upstash-box"],
   ["@beachside/vercel", "packages/providers/vercel"],
   ["@beachside/e2b", "packages/providers/e2b"],
   ["beachside", "packages/sdk"],
-  ["@beachside/credential-client", "packages/credential-client"],
   ["@beachside/cli", "packages/cli"],
 ];
 
@@ -86,6 +86,7 @@ async function pack(directory) {
       "@beachside/freestyle",
       "@beachside/archil",
       "@beachside/exe-dev",
+      "@beachside/upstash-box",
       "@beachside/cli",
     ].includes(manifest.name)
   ) {
@@ -149,21 +150,7 @@ async function checkTypes(directory, mode) {
   if (mode === "credential-client")
     source = `
 import { type BeachsideClient } from "beachside";
-import { createCredentialBroker, createCredentialBrokerAdmin, githubActionsOidc, type BrokerGrant, type BrokerIntegration } from "@beachside/credential-client";
-
-async function provision(): Promise<BrokerIntegration> {
-  const admin = createCredentialBrokerAdmin({
-    url: "https://broker.example.invalid",
-    apiKey: "fixture_separate_admin_control_key",
-  });
-  const integration = await admin.integrations.create({
-    id: "github", kind: "github",
-    credential: { source: "worker-secret", binding: "CREDENTIAL_GITHUB" },
-  });
-  await admin.issuerPermissions.set([integration.id]);
-  return integration;
-}
-void provision;
+import { createCredentialBroker, githubActionsOidc, type BrokerGrant } from "@beachside/credential-client";
 
 async function workflow(client: BeachsideClient) {
   const broker = createCredentialBroker({
@@ -390,6 +377,25 @@ async function flow() {
   await box.readFile("/tmp/file");
   await fork.destroy(); await box.destroy(); await client.close();
   return { url, preserve, bound: exeDev({ sshKey: "key", network: "internet" }) };
+}
+void flow;
+`;
+  else if (mode === "upstash-box")
+    source = `
+import { Beachside } from "beachside";
+import { upstashBox, upstashBoxAdapter } from "@beachside/upstash-box";
+async function flow() {
+  const client = await Beachside.connect({
+    adapter: upstashBoxAdapter,
+    config: { network: { allow: ["example.com"] }, resources: { vcpus: 2 } },
+    credentials: { apiKey: "fixture" },
+  });
+  const box = await client.sandboxes.create();
+  await box.writeFile("/workspace/home/file", new Uint8Array([0, 255]));
+  await box.readFile("/workspace/home/file");
+  await box.destroy();
+  await client.close();
+  return upstashBox({ apiKey: "fixture" });
 }
 void flow;
 `;
@@ -782,7 +788,7 @@ const transport = {
     records.set(input.name, { id: "sb-" + creates, tags: input.tags, running: true });
     return "sb-" + creates;
   },
-  async findByName(_app, _environment, name) { return records.get(name) ?? null; },
+  async findBySubmission(appId, name) { if (appId !== "ap-fixture") throw Error("Wrong correlation scope"); return records.get(name) ?? null; },
   async *list(appId) { if (appId !== "ap-fixture") throw Error("Wrong inventory scope"); for (const record of records.values()) if (record.running) yield record; },
   async readBytes(id, path, maxBytes) { if (!id.startsWith("sb-") || maxBytes !== 1048576) throw Error("Wrong read"); return files.get(path) ?? Uint8Array.from([0, 255, 128]); },
   async fileExists(_id, path) { return files.has(path); },
@@ -1315,13 +1321,41 @@ console.log("Packed exe.dev imports and local validation passed without provider
   for (const runtime of ["node", "bun"])
     console.log(`${runtime}: ${run(runtime, ["consumer.mjs"], exeDevConsumer)}`);
 
+  const upstash = join(temporary, "upstash-box-consumer");
+  await consumer(
+    upstash,
+    { ...sdkDeps, "@beachside/upstash-box": archiveOverrides["@beachside/upstash-box"] },
+    archiveOverrides,
+    `
+import { Beachside } from "beachside";
+import { upstashBox, upstashBoxAdapter } from "@beachside/upstash-box";
+if (upstashBoxAdapter.name !== "upstash-box" || !upstashBox({ apiKey: "fixture" }).bound)
+  throw Error("External adapter identity mismatch");
+try {
+  await Beachside.connect({ adapter: upstashBoxAdapter, config: { resources: { vcpus: 100 } }, credentials: { apiKey: "fixture" } });
+  throw Error("Unsupported size accepted");
+} catch (error) { if (error.code !== "UNSUPPORTED") throw error; }
+console.log("Packed Upstash Box imports and local validation passed without provider IO");
+`,
+  );
+  await checkTypes(upstash, "upstash-box");
+  inspectGraph(upstash, ["beachside", "@beachside/upstash-box"]);
+
+  for (const runtime of ["node", "bun"])
+    console.log(`${runtime}: ${run(runtime, ["consumer.mjs"], upstash)}`);
+
+  // Exercise the separately maintained client with the packed SDK.
+  const docs = join(root, "apps/docs");
+  run("bun", ["run", "credential-client:build"], docs);
+  const externalClient = await pack(join(docs, "node_modules/@beachside/credential-client"));
+
   const credentialClient = join(temporary, "credential-client-consumer");
   await consumer(
     credentialClient,
     {
       ...sdkDeps,
       "@beachside/adapter": archiveOverrides["@beachside/adapter"],
-      "@beachside/credential-client": archiveOverrides["@beachside/credential-client"],
+      "@beachside/credential-client": `file:${externalClient}`,
       zod: "4.6.6",
     },
     archiveOverrides,
@@ -1330,18 +1364,8 @@ console.log("Packed exe.dev imports and local validation passed without provider
   await checkTypes(credentialClient, "credential-client");
   inspectGraph(credentialClient, ["beachside", "@beachside/credential-client"]);
 
-  await writeFile(
-    join(credentialClient, "broker-cli.mjs"),
-    await readFile(
-      join(root, "packages/sdk-qualification/credential-client-cli-packed.mjs"),
-      "utf8",
-    ),
-  );
-
-  for (const runtime of ["node", "bun"]) {
+  for (const runtime of ["node", "bun"])
     console.log(`${runtime}: ${run(runtime, ["consumer.mjs"], credentialClient)}`);
-    console.log(`${runtime}: ${run(runtime, ["broker-cli.mjs"], credentialClient)}`);
-  }
 
   const e2bDeps = { ...sdkDeps, "@beachside/e2b": archiveOverrides["@beachside/e2b"] };
 
@@ -1376,6 +1400,9 @@ console.log("Packed exe.dev imports and local validation passed without provider
     `import { Beachside, Image } from "beachside"; if (typeof Beachside.connect !== "function" || Image.prepared("base").kind !== "prepared") throw Error("Core imports failed");`,
   );
   const coreGraph = inspectGraph(core, ["beachside"]);
+
+  if (coreGraph.includes("@beachside/credential-client"))
+    throw Error("Core installed the optional credential client");
 
   if (
     coreGraph.some((name) =>

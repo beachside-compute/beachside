@@ -1431,15 +1431,25 @@ export class DaytonaDriver implements ProviderDriver {
     submissionId: string;
     operationId?: string;
     expectedSnapshotId?: string;
+    /** The id Daytona acknowledged at submit; its detail is current while listings lag. */
+    sandboxId?: string | undefined;
   }): Promise<DaytonaCreateResult | null> {
     this.sameScope(input.scope);
     const name = `beachside-${input.submissionId}`;
 
-    const page = await this.json(
-      "GET",
-      `/sandbox?name=${encodeURIComponent(name)}&limit=2&includeErroredDeleted=true`,
-      ListResponse,
-    );
+    // Daytona's sandbox listing trails creation by up to a minute, so read the acknowledged
+    // sandbox directly; the identity checks below apply to it exactly as to a listed one.
+    const acknowledged = input.sandboxId
+      ? await this.sandboxDetail(input.sandboxId).catch(() => null)
+      : null;
+
+    const page = acknowledged
+      ? { items: [acknowledged] }
+      : await this.json(
+          "GET",
+          `/sandbox?name=${encodeURIComponent(name)}&limit=2&includeErroredDeleted=true`,
+          ListResponse,
+        );
 
     const matches = page.items.filter(
       (value) =>
@@ -1486,7 +1496,9 @@ export class DaytonaDriver implements ProviderDriver {
     let detail: Sandbox | null;
 
     try {
-      detail = await this.sandbox(matches[0]!.id);
+      // The acknowledged sandbox was just read in full; read a listed one now.
+      if (acknowledged) observed(this.scope, acknowledged, this.config.configuration);
+      detail = acknowledged ?? (await this.sandbox(matches[0]!.id));
     } catch {
       return null;
     }

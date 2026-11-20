@@ -563,8 +563,9 @@ export function createBoxdAdapter(
         throw new AdapterError("UNSUPPORTED", "boxd currently requires a member API key");
       const org = orgs.find((value) => value.id === config.org || value.slug === config.org);
 
-      if (!org || !org.isDefault || !org.id || !cluster.zone)
-        throw new AdapterError("FORBIDDEN", "Select the authenticated default boxd org");
+      // Each key is fenced to one org; boxd authorizes every call, so any org the key can see works.
+      if (!org || !org.id || !cluster.zone)
+        throw new AdapterError("FORBIDDEN", "Select a boxd org this key belongs to");
 
       // A named region other than home's sends machine, disk and snapshot calls to its endpoint.
       const region = config.region
@@ -1622,6 +1623,59 @@ export function createBoxdAdapter(
             await requireRunning(input.sandbox, ctx);
 
             return startBoxdProcess(native, input, ctx);
+          },
+        },
+        ssh: {
+          supports: {
+            auth: "publicKey",
+            publicKey: "optional",
+            scope: "account",
+            hostKeys: true,
+            expires: false,
+            proxy: "none",
+          },
+          async target(input, ctx) {
+            const machine = await requireRunning(input.sandbox, ctx);
+
+            if (!machine.ssh)
+              throw new AdapterError(
+                "CONFLICT",
+                "SSH is off for this boxd machine; turn it on with `boxd machine config set <machine> ssh on`",
+              );
+
+            if (machine.access.sshPort === null)
+              throw new AdapterError("UNAVAILABLE", "boxd has not allocated an SSH port yet");
+
+            if (!/^[a-z0-9-]+$/.test(machine.name))
+              throw new AdapterError("CONFLICT", "boxd machine name is not a usable SSH host");
+
+            // Every machine's SSH ends at the region's proxy, which presents one host key.
+            let hostKey: string | undefined;
+
+            await native.run(
+              {
+                ...ctx,
+                onSshHostKey: (line) => {
+                  hostKey = line;
+                },
+              },
+              () => native.machines.list({ org: org.slug }),
+            );
+
+            if (!hostKey) throw new AdapterError("UNAVAILABLE", "boxd sent no SSH host key");
+
+            // Linking is idempotent and account-wide: the key reaches every machine the account can.
+            // It runs last, so a refused target never leaves a key linked.
+            if (input.publicKey)
+              await native.run(ctx, () => native.account.linkSshKey({ pubkey: input.publicKey! }));
+
+            return {
+              host: `${machine.name}.${zone}`,
+              port: machine.access.sshPort,
+              username: "boxd",
+              auth: { method: "publicKey" },
+              hostKeys: [hostKey.trim().split(/\s+/).slice(0, 2).join(" ")],
+            };
           },
         },
         async preview(input, ctx) {

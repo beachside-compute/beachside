@@ -6,7 +6,7 @@ import { archilAdapter } from "./adapter";
 export type ArchilOptions = z.input<typeof archilAdapter.credentials> &
   z.input<typeof archilAdapter.config>;
 
-/** Experimental Archil Sandboxes adapter. Same as `Beachside.connect({ adapter: archilAdapter, credentials, config })`. */
+/** Archil Sandboxes adapter. Same as `Beachside.connect({ adapter: archilAdapter, credentials, config })`. */
 export function archil(options: ArchilOptions): BoundAdapter {
   const { apiKey, registry, ...config } = options;
 

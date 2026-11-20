@@ -107,6 +107,9 @@ export const MAX_STDIN_BYTES = 1_048_576;
  */
 export const MAX_FILE_BYTES = 8 * 1024 * 1024;
 
+/** Freestyle's SSH gateway; the token minted for a VM's identity is the password. */
+const SSH_HOST = "beta-ssh.freestyle.sh";
+
 /** Freestyle documents no upper bound on `ttlSeconds`; Beachside caps lifetimes at 30 days. */
 const MAX_TTL_SECONDS = 30 * 24 * 60 * 60;
 
@@ -166,6 +169,12 @@ const Configuration = z
           .default([]),
       })
       .default({ access: "public", ports: [] }),
+    ssh: z
+      .strictObject({
+        /** Lifetime of each access token `sshTarget()` mints for the VM's SSH identity. */
+        expiresInMinutes: z.number().int().min(1).max(1440).default(60),
+      })
+      .default({ expiresInMinutes: 60 }),
     snapshots: z
       .strictObject({
         /** Freestyle snapshots always keep memory and disk; `filesystem` rejects at connect. */
@@ -503,15 +512,10 @@ export function createFreestyleAdapter(options: FreestyleAdapterOptions = {}) {
           );
       }
 
-      // The authenticated read proves this credential works, not its native team identity.
+      // Freestyle addresses VMs by ID and authorizes each call with the current key, so the
+      // service and endpoint identify resources; rotated keys keep saved references usable.
       const scope = {
-        authority: {
-          kind: "api-key",
-          id: createHash("sha256")
-            .update("beachside:freestyle:api-key-scope:v1\0")
-            .update(credentials.apiKey)
-            .digest("hex"),
-        },
+        authority: { kind: "service", id: new URL(FREESTYLE_API).host },
         partition: { endpoint: FREESTYLE_API },
       };
 
@@ -565,6 +569,49 @@ export function createFreestyleAdapter(options: FreestyleAdapterOptions = {}) {
           );
 
         return vm;
+      };
+
+      /**
+       * The SSH identity this client created for each VM, granted that VM only. Tokens minted on
+       * it outlive this client, so the identity stays until this client destroys the VM.
+       */
+      const sshIdentities = new Map<string, Promise<string>>();
+
+      const sshIdentity = (vmId: string, ctx: ReadContext) => {
+        const known = sshIdentities.get(vmId);
+
+        if (known) return known;
+
+        const created = read(ctx, async (native) => {
+          const { identity, identityId } = await native.identities.create();
+
+          try {
+            await identity.permissions.vm.grant({ vmId });
+          } catch (error) {
+            await native.identities.delete(identityId).catch(() => undefined);
+            throw error;
+          }
+
+          return identityId;
+        });
+
+        sshIdentities.set(vmId, created);
+        created.catch(() => sshIdentities.delete(vmId));
+
+        return created;
+      };
+
+      const dropSshIdentity = async (vmId: string) => {
+        const known = sshIdentities.get(vmId);
+
+        if (!known) return;
+        sshIdentities.delete(vmId);
+
+        try {
+          await api(callSignal(readContext(host.signal))).identities.delete(await known);
+        } catch {
+          /* Best effort: the VM is gone, so the identity's grant reaches nothing. */
+        }
       };
 
       const requireRunning = async (box: Sandbox, ctx: ReadContext) => {
@@ -1544,6 +1591,7 @@ export function createFreestyleAdapter(options: FreestyleAdapterOptions = {}) {
 
             const acknowledged = { ...token, acknowledged: true };
             await ctx.checkpoint(acknowledged);
+            await dropSshIdentity(token.id);
 
             try {
               const gone = await settle(ctx.signal, async (read) =>
@@ -1704,6 +1752,58 @@ export function createFreestyleAdapter(options: FreestyleAdapterOptions = {}) {
             return input;
           },
           submit: (input, ctx) => runCommand(input, ctx),
+        },
+        ssh: {
+          supports: {
+            auth: "password",
+            publicKey: "unused",
+            scope: "sandbox",
+            hostKeys: false,
+            expires: true,
+            proxy: "none",
+          },
+          async target(input, ctx) {
+            // SSH traffic can wake an idle-paused VM, so only running compute gets a target.
+            const vm = await requireRunning(input.sandbox, ctx);
+            const minutes = config.ssh.expiresInMinutes;
+            const ceiling = Date.now() + minutes * 60_000;
+            const identityId = await sshIdentity(vm.id, ctx);
+            let minted: { token: string; expiresAt?: string | null };
+
+            try {
+              minted = await api(callSignal(ctx))
+                .identities.ref(identityId)
+                .tokens.create({ expiresAt: new Date(ceiling).toISOString() });
+            } catch (error) {
+              const native = failure(error);
+
+              // Deleted elsewhere: the next call creates a fresh identity.
+              if (native.status === 404) sshIdentities.delete(vm.id);
+              throw native.error;
+            }
+
+            const token = z
+              .string()
+              .min(1)
+              .max(4096)
+              .regex(/^[^\s\0]+$/)
+              .safeParse(minted.token);
+
+            if (!token.success)
+              throw new AdapterError("UNAVAILABLE", "Freestyle returned an unusable SSH token");
+            const expires = Date.parse(minted.expiresAt ?? "");
+
+            return {
+              host: SSH_HOST,
+              port: 22,
+              // The VM id connects as its default user: uid 1000 (`ubuntu`), else root.
+              username: vm.id,
+              auth: { method: "password" as const, password: token.data },
+              expiresAt: new Date(
+                Number.isFinite(expires) ? Math.min(expires, ceiling) : ceiling,
+              ).toISOString(),
+            };
+          },
         },
         async preview(input, ctx) {
           // Inbound traffic can wake an idle-paused VM, so only running compute gets access.

@@ -7,7 +7,7 @@ import { setup, type ArchilFixture } from "./fixture.test-support";
 const creates = (fixture: ArchilFixture) =>
   fixture.calls.filter((call) => call.method === "POST" && call.path === "/api/sandboxes");
 
-test("Archil conformance: one native attempt, distinct keys, lost and late responses", async () => {
+test("Archil conformance: one native attempt, regions and rotated keys, lost and late responses", async () => {
   const { fixture, adapter } = setup();
 
   const report = await adapterSuite({
@@ -16,9 +16,10 @@ test("Archil conformance: one native attempt, distinct keys, lost and late respo
       config: { region: "aws-us-east-1", baseUrl: fixture.baseUrl },
       credentials: { apiKey: "fixture-main" },
       alternate: {
-        config: { region: "aws-us-east-1", baseUrl: fixture.baseUrl },
+        config: { region: "aws-eu-west-1", baseUrl: fixture.baseUrl },
         credentials: { apiKey: "fixture-alt" },
       },
+      rotatedCredentials: { apiKey: "fixture-rotated" },
       createInput: { image: { kind: "oci", value: "node:24-bookworm" }, networkPolicy: "blocked" },
       counters: () => ({
         create: fixture.effects.create,
@@ -76,6 +77,23 @@ test("create sends an explicit image, exact size, session budget, blocked egress
     expect(fixture.sandboxes.size).toBe(0);
   } finally {
     await client.close();
+  }
+});
+
+test("a rotated key for the same account reopens a saved sandbox reference", async () => {
+  const { connect } = setup();
+  const main = await connect();
+  const rotated = await connect({}, { apiKey: "fixture-rotated" });
+
+  try {
+    const box = await main.sandboxes.create();
+    const saved = JSON.parse(JSON.stringify(box.reference));
+    expect(JSON.stringify(saved)).not.toContain("fixture-main");
+    expect((await rotated.sandboxes.get(saved)).id).toBe(box.id);
+    await box.destroy();
+  } finally {
+    await main.close();
+    await rotated.close();
   }
 });
 
@@ -297,11 +315,32 @@ test("suspend pauses with memory, resume resumes it, and renew sends a session t
     expect(suspended).toMatchObject({ preserve: "filesystem+memory", processes: "preserved" });
     expect(fixture.sandboxes.get(box.id)?.status).toBe("paused");
 
+    const resuming = Date.now();
     const resumed = await box.resume();
     expect(resumed).toMatchObject({ execution: "resumed" });
+    // The new session's budget counts from the resume.
+    const budget = fixture.sandboxes.get(box.id)!.maxTtl * 1000;
+    expect(resumed.observation.expires).toMatchObject({ status: "known", action: "suspend" });
+
+    if (resumed.observation.expires.status !== "known") throw Error("Resume deadline unknown");
+    expect(Date.parse(resumed.observation.expires.at)).toBeGreaterThanOrEqual(resuming + budget);
+    expect(Date.parse(resumed.observation.expires.at)).toBeLessThanOrEqual(Date.now() + budget);
     expect(fixture.sandboxes.get(box.id)?.status).toBe("running");
 
-    await box.renew({ forSeconds: 600 });
+    const before = Date.now();
+    const renewed = await box.renew({ forSeconds: 600 });
+    expect(renewed.observation?.expires).toMatchObject({
+      status: "known",
+      action: "suspend",
+      scope: "running-session",
+    });
+
+    if (renewed.observation?.expires.status !== "known") throw Error("Renewal deadline unknown");
+    const deadline = Date.parse(renewed.observation.expires.at);
+    expect(deadline).toBeGreaterThanOrEqual(before + 600_000);
+    expect(deadline).toBeLessThanOrEqual(Date.now() + 600_000);
+    // Inspect still cannot read the deadline back from Archil.
+    expect((await box.inspect()).expires.status).toBe("unknown");
     expect(fixture.calls.find((call) => call.path.endsWith("/timeout"))?.body).toEqual({
       timeout: 600,
     });
