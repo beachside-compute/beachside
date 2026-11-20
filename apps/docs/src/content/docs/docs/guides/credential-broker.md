@@ -3,11 +3,17 @@ title: Credential broker
 description: Give sandbox commands short-lived GitHub and model access through a self-hosted credential broker.
 ---
 
-The Beachside credential broker stores upstream keys and issues short-lived grants for GitHub and HTTPS APIs. A sandbox receives a temporary grant and the broker URL for its integration.
+Use the credential broker when a sandbox needs to call GitHub, OpenRouter, or another HTTPS API and you want to keep the real credential out of the sandbox and away from its provider. You run the broker in your Cloudflare account, where it stores the upstream keys encrypted.
+
+## How it works
+
+Beachside gives the sandbox a broker URL and a short-lived token called a **grant**. The grant only works with the integrations you approved for that sandbox. The broker checks the grant, swaps it for the real key on the upstream request, and relays the response. You can let a grant expire or revoke it early while keeping the upstream key in place for other workloads.
+
+![A sandbox sends its temporary grant to your broker. The broker checks the grant, sends the real key to OpenRouter, and relays the response back to the sandbox.](/images/credential-broker/architecture.png)
 
 ## Deploy the broker
 
-On your operator machine, use Bun 1.4.4, Node.js 22 or later, and a Cloudflare account that can deploy Workers and SQLite Durable Objects.
+Deploying the Worker from source uses Bun 1.4.4, Node.js 22 or later, and a Cloudflare account that can deploy Workers and SQLite Durable Objects. Once deployed, manage the broker with the installed Node CLI.
 
 ```sh
 git clone https://github.com/beachside-compute/credential-broker.git
@@ -43,35 +49,57 @@ For unattended deployment, key rotation, or an existing Alchemy deployment, see 
 
 ## Set up runtime integrations
 
-From the broker checkout, replace the example URL with the deployed origin and open the wizard.
+Install the broker CLI on the operator machine with Node.js 22 or later.
 
 ```sh
-bun run broker --url https://your-broker.example.com integration setup
+npm install -g @beachside/credential-client
 ```
 
-Choose OpenRouter with the arrow keys, enter `router-work` as the integration ID, and paste the OpenRouter key in the masked prompt. Pressing Enter at the ID prompt uses `openrouter`. If you use that default, substitute it for `router-work` in the commands and SDK examples below. The same wizard supports other gateways and custom HTTPS endpoints. [Model gateway recipes](/docs/guides/model-gateways/).
+Set the deployed HTTPS origin and load the admin key from `.env.deploy` or your secret manager. In Bash or Zsh, paste the `BROKER_ADMIN_KEY` at the hidden prompt.
 
-Add `BEACHSIDE_BROKER_URL=https://your-broker.example.com` to `.env.deploy` with your actual origin so the remaining commands can omit `--url`. Integration and allowlist commands use the admin key from that file. Grant commands use the separate issuer key.
+```sh
+export BEACHSIDE_BROKER_URL=https://your-broker.example.com
+printf 'Paste the broker admin key and press Enter: '
+read -rs BEACHSIDE_BROKER_ADMIN_KEY
+printf '\n'
+export BEACHSIDE_BROKER_ADMIN_KEY
+```
+
+Open the integration wizard.
+
+```sh
+beachside-broker integration setup
+```
+
+Select OpenRouter, enter `router-work` as the integration ID, and paste the OpenRouter key in the masked prompt. Pressing Enter at the ID prompt uses `openrouter`. If you use that default, substitute it for `router-work` below. The same wizard supports other gateways and custom HTTPS endpoints. [Model gateway recipes](/docs/guides/model-gateways/).
 
 Check which integrations the issuer can use.
 
 ```sh
-bun run broker issuer show
+beachside-broker issuer show
 ```
 
 If the list is empty, allow grants for `router-work`. If the list already has IDs, pass them alongside `router-work`. The command replaces the entire list.
 
 ```sh
-bun run broker issuer set router-work
+beachside-broker issuer set router-work
 ```
 
 ## Try a temporary grant
 
-Run this in a private terminal. The output includes the temporary `token`, the grant `id`, and a ready-to-use API base URL at `gatewayUrls["router-work"]`. The grant lasts five minutes by default.
+The `grant` commands require version 0.1.1 or later. With version 0.1.0, continue to the SDK example to issue and revoke grants automatically. [Give a sandbox a grant](#give-a-sandbox-a-grant).
+
+In a private Bash or Zsh terminal with `BEACHSIDE_BROKER_URL` set, load the separate `BROKER_ISSUER_KEY` from `.env.deploy` or your secret manager.
 
 ```sh
-bun run broker grant issue router-work
+printf 'Paste the broker issuer key and press Enter: '
+read -rs BEACHSIDE_BROKER_ISSUER_KEY
+printf '\n'
+export BEACHSIDE_BROKER_ISSUER_KEY
+beachside-broker grant issue router-work
 ```
+
+The output includes the temporary `token`, the grant `id`, and the API base URL at `gatewayUrls["router-work"]`. The grant lasts five minutes by default.
 
 To verify the grant, run this block in Bash or Zsh. Paste the gateway URL and token from the grant output when prompted. The request checks OpenRouter authentication without using model tokens and prints the HTTP status. [OpenRouter current key endpoint](https://openrouter.ai/docs/api/api-reference/api-keys/get-current-key).
 
@@ -90,7 +118,7 @@ unset GATEWAY_URL GRANT_TOKEN
 When you're done, copy the `id` from the grant output.
 
 ```sh
-bun run broker grant revoke YOUR_GRANT_ID
+beachside-broker grant revoke YOUR_GRANT_ID
 ```
 
 ## Give a sandbox a grant
@@ -101,17 +129,7 @@ Install both packages in your sandbox application.
 npm install beachside @beachside/credential-client
 ```
 
-![The sandbox sends a temporary grant to the Cloudflare broker. The broker validates it, calls OpenRouter with the stored upstream API key, and forwards the response to the sandbox.](/images/credential-broker/architecture.png)
-
-On the trusted orchestrator host, set `BEACHSIDE_BROKER_URL` to the deployed origin and `BEACHSIDE_BROKER_ISSUER_KEY` to the `BROKER_ISSUER_KEY` from `.env.deploy` or your secret manager. Beachside supplies the temporary grant to sandbox commands. For a model-only setup, use just the endpoint mapping. [Model endpoint example](/docs/guides/model-gateways/#select-the-endpoint-in-a-sandbox).
-
-The example below also uses GitHub and assumes a Linux sandbox image with Git and GitHub CLI. To follow it, add a GitHub integration from the broker checkout and authorize both IDs. Include any other IDs you want to keep.
-
-```sh
-printf '%s' "$WORK_GITHUB_TOKEN" |
-  bun run broker integration create github-work --provider github --secret-stdin
-bun run broker issuer set router-work github-work
-```
+On the trusted orchestrator host, set `BEACHSIDE_BROKER_URL` to the deployed origin and `BEACHSIDE_BROKER_ISSUER_KEY` to the `BROKER_ISSUER_KEY` from `.env.deploy` or your secret manager. With a connected Beachside client and a sandbox image containing `printenv`, this example shows the OpenRouter URL available to sandbox commands. Their `OPENROUTER_API_KEY` variable contains the temporary grant.
 
 ```ts
 import { createCredentialBroker } from "@beachside/credential-client";
@@ -121,11 +139,10 @@ const broker = createCredentialBroker({
   auth: { apiKey: process.env.BEACHSIDE_BROKER_ISSUER_KEY! },
 });
 
-await client.sandboxes.with(
+const result = await client.sandboxes.with(
   {
     network: "internet",
     credentials: broker.sandbox({
-      github: "github-work",
       endpoints: [
         {
           integration: "router-work",
@@ -135,13 +152,24 @@ await client.sandboxes.with(
       ],
       ttlSeconds: 900,
     }),
-    setup: [["git", "clone", "https://github.com/acme/project.git", "/tmp/project"]],
   },
-  async (box) => {
-    await box.exec(["gh", "api", "repos/acme/project", "--jq", ".full_name"]);
-  },
+  (box) => box.exec(["printenv", "OPENROUTER_BASE_URL"]),
 );
+
+console.log(result.stdoutText());
 ```
+
+### Optional GitHub access
+
+Create a GitHub integration using a token from a protected file, then add `github-work` to the issuance allowlist. Keep any IDs you already authorized when you call `issuer set`.
+
+```sh
+beachside-broker integration create github-work --provider github --secret-stdin < /secure/path/github-token
+beachside-broker issuer show
+beachside-broker issuer set router-work github-work
+```
+
+Add `github: "github-work"` alongside `endpoints` in `broker.sandbox()`. Use a sandbox image with Git and, if needed, GitHub CLI.
 
 Git uses the broker for HTTPS URLs under `https://github.com/`. For `gh`, the environment sets `GH_HOST` to the broker hostname and `GH_ENTERPRISE_TOKEN` to the grant. An explicitly selected `github.com` GitHub CLI host takes precedence over `GH_HOST`. Use `gh api --hostname "$GH_HOST"` or `gh ... --repo "$GH_HOST/owner/repo"` to explicitly select the broker. The Worker accepts supported GitHub routes. The configured upstream GitHub credential determines repository access and write permissions. See the [broker route and permission reference](https://github.com/beachside-compute/credential-broker/blob/main/services/credential-broker/README.md#use-the-gateways).
 
@@ -218,9 +246,9 @@ The [compiled OpenCode example](https://github.com/beachside-compute/beachside/b
 ## Rotate or retire integrations
 
 ```sh
-bun run broker integration rotate router-work --credentials-stdin < /secure/path/replacement-headers.json
-bun run broker integration show router-work
-bun run broker integration disable router-work
+beachside-broker integration rotate router-work --credentials-stdin < /secure/path/replacement-headers.json
+beachside-broker integration show router-work
+beachside-broker integration disable router-work
 ```
 
 Rotation increments the credential version. Grants keep their scope and newly authorized requests use the replacement, while in-flight requests may finish with the previous credential. Disabling an integration revokes grants that selected it, and enabling it again allows new grants subject to issuance permissions. Deleting an integration revokes its grants and clears its eligibility. Recreating the same ID requires explicit authorization again.
