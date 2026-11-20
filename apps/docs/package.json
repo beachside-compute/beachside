@@ -4,9 +4,10 @@
   "type": "module",
   "scripts": {
     "credential-client:build": "tsc -p node_modules/@beachside/credential-client/tsconfig.build.json --typeRoots ../../node_modules/@types --types bun",
-    "site:check": "bun run credential-client:build && astro check && bun scripts/check-skills.mjs && bun scripts/check-links.mjs && bun run site:build",
+    "site:check": "bun run credential-client:build && astro check && bun scripts/check-skills.mjs && bun run links:check && bun run site:build",
     "dev": "astro dev",
-    "check": "bun run credential-client:build && astro check && bun scripts/check-observability-snippets.mjs && bun scripts/check-skills.mjs && tsc -p examples/tsconfig.json && bun scripts/check-links.mjs && bun run typescript:check && bun run cli:check",
+    "check": "bun run credential-client:build && astro check && bun scripts/check-observability-snippets.mjs && bun scripts/check-skills.mjs && tsc -p examples/tsconfig.json && bun run links:check && bun run typescript:check && bun run cli:check",
+    "links:check": "bun test scripts/check-links.test.ts && bun scripts/check-links.mjs",
     "site:build": "astro build && bun scripts/check-dist.mjs",
     "build": "bun run provider:check && bun run site:build",
     "provider:check": "bun ../../packages/sdk-qualification/provider-qualification/render.ts --check",

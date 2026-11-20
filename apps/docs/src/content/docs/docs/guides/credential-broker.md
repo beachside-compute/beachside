@@ -5,6 +5,8 @@ description: Give sandbox commands short-lived GitHub and model access through a
 
 The Beachside credential broker stores upstream GitHub and model credentials and issues short-lived grants for sandbox workloads. After deployment, use the admin client or CLI to manage runtime integrations. Each integration selects a fixed provider and its upstream credential.
 
+![The sandbox sends a temporary grant to the Cloudflare broker. The broker validates it, calls OpenRouter with the stored upstream API key, and forwards the response to the sandbox.](/images/credential-broker/architecture.png)
+
 ## Deploy the broker
 
 Configure three Worker secrets. `BROKER_ADMIN_KEY` authorizes integration and issuance settings. `BROKER_ISSUER_KEY` authorizes grant requests. `BROKER_ENCRYPTION_KEYS` maps version labels to base64url-encoded 32-byte encryption keys. The `BROKER_ENCRYPTION_KEY_VERSION` setting selects the active version for writes. Keep prior encryption versions configured until their stored credentials have been rotated. [Worker deployment and bootstrap](https://github.com/beachside-compute/credential-broker/tree/0a09e9d2dd32aa348cf112c4d9d90429d5c3a97a/services/credential-broker).
@@ -113,6 +115,10 @@ Each property of `broker.sandbox()` names an integration configured on the Worke
 The Anthropic SDK adds `/v1` to its base URL. OpenAI and OpenRouter URLs already include `/v1`. Pass the base URL to a client explicitly when it does not read the environment variable.
 
 For OpenCode V2, add these settings for the providers your grant includes in the project's `opencode.json` or `.opencode/opencode.json`. The file contains variable references. OpenCode resolves them from its command environment. [OpenCode configuration guide](https://opencode.ai/docs/config/), [OpenCode provider guide](https://opencode.ai/docs/providers/).
+
+OpenCode v2.2.7 also accepts the same JSON through `OPENCODE_CONFIG_CONTENT` in the environment of the sandbox command that starts OpenCode. Keep the `{env:...}` references so OpenCode resolves the broker URL and temporary grant at startup. [OpenCode CLI environment variables](https://github.com/anomalyco/opencode/blob/v2.2.7/packages/web/src/content/docs/cli.mdx#environment-variables).
+
+![OpenCode’s OpenRouter provider settings map baseURL to the broker’s OpenRouter gateway and apiKey to the temporary grant. The settings can be passed as inline JSON in OPENCODE_CONFIG_CONTENT.](/images/credential-broker/opencode-openrouter.png)
 
 ```json
 {
