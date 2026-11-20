@@ -105,7 +105,6 @@ export default defineConfig({
           items: [
             { slug: "docs/guides/resources" },
             { slug: "docs/guides/setup" },
-            { slug: "docs/guides/credential-broker" },
             { slug: "docs/guides/model-gateways" },
             { slug: "docs/guides/snapshots-and-volumes" },
             { slug: "docs/guides/files-and-output" },
@@ -118,6 +117,7 @@ export default defineConfig({
             { slug: "docs/guides/troubleshooting" },
           ],
         },
+        { slug: "docs/guides/credential-broker", label: "Credential Broker" },
         {
           label: "Providers",
           items: [
