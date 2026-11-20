@@ -46,7 +46,7 @@ export const Beachside = { connect: connectDirect };
 
 export { SandboxCredentialRevocationError } from "./sandbox-credentials";
 
-export type { SandboxCredentials } from "./sandbox-credentials";
+export type { SandboxCredentials, SandboxGrantStatus } from "./sandbox-credentials";
 
 export {
   Image,

@@ -53,6 +53,32 @@ export const ProfileConfig = z
 
 export type ProfileConfig = z.infer<typeof ProfileConfig>;
 
+export const BrokerName = z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/);
+
+export const BrokerConfig = z.strictObject({
+  url: z
+    .string()
+    .min(1)
+    .max(2048)
+    .describe("The broker's HTTPS origin; http is allowed only for localhost"),
+  issuerKey: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "Key for issuing, renewing and revoking grants: a value, env:NAME, or op://, bws://, pass:// or keychain:// reference",
+    ),
+  adminKey: z
+    .string()
+    .min(1)
+    .optional()
+    .describe(
+      "Key for integrations and the issuer allowlist; only needed to manage the broker from this machine",
+    ),
+});
+
+export type BrokerConfig = z.infer<typeof BrokerConfig>;
+
 /** Where the published JSON Schema for beachside.json lives; editors read it from `$schema`. */
 export const CONFIG_SCHEMA_URL = "https://beachside.run/schema/beachside.json";
 
@@ -86,6 +112,15 @@ export const CliConfig = z.strictObject({
     .record(SetupName, SetupConfig)
     .optional()
     .describe("Named setup steps for --setup <name>"),
+  brokers: z
+    .record(BrokerName, BrokerConfig)
+    .optional()
+    .describe("Credential brokers that `create --grant` and `beachside broker` use"),
+  defaultBroker: z
+    .string()
+    .min(1)
+    .optional()
+    .describe("The broker used when --broker and BEACHSIDE_BROKER pick none"),
   /** Also read setups from a checkout's `.beachside/setup.json` (off: a checkout could plant one). */
   projectSetups: z
     .boolean()

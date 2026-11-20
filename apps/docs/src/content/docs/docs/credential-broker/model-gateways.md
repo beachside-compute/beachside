@@ -3,13 +3,15 @@ title: Model gateway recipes
 description: Connect sandbox model clients to HTTPS APIs through short-lived credential broker grants.
 ---
 
-Install the Node CLI and configure the broker URL and admin key, then start the setup wizard. [Credential broker setup](/docs/guides/credential-broker/#set-up-runtime-integrations).
+With a [connected broker](/docs/credential-broker/cli/#connect-a-broker), start the setup wizard.
 
 ```sh
-beachside-broker integration setup
+beachside broker integration setup
 ```
 
-Select OpenRouter, Kilo AI Gateway, Cloudflare AI Gateway (OpenAI provider), Vercel AI Gateway, OpenAI, Anthropic, or Custom HTTPS endpoint. Enter an integration ID and the requested upstream values. Every preset fills in a generic HTTPS integration. The Cloudflare preset asks for the gateway destination and both credentials. The custom option lets you enter your own URL and headers.
+Select OpenRouter, Kilo AI Gateway, Cloudflare AI Gateway (OpenAI provider), Vercel AI Gateway, OpenAI, Anthropic, or Custom HTTPS endpoint. Enter an integration ID, or press Enter for the suggested one, and the requested upstream values. Every preset creates an HTTPS endpoint integration and allows grants for it. The Cloudflare preset asks for the gateway destination and both credentials. The custom option lets you enter your own URL and headers.
+
+A sandbox with a grant for an HTTPS endpoint gets `<ID>_BASE_URL` and `<ID>_API_KEY`, so the suggested IDs give the variables those clients usually read: `openrouter` sets `OPENROUTER_*`, `openai` sets `OPENAI_*`, `anthropic` sets `ANTHROPIC_*`.
 
 An integration fixes the upstream base URL and the headers the broker sets. A grant covers the entire path beneath that base URL, subject to the proxy's request checks and the upstream credential's permissions. Use an upstream and DNS configuration you trust, and use keys with the permissions you intend to delegate. The broker checks URL and hostname syntax. A hostname can pass those checks and still resolve to a private IP address.
 
@@ -19,7 +21,7 @@ Use an HTTPS request/response API whose authentication fits fixed headers. The b
 
 ## Noninteractive setup
 
-Each recipe uses Node.js to read upstream secrets from exported variables on the operator host and passes the configuration to the installed CLI over stdin. After creation, [add the integration to the issuance allowlist](/docs/guides/credential-broker/#set-up-runtime-integrations).
+Each recipe uses Node.js to read upstream secrets from exported variables on your machine and passes the configuration to the CLI over stdin. `--allow-issue` lets the issuer grant the new integration right away.
 
 ### OpenRouter
 
@@ -34,7 +36,7 @@ node -e 'console.log(JSON.stringify({
   credential: { source: "encrypted-store", values: {
     Authorization: process.env.OPENROUTER_API_KEY
   } }
-}))' | beachside-broker integration create router-work --provider http --config-stdin
+}))' | beachside broker integration create openrouter --provider http --config-stdin --allow-issue
 ```
 
 ### Kilo AI Gateway
@@ -50,7 +52,7 @@ node -e 'console.log(JSON.stringify({
   credential: { source: "encrypted-store", values: {
     Authorization: process.env.KILO_API_KEY
   } }
-}))' | beachside-broker integration create kilo-work --provider http --config-stdin
+}))' | beachside broker integration create kilo --provider http --config-stdin --allow-issue
 ```
 
 ### Cloudflare AI Gateway
@@ -71,7 +73,7 @@ node -e 'console.log(JSON.stringify({
     Authorization: process.env.OPENAI_API_KEY,
     "cf-aig-authorization": process.env.CLOUDFLARE_API_TOKEN
   } }
-}))' | beachside-broker integration create cloudflare-work --provider http --config-stdin
+}))' | beachside broker integration create cloudflare --provider http --config-stdin --allow-issue
 ```
 
 ### Vercel AI Gateway
@@ -87,7 +89,7 @@ node -e 'console.log(JSON.stringify({
   credential: { source: "encrypted-store", values: {
     Authorization: process.env.AI_GATEWAY_API_KEY
   } }
-}))' | beachside-broker integration create vercel-work --provider http --config-stdin
+}))' | beachside broker integration create vercel --provider http --config-stdin --allow-issue
 ```
 
 ### OpenAI
@@ -103,7 +105,7 @@ node -e 'console.log(JSON.stringify({
   credential: { source: "encrypted-store", values: {
     Authorization: process.env.OPENAI_API_KEY
   } }
-}))' | beachside-broker integration create openai-work --provider http --config-stdin
+}))' | beachside broker integration create openai --provider http --config-stdin --allow-issue
 ```
 
 ### Anthropic
@@ -119,7 +121,7 @@ node -e 'console.log(JSON.stringify({
   credential: { source: "encrypted-store", values: {
     "x-api-key": process.env.ANTHROPIC_API_KEY
   } }
-}))' | beachside-broker integration create anthropic-work --provider http --config-stdin
+}))' | beachside broker integration create anthropic --provider http --config-stdin --allow-issue
 ```
 
 ### Custom HTTPS endpoint
@@ -142,26 +144,28 @@ node -e 'console.log(JSON.stringify({
   credential: { source: "encrypted-store", values: {
     "x-partner-key": process.env.PARTNER_API_KEY
   } }
-}))' | beachside-broker integration create partner-work --provider http --config-stdin
+}))' | beachside broker integration create partner --provider http --config-stdin --allow-issue
 ```
 
-## Select the endpoint in a sandbox
+## Use the endpoint in a sandbox
 
-For an OpenAI-compatible endpoint, select the integration ID you authorized and use the matching environment variables in your client. For Anthropic, use `ANTHROPIC_BASE_URL` and `ANTHROPIC_API_KEY` in the same mapping. For other clients, choose variable names that suit the client and pass the values explicitly.
+Grant the integration by ID. To give an OpenAI-compatible client the variables it reads, name them after the ID.
+
+```sh
+beachside create --name agent --network internet --grant openrouter=OPENAI_BASE_URL,OPENAI_API_KEY
+```
+
+From the SDK, the same mapping is an `endpoints` entry:
 
 ```ts
-const credentials = broker.sandbox({
+const grant = broker.sandbox({
   endpoints: [
-    {
-      integration: "router-work",
-      baseURLEnv: "OPENAI_BASE_URL",
-      apiKeyEnv: "OPENAI_API_KEY",
-    },
+    { integration: "openrouter", baseURLEnv: "OPENAI_BASE_URL", apiKeyEnv: "OPENAI_API_KEY" },
   ],
 });
 ```
 
-Run the request inside the sandbox. For `router-work`, the broker maps the request to `https://openrouter.ai/api/v1/chat/completions` and replaces the grant with the stored OpenRouter key. Set a model ID supported by your upstream when using a different integration. [OpenRouter model example](https://openrouter.ai/openai/gpt-5-mini).
+Run the request inside the sandbox. For `openrouter`, the broker maps the request to `https://openrouter.ai/api/v1/chat/completions` and replaces the grant with the stored OpenRouter key. Set a model ID supported by your upstream when using a different integration. [OpenRouter model example](https://openrouter.ai/openai/gpt-5-mini).
 
 ```sh
 curl --fail-with-body "$OPENAI_BASE_URL/chat/completions" \
@@ -175,10 +179,10 @@ curl --fail-with-body "$OPENAI_BASE_URL/chat/completions" \
 
 ## Rotate a secret header
 
-Export the replacement secret on the operator host and pipe the header value map to the CLI. You can rotate one secret header at a time in a multi-secret integration. Configure a new integration when the destination or header definitions need to change.
+Export the replacement secret on your machine and pipe the header value map to the CLI. You can rotate one secret header at a time in a multi-secret integration. Configure a new integration when the destination or header definitions need to change.
 
 ```sh
 node -e 'console.log(JSON.stringify({
   Authorization: process.env.REPLACEMENT_OPENROUTER_API_KEY
-}))' | beachside-broker integration rotate router-work --credentials-stdin
+}))' | beachside broker integration rotate openrouter --credentials-stdin
 ```

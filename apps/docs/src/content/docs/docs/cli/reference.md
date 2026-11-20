@@ -112,6 +112,9 @@ beachside create [--name <name>] [--image <oci-ref> | --prepared <id> | --snapsh
 | `--ttl <duration>`           | Destroy the sandbox after this long even if nothing removes it, e.g. 30m or 2h; default is the profile's lifetime                       |
 | `--snapshot <name>`          | Restore a snapshot recorded by `beachside snapshot create` instead of an image                                                          |
 | `--retry <duration>`         | Keep retrying for up to this long when the provider refuses before creating anything (rate limit, capacity), e.g. 5m                    |
+| `--grant <integration>`      | Give the sandbox a credential-broker grant for this integration (repeatable; id=BASE_URL_ENV,API_KEY_ENV picks the variable names)      |
+| `--grant-ttl <duration>`     | How long the grant lasts, up to 7d (default 1h); renew it with `beachside broker grant renew <sandbox>`                                 |
+| `--broker <name>`            | Broker from beachside.json for --grant (default: defaultBroker or BEACHSIDE_BROKER)                                                     |
 | `--setup <name\|path>`       | Run a named setup from beachside.json or a local script once the sandbox starts (repeatable, comma-separated)                           |
 | `--setup-cmd <shell>`        | Run a shell line as a setup step, after --setup (repeatable)                                                                            |
 | `--startup <path>`           | Run a local script every time the sandbox comes up without its processes, such as after a restore (repeatable)                          |
@@ -299,39 +302,42 @@ Create a sandbox, run one command, and always destroy it.
 beachside run [create flags] [exec flags] [--keep] [--push <path>] -- <command> [args...]
 ```
 
-| Flag                         | Description                                                                                                          |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `--name <name>`              | Store name (default: generated, like sb-1a2b3)                                                                       |
-| `--image <oci-ref>`          | OCI image, e.g. python:3.12; default is the profile's image                                                          |
-| `--prepared <id>`            | Provider-prepared image id (template, snapshot name)                                                                 |
-| `--network <policy>`         | blocked or internet; default is the profile's policy                                                                 |
-| `--label <k=v>`              | Label to set (repeatable)                                                                                            |
-| `--env <K=V>`                | Environment variable for this command (repeatable; K alone copies it from here)                                      |
-| `--env-file <path>`          | Read K=V lines into this command's environment (repeatable; --env wins)                                              |
-| `--build`                    | Build --image now if this provider needs a build and none is recorded                                                |
-| `--ttl <duration>`           | Destroy the sandbox after this long even if nothing removes it, e.g. 30m or 2h; default is the profile's lifetime    |
-| `--snapshot <name>`          | Restore a snapshot recorded by `beachside snapshot create` instead of an image                                       |
-| `--retry <duration>`         | Keep retrying for up to this long when the provider refuses before creating anything (rate limit, capacity), e.g. 5m |
-| `--setup <name\|path>`       | Run a named setup from beachside.json or a local script once the sandbox starts (repeatable, comma-separated)        |
-| `--setup-cmd <shell>`        | Run a shell line as a setup step, after --setup (repeatable)                                                         |
-| `--startup <path>`           | Run a local script every time the sandbox comes up without its processes, such as after a restore (repeatable)       |
-| `--startup-cmd <shell>`      | Run a shell line as a startup step (repeatable)                                                                      |
-| `--no-default-setup`         | Skip the setups the profile lists by default                                                                         |
-| `--quiet-setup`              | Show setup step names and failures, not their output                                                                 |
-| `--setup-timeout <duration>` | Overall limit for setup and startup, e.g. 45m (default 30m; each step 10m)                                           |
-| `--cache`                    | Cache this setup as a snapshot and restore it next time, even if no named setup asks for it                          |
-| `--no-cache`                 | Neither use nor build a setup cache for this sandbox                                                                 |
-| `--refresh-cache`            | Build the setup cache again now, replacing the current one                                                           |
-| `--cwd <dir>`                | Working directory in the sandbox                                                                                     |
-| `--stdin`                    | Send this process's stdin to the command                                                                             |
-| `--stdin-file <path>`        | Send a local file as the command's stdin                                                                             |
-| `--timeout <duration>`       | Execution deadline, e.g. 90s or 10m (default 300s)                                                                   |
-| `--max-output <size>`        | Captured output limit for buffered and --json output, e.g. 1m                                                        |
-| `--no-stream`                | Print the output when the command ends instead of as it arrives                                                      |
-| `--keep`                     | Keep the sandbox and print its name on stderr                                                                        |
-| `--push <path>`              | Send a local folder to ~/work first and run the command there                                                        |
-| `--exclude <glob>`           | Skip matching paths (repeatable; a pattern without / matches any name)                                               |
-| `--include-ignored`          | Send every file, not only git-tracked and unignored ones                                                             |
+| Flag                         | Description                                                                                                                        |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `--name <name>`              | Store name (default: generated, like sb-1a2b3)                                                                                     |
+| `--image <oci-ref>`          | OCI image, e.g. python:3.12; default is the profile's image                                                                        |
+| `--prepared <id>`            | Provider-prepared image id (template, snapshot name)                                                                               |
+| `--network <policy>`         | blocked or internet; default is the profile's policy                                                                               |
+| `--label <k=v>`              | Label to set (repeatable)                                                                                                          |
+| `--env <K=V>`                | Environment variable for this command (repeatable; K alone copies it from here)                                                    |
+| `--env-file <path>`          | Read K=V lines into this command's environment (repeatable; --env wins)                                                            |
+| `--build`                    | Build --image now if this provider needs a build and none is recorded                                                              |
+| `--ttl <duration>`           | Destroy the sandbox after this long even if nothing removes it, e.g. 30m or 2h; default is the profile's lifetime                  |
+| `--snapshot <name>`          | Restore a snapshot recorded by `beachside snapshot create` instead of an image                                                     |
+| `--retry <duration>`         | Keep retrying for up to this long when the provider refuses before creating anything (rate limit, capacity), e.g. 5m               |
+| `--grant <integration>`      | Give the sandbox a credential-broker grant for this integration (repeatable; id=BASE_URL_ENV,API_KEY_ENV picks the variable names) |
+| `--grant-ttl <duration>`     | How long the grant lasts, up to 7d (default 1h); renew it with `beachside broker grant renew <sandbox>`                            |
+| `--broker <name>`            | Broker from beachside.json for --grant (default: defaultBroker or BEACHSIDE_BROKER)                                                |
+| `--setup <name\|path>`       | Run a named setup from beachside.json or a local script once the sandbox starts (repeatable, comma-separated)                      |
+| `--setup-cmd <shell>`        | Run a shell line as a setup step, after --setup (repeatable)                                                                       |
+| `--startup <path>`           | Run a local script every time the sandbox comes up without its processes, such as after a restore (repeatable)                     |
+| `--startup-cmd <shell>`      | Run a shell line as a startup step (repeatable)                                                                                    |
+| `--no-default-setup`         | Skip the setups the profile lists by default                                                                                       |
+| `--quiet-setup`              | Show setup step names and failures, not their output                                                                               |
+| `--setup-timeout <duration>` | Overall limit for setup and startup, e.g. 45m (default 30m; each step 10m)                                                         |
+| `--cache`                    | Cache this setup as a snapshot and restore it next time, even if no named setup asks for it                                        |
+| `--no-cache`                 | Neither use nor build a setup cache for this sandbox                                                                               |
+| `--refresh-cache`            | Build the setup cache again now, replacing the current one                                                                         |
+| `--cwd <dir>`                | Working directory in the sandbox                                                                                                   |
+| `--stdin`                    | Send this process's stdin to the command                                                                                           |
+| `--stdin-file <path>`        | Send a local file as the command's stdin                                                                                           |
+| `--timeout <duration>`       | Execution deadline, e.g. 90s or 10m (default 300s)                                                                                 |
+| `--max-output <size>`        | Captured output limit for buffered and --json output, e.g. 1m                                                                      |
+| `--no-stream`                | Print the output when the command ends instead of as it arrives                                                                    |
+| `--keep`                     | Keep the sandbox and print its name on stderr                                                                                      |
+| `--push <path>`              | Send a local folder to ~/work first and run the command there                                                                      |
+| `--exclude <glob>`           | Skip matching paths (repeatable; a pattern without / matches any name)                                                             |
+| `--include-ignored`          | Send every file, not only git-tracked and unignored ones                                                                           |
 
 Exits with the remote command's exit code; failures of the CLI itself exit 125.
 
@@ -537,6 +543,40 @@ beachside profile ls
 beachside profile show e2b --json
 beachside profile use boxd
 beachside profile rm old-daytona
+```
+
+## broker
+
+Set up credential brokers for --grant, and manage a broker's integrations, issuer allowlist and grants.
+
+```sh
+beachside broker add <name> (--url <origin> [--issuer-key <ref>] [--admin-key <ref>] | --deployment <.env.deploy>) [--default] | ls | use <name> | rm <name> | status | config show | integration <setup|list|show|create|rotate|enable|disable|delete> ... | issuer <show|allow|deny|set> ... | grant <issue|list|renew|revoke> ... [--broker <name>]
+```
+
+| Flag                      | Description                                                                                                               |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `--broker <name>`         | The broker to manage (default: defaultBroker, BEACHSIDE_BROKER, or BEACHSIDE_BROKER_URL)                                  |
+| `--url <origin>`          | add: the broker's HTTPS origin                                                                                            |
+| `--issuer-key <key\|ref>` | add: the issuer key: env:NAME, an op://, bws://, pass:// or keychain:// reference, - for stdin, or the value              |
+| `--admin-key <key\|ref>`  | add: the admin key, only needed to manage integrations from this machine                                                  |
+| `--deployment <path>`     | add: read the URL and both keys from the broker's .env.deploy (BEACHSIDE_BROKER_URL, BROKER_ISSUER_KEY, BROKER_ADMIN_KEY) |
+| `--default`               | add: make it the default broker                                                                                           |
+| `--no-check`              | add: save without asking the broker about the keys                                                                        |
+| `--ttl <duration>`        | grant issue\|renew: how long the grant lasts, up to 7d                                                                    |
+| `--all`                   | grant list: every grant, with the admin key                                                                               |
+
+Examples:
+
+```sh
+beachside broker add work --deployment ./credential-broker/.env.deploy
+beachside broker add work --url https://broker.example.com --issuer-key env:BROKER_ISSUER_KEY --admin-key op://infra/broker/admin
+beachside broker status
+beachside broker integration setup
+beachside broker issuer allow openrouter
+beachside create --name agent --network internet --grant github --grant openrouter --grant-ttl 7d
+beachside broker grant list
+beachside broker grant renew agent --ttl 7d
+beachside broker integration --help   # every management command and flag
 ```
 
 ## providers

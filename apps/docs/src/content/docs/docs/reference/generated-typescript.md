@@ -112,6 +112,7 @@ Import from `beachside`.
 | `SandboxCleanupError`              | re-export |
 | `SandboxCredentialRevocationError` | re-export |
 | `SandboxCredentials`               | type      |
+| `SandboxGrantStatus`               | type      |
 | `SandboxHandle`                    | type      |
 | `SandboxInfo`                      | type      |
 | `SandboxList`                      | type      |
@@ -180,11 +181,14 @@ Import from `@beachside/credential-client`.
 | `BrokerEndpointHeader`         | type      |
 | `BrokerGrant`                  | interface |
 | `BrokerGrantRequest`           | interface |
+| `BrokerGrantSummary`           | type      |
 | `BrokerIntegration`            | type      |
 | `BrokerIntegrationCredential`  | type      |
 | `BrokerIntegrationInput`       | type      |
 | `BrokerIntegrationKind`        | type      |
+| `BrokerIntegrationKindName`    | type      |
 | `BrokerRequestOptions`         | type      |
+| `BrokerStatus`                 | type      |
 | `createCredentialBroker`       | function  |
 | `createCredentialBrokerAdmin`  | re-export |
 | `CredentialBrokerAdminOptions` | type      |
@@ -192,6 +196,9 @@ Import from `@beachside/credential-client`.
 | `CredentialBrokerError`        | re-export |
 | `CredentialBrokerOptions`      | interface |
 | `githubActionsOidc`            | function  |
+| `integrationBaseURL`           | function  |
+| `IssuanceRefusal`              | type      |
+| `maxGrantTtlSeconds`           | re-export |
 | `SandboxEndpoint`              | interface |
 | `SandboxGrant`                 | interface |
 | `SandboxIntegrations`          | interface |

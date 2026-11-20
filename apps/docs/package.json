@@ -25,7 +25,7 @@
     "posthog-js": "^1.448.0"
   },
   "devDependencies": {
-    "@beachside/credential-client": "github:beachside-compute/credential-broker#57e54957dc45c9bde315536ac7d5f33e0a6e984c",
+    "@beachside/credential-client": "github:beachside-compute/credential-broker#3085ab54c5025f5fbe3dae67756b9aba59f36547",
     "@astrojs/check": "0.9.6",
     "beachside": "workspace:*",
     "@beachside-internal/provider-fake": "workspace:*",
@@ -44,6 +44,7 @@
     "@beachside/archil": "workspace:*",
     "@beachside/exe-dev": "workspace:*",
     "@beachside/vercel": "workspace:*",
-    "@playwright/test": "1.65.0"
+    "@playwright/test": "1.65.0",
+    "@clack/prompts": "1.9.0"
   }
 }

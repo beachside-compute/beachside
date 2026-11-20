@@ -88,6 +88,7 @@ Always `rm` what you created before finishing, even after failures. `rm` only de
 | "set it up once", "reuse the install", "faster setup" | `--setup <name> --cache` on `create` or `run`        |
 | "save this sandbox", "pick up where I left off"       | `snapshot create`, then `create --snapshot`          |
 | "clean up after the failed job"                       | `gc --label run=<id> --dry-run`, then without it     |
+| "give it GitHub / model access without my key"        | `create --network internet --grant <integration>`    |
 
 Run the current repository's tests in a fresh sandbox:
 
@@ -113,6 +114,13 @@ Run a job that may be interrupted, labelled so it can be found again:
 ```sh
 beachside run --json --label run=ci-42 --ttl 1h --timeout 45m -- ./ci.sh
 beachside gc --label run=ci-42 --dry-run --json   # if the job was killed
+```
+
+Give a sandbox scoped, revocable GitHub and model access through the user's credential broker. The real keys stay in the broker; the sandbox gets a grant in its environment (`OPENROUTER_BASE_URL`/`OPENROUTER_API_KEY`, `git` and `gh` set up). `rm` revokes it. Check `beachside broker ls --json` first; if no broker is set up, ask the user rather than adding one.
+
+```sh
+beachside create --json --name agent --network internet --grant github --grant openrouter --grant-ttl 4h
+beachside broker grant renew agent --ttl 4h --json   # before it expires; an expired grant cannot be renewed
 ```
 
 Copy results back before removing a sandbox: `beachside cp job-1:/home/user/out/report.json ./report.json`.
