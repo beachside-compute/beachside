@@ -20,13 +20,15 @@ The sandbox's client talks to the broker as if it were the API. A grant set up f
 
 ## Three keys, three places
 
-Deploying the broker creates three keys. Each lives in one place.
+Deploying the broker creates three keys. They are split so the key you copy around the most can do the least.
 
-- The **admin key** manages integrations and decides which ones may be granted. Keep it on your own machine or in your password manager.
-- The **issuer key** only mints, renews and revokes grants. It goes wherever sandboxes are created: your laptop, a server or CI.
+- The **issuer key** goes wherever sandboxes are created: your laptop, a server or CI secrets. That is the most exposed place, so the key is weak. It can only mint, renew and revoke grants, only for integrations you already set up, and for 7 days at most. If it leaks, someone can use your existing integrations until you rotate it, but they can't read a real key, add an integration or change anything.
+- The **admin key** controls the broker. It adds and deletes integrations, uploads and rotates the real upstream keys, turns integrations on or off, and lists every grant. Keep it on your own machine or in your password manager, never in CI. It deliberately can't issue grants, so no machine that creates sandboxes ever needs to hold it.
 - The **encryption key** stays in the Worker and encrypts the upstream keys.
 
 Sandboxes and sandbox providers never get any of them. They only get grants.
+
+On GitHub Actions you don't need the issuer key at all: a workflow can mint grants with its own OIDC token. See [GitHub Actions](/docs/credential-broker/github/#github-actions).
 
 ## Grants
 
