@@ -5,6 +5,8 @@ import type { Context } from "@opentelemetry/api";
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
 import { Beachside, BeachsideError, SandboxCleanupError } from "beachside";
 import type { SandboxHandle } from "beachside";
+import { gatewayConfig, selectedGateway } from "./gateway";
+import type { Gateway } from "./gateway";
 import { answer, answerName, endSpan, traceContext, tracing } from "./telemetry";
 
 const workdir = "/tmp/beachside-pi";
@@ -23,8 +25,6 @@ const guestDependencies = [
 ];
 
 const forwarded = [
-  "DEFAULT_MODEL",
-  "KILO_API_KEY",
   "OTEL_EXPORTER_OTLP_ENDPOINT",
   "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
   "OTEL_EXPORTER_OTLP_HEADERS",
@@ -46,6 +46,7 @@ export function guestEnvironment(
   runId: string,
   sandboxId: string,
   host: Record<string, string | undefined>,
+  gateway?: Gateway,
 ) {
   const carrier = { traceparent: "", tracestate: "" };
   traceContext.inject(parent, carrier, defaultTextMapSetter);
@@ -57,6 +58,16 @@ export function guestEnvironment(
     PI_TRACING_SANDBOX_ID: sandboxId,
     PI_TELEMETRY: "0",
   };
+
+  if (gateway) {
+    const config = gatewayConfig(gateway, host);
+    Object.assign(env, {
+      DEFAULT_MODEL: config.modelId,
+      [config.keyName]: host[config.keyName],
+    });
+
+    if (gateway === "openrouter") Object.assign(env, { OPENROUTER_BASE_URL: config.baseUrl });
+  }
 
   for (const name of forwarded) {
     const value = host[name];
@@ -82,7 +93,7 @@ async function uploadRuntime(sandbox: SandboxHandle, signal: AbortSignal) {
     { signal, maxBytes: 1_048_576, overwrite: true },
   );
 
-  for (const file of ["child.ts", "telemetry.ts"]) {
+  for (const file of ["child.ts", "telemetry.ts", "gateway.ts"]) {
     const bytes = await Bun.file(new URL(file, import.meta.url)).bytes();
     await sandbox.writeFile(`${workdir}/${file}`, bytes, {
       signal,
@@ -133,8 +144,11 @@ export function openTraceContext() {
 async function main() {
   const apiKey = required("BOXD_API_KEY");
   const org = required("BOXD_ORG");
-  required("KILO_API_KEY");
-  required("DEFAULT_MODEL");
+
+  if (process.argv.includes("--offline")) throw new Error("Boxd requires --kilo or --openrouter.");
+
+  const gateway = selectedGateway(process.argv) ?? "kilo";
+  const config = gatewayConfig(gateway, process.env);
 
   const endpoint = new URL(
     process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT || required("OTEL_EXPORTER_OTLP_ENDPOINT"),
@@ -169,14 +183,14 @@ async function main() {
           lifecycle: { lifetimeSeconds: 600 },
           resources: { vcpus: 1, memoryMiB: 4096 },
           preview: { access: "protected" },
-          network: { allow: ["registry.npmjs.org", "ai-gateway.kilo.ai", endpoint.hostname] },
+          network: { allow: ["registry.npmjs.org", config.hostname, endpoint.hostname] },
         }),
         { tracing: { tracerProvider: telemetry.provider }, signal },
       );
 
       try {
         await client.sandboxes.with(
-          {},
+          { labels: { "beachside.demo.run": runId } },
           async (sandbox) => {
             sandboxId = sandbox.id;
             run.setAttribute("demo.sandbox.id", sandbox.id);
@@ -192,14 +206,14 @@ async function main() {
               "dependency installation",
               signal,
             );
-            console.log("Running Pi in Boxd through Kilo Gateway.");
+            console.log(`Running Pi in Boxd through ${config.name}.`);
             await exec(
               sandbox,
-              ["/usr/local/bin/bun", "--no-env-file", "child.ts", "--kilo"],
+              ["/usr/local/bin/bun", "--no-env-file", "child.ts", `--${gateway}`],
               workdir,
               "Pi run",
               signal,
-              guestEnvironment(parent, runId, sandbox.id, process.env),
+              guestEnvironment(parent, runId, sandbox.id, process.env, gateway),
             );
 
             console.log("Reading answer.txt through Beachside.");
@@ -257,6 +271,27 @@ if (import.meta.main) {
       console.error(`Boxd cleanup was not confirmed for sandbox ${error.sandboxId}.`);
     } else if (error instanceof BeachsideError) {
       console.error(`Beachside operation failed (${error.code}).`);
+
+      const { outcome, reference } = error;
+
+      const sandboxId =
+        (outcome?.kind === "create" ? outcome.sandbox.nativeId : undefined) ??
+        reference?.sandboxReference?.nativeId ??
+        reference?.sandboxId;
+
+      if (sandboxId) console.error(`Boxd sandbox ID from the failed operation ${sandboxId}.`);
+
+      if (reference) {
+        console.error(
+          `Beachside ${reference.kind} operation ${reference.operationId}, submission ${reference.submissionId}.`,
+        );
+      }
+
+      if (error.code === "OUTCOME_UNKNOWN" && reference?.kind === "create") {
+        console.error(
+          "Check Boxd inventory for the beachside.demo.run label using the run ID above before retrying.",
+        );
+      }
     } else {
       console.error(error instanceof Error ? error.message : "Boxd tracing demo failed.");
     }

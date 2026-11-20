@@ -5,22 +5,19 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { defaultTextMapSetter, ROOT_CONTEXT, trace } from "@opentelemetry/api";
 import { collectTraces, printTrace } from "./collector";
+import { gatewayConfig, selectedGateway } from "./gateway";
 import { answer, answerName, endSpan, traceContext, tracing } from "./telemetry";
 
 async function main() {
   const offline = process.argv.includes("--offline");
 
-  const kilo = process.argv.includes("--kilo");
+  const gateway = selectedGateway(process.argv);
 
-  if (offline && kilo) throw new Error("Choose either --offline or --kilo.");
+  if (gateway) gatewayConfig(gateway, process.env);
 
-  if (kilo && (!process.env.KILO_API_KEY || !process.env.DEFAULT_MODEL)) {
-    throw new Error("Kilo requires DEFAULT_MODEL and KILO_API_KEY.");
-  }
-
-  if (!offline && !kilo && !process.env.PI_TRACING_MODEL) {
+  if (!offline && !gateway && !process.env.PI_TRACING_MODEL) {
     throw new Error(
-      "Set PI_TRACING_MODEL=provider/model-id for a live run, or use --kilo or --offline.",
+      "Set PI_TRACING_MODEL=provider/model-id, or use --openrouter, --kilo, or --offline.",
     );
   }
 
@@ -42,6 +39,12 @@ async function main() {
     const carrier = { traceparent: "", tracestate: "" };
     traceContext.inject(parent, carrier, defaultTextMapSetter);
 
+    const env = { ...process.env };
+
+    if (gateway === "openrouter") delete env.KILO_API_KEY;
+
+    if (gateway === "kilo") delete env.OPENROUTER_API_KEY;
+
     const child = Bun.spawn(
       [
         process.execPath,
@@ -51,7 +54,7 @@ async function main() {
       {
         cwd,
         env: {
-          ...process.env,
+          ...env,
           TRACEPARENT: carrier.traceparent,
           TRACESTATE: carrier.tracestate,
           PI_TRACING_RUN_ID: runId,

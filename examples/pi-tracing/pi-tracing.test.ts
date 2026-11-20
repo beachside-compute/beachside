@@ -1,3 +1,5 @@
+import { InMemoryCredentialStore } from "@earendil-works/pi-ai";
+import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { describe, expect, test } from "bun:test";
 import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -5,6 +7,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createTraceState, ROOT_CONTEXT, trace, TraceFlags } from "@opentelemetry/api";
 import { guestEnvironment } from "./boxd";
+import { gatewayConfig, registerGatewayModel, selectedGateway } from "./gateway";
 import { collectTraces } from "./collector";
 
 function entrypoint(name: string) {
@@ -211,7 +214,7 @@ describe("cross-process Pi tracing", () => {
   });
 });
 
-test("the Boxd Pi command receives only its explicit trace, Kilo and OTLP variables", () => {
+test("the Boxd Pi command receives only its explicit trace, selected gateway and OTLP variables", () => {
   const parent = trace.setSpanContext(ROOT_CONTEXT, {
     traceId: "11111111111111111111111111111111",
     spanId: "2222222222222222",
@@ -219,16 +222,20 @@ test("the Boxd Pi command receives only its explicit trace, Kilo and OTLP variab
     traceState: createTraceState("demo=value"),
   });
 
-  const env = guestEnvironment(parent, "owned-run", "owned-sandbox", {
-    DEFAULT_MODEL: "kilo-auto/custom/example",
-    KILO_API_KEY: "fixture-kilo",
+  const host = {
+    DEFAULT_MODEL: "openai/gpt-4.1-mini",
+    OPENROUTER_API_KEY: "fixture-openrouter",
+    OPENROUTER_BASE_URL: "https://fixture.example/gateway/openrouter",
+    KILO_API_KEY: "must-stay-on-host",
     OTEL_EXPORTER_OTLP_ENDPOINT: "https://fixture.example/otlp",
     OTEL_EXPORTER_OTLP_HEADERS: "Authorization=fixture",
     OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf",
     BOXD_API_KEY: "must-stay-on-host",
     unrelated: "must-stay-on-host",
     TRACEPARENT: "ignored",
-  });
+  };
+
+  const env = guestEnvironment(parent, "owned-run", "owned-sandbox", host, "openrouter");
 
   expect<Record<string, string>>(env).toEqual({
     TRACEPARENT: "00-11111111111111111111111111111111-2222222222222222-01",
@@ -236,12 +243,18 @@ test("the Boxd Pi command receives only its explicit trace, Kilo and OTLP variab
     PI_TRACING_RUN_ID: "owned-run",
     PI_TRACING_SANDBOX_ID: "owned-sandbox",
     PI_TELEMETRY: "0",
-    DEFAULT_MODEL: "kilo-auto/custom/example",
-    KILO_API_KEY: "fixture-kilo",
+    DEFAULT_MODEL: "openai/gpt-4.1-mini",
+    OPENROUTER_API_KEY: "fixture-openrouter",
+    OPENROUTER_BASE_URL: "https://fixture.example/gateway/openrouter",
     OTEL_EXPORTER_OTLP_ENDPOINT: "https://fixture.example/otlp",
     OTEL_EXPORTER_OTLP_HEADERS: "Authorization=fixture",
     OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf",
   });
+
+  const kilo = guestEnvironment(parent, "owned-run", "owned-sandbox", host, "kilo");
+  expect(kilo).toHaveProperty("KILO_API_KEY");
+  expect(kilo).not.toHaveProperty("OPENROUTER_API_KEY");
+  expect(kilo).not.toHaveProperty("OPENROUTER_BASE_URL");
 });
 
 test("Beachside SDK operations and Pi's subprocess export share the sandbox root trace", async () => {
@@ -300,4 +313,67 @@ test("Beachside SDK operations and Pi's subprocess export share the sandbox root
   } finally {
     await receiver.stop();
   }
+});
+
+test("OpenRouter preserves the broker base path and accepts a model fallback", () => {
+  const config = gatewayConfig("openrouter", {
+    OPENROUTER_BASE_URL: "https://fixture.example/gateway/openrouter",
+    OPENROUTER_API_KEY: "fixture-openrouter",
+    PI_TRACING_MODEL: "openai/gpt-4.1-mini",
+  });
+
+  expect(config.baseUrl).toBe("https://fixture.example/gateway/openrouter");
+  expect(config.hostname).toBe("fixture.example");
+  expect(config.modelId).toBe("openai/gpt-4.1-mini");
+  expect(() => selectedGateway(["--openrouter", "--kilo"])).toThrow();
+  expect(() =>
+    gatewayConfig("openrouter", {
+      OPENROUTER_BASE_URL: "http://fixture.example/api",
+      OPENROUTER_API_KEY: "fixture-openrouter",
+      DEFAULT_MODEL: "openai/gpt-4.1-mini",
+    }),
+  ).toThrow("Set OPENROUTER_BASE_URL to an HTTPS");
+});
+
+test("Pi registers the OpenRouter broker and serializes Luna with reasoning effort none", async () => {
+  const env = {
+    OPENROUTER_BASE_URL: "https://fixture.example/gateway/openrouter",
+    OPENROUTER_API_KEY: "fixture-openrouter",
+    DEFAULT_MODEL: "openai/gpt-6-luna",
+  };
+
+  const runtime = await ModelRuntime.create({
+    credentials: new InMemoryCredentialStore(),
+    modelsPath: null,
+    refreshOnCreate: false,
+  });
+
+  const model = registerGatewayModel(runtime, "openrouter", env);
+
+  expect(model).toMatchObject({
+    id: "openai/gpt-6-luna",
+    provider: "openrouter",
+    api: "openai-completions",
+    baseUrl: env.OPENROUTER_BASE_URL,
+  });
+  expect((await runtime.getAuth(model, { env }))?.auth.apiKey).toBe("fixture-openrouter");
+
+  const result = await runtime.completeSimple(
+    model,
+    { messages: [{ role: "user", content: "fixture", timestamp: 0 }] },
+    {
+      env,
+      onPayload(payload) {
+        expect(payload).toMatchObject({
+          model: "openai/gpt-6-luna",
+          reasoning: { effort: "none" },
+        });
+
+        throw new Error("Fixture intercepted serialized request before transport.");
+      },
+    },
+  );
+
+  expect(result.stopReason).toBe("error");
+  expect(result.errorMessage).toContain("Fixture intercepted serialized request before transport.");
 });

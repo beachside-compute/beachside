@@ -13,6 +13,7 @@ import {
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import { defaultTextMapGetter, ROOT_CONTEXT, trace } from "@opentelemetry/api";
 import type { Span } from "@opentelemetry/api";
+import { registerGatewayModel, selectedGateway } from "./gateway";
 import { answer, answerName, endSpan, OtlpExportError, traceContext, tracing } from "./telemetry";
 
 const prompt =
@@ -21,12 +22,12 @@ const prompt =
 async function runPi(telemetry: ReturnType<typeof tracing>, run: Span, offline: boolean) {
   const cwd = process.cwd();
   const answerPath = join(cwd, answerName);
-  const kilo = process.argv.includes("--kilo");
-  const agentDir = offline || kilo ? cwd : getAgentDir();
+  const gateway = selectedGateway(process.argv);
+  const agentDir = offline || gateway ? cwd : getAgentDir();
 
   const modelRuntime = await ModelRuntime.create({
     authPath: join(agentDir, "auth.json"),
-    modelsPath: offline || kilo ? null : join(agentDir, "models.json"),
+    modelsPath: offline || gateway ? null : join(agentDir, "models.json"),
     modelsStorePath: join(cwd, "models-cache.json"),
     refreshOnCreate: false,
   });
@@ -54,38 +55,8 @@ async function runPi(telemetry: ReturnType<typeof tracing>, run: Span, offline: 
     ]);
     modelRuntime.registerNativeProvider(fixture.provider);
     model = fixture.getModel();
-  } else if (kilo) {
-    const modelId = process.env.DEFAULT_MODEL;
-
-    if (!modelId || !process.env.KILO_API_KEY) {
-      throw new Error("Kilo requires DEFAULT_MODEL and KILO_API_KEY.");
-    }
-
-    modelRuntime.registerProvider("kilo", {
-      name: "Kilo Gateway",
-      baseUrl: "https://ai-gateway.kilo.ai/api/v1",
-      apiKey: "$KILO_API_KEY",
-      api: "openai-completions",
-      models: [
-        {
-          id: modelId,
-          name: modelId,
-          reasoning: false,
-          input: ["text"],
-          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-          contextWindow: 128_000,
-          maxTokens: 4_096,
-          compat: {
-            maxTokensField: "max_tokens",
-            supportsDeveloperRole: false,
-            supportsStore: false,
-          },
-        },
-      ],
-    });
-    model = modelRuntime.getModel("kilo", modelId);
-
-    if (!model) throw new Error("Pi could not register the selected Kilo model.");
+  } else if (gateway) {
+    model = registerGatewayModel(modelRuntime, gateway, process.env);
   } else {
     const [provider, ...modelId] = (process.env.PI_TRACING_MODEL ?? "").split("/");
     model = modelRuntime.getModel(provider, modelId.join("/"));

@@ -30,6 +30,13 @@ Choose a configured Pi model and use the provider's environment credentials or e
 PI_TRACING_MODEL=provider/model-id bun run --cwd examples pi:trace
 ```
 
+For OpenRouter, set `OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL`, and `DEFAULT_MODEL` in an env file and pass `--openrouter`. Use a full OpenRouter model ID with tool support, such as `openai/gpt-6-luna`. For Luna, this example sends OpenRouter's `reasoning.effort: "none"` so Chat Completions tools are available. `PI_TRACING_MODEL` is also accepted in place of `DEFAULT_MODEL`. For direct calls use `https://openrouter.ai/api/v1`. For a credential broker use the broker's HTTPS base URL, such as `https://broker.example/gateway/openrouter`. Pi appends `/chat/completions` to that base path. [OpenRouter API reference](https://openrouter.ai/docs/api_reference/overview) · [GPT-6 Luna model](https://developers.openai.com/api/docs/models/gpt-6-luna)
+
+```sh
+bun --env-file="$HOME/.config/openrouter.env" --env-file="$HOME/.config/grafana.env" \
+  examples/pi-tracing/main.ts --openrouter
+```
+
 For a live run through Kilo Gateway, put `KILO_API_KEY` and `DEFAULT_MODEL` in your external env file and use `--kilo`. Pi registers the configured model ID in memory and uses Kilo's OpenAI-compatible chat completions endpoint. [Kilo Gateway API reference](https://kilo.ai/docs/gateway/api-reference)
 
 ```sh
@@ -45,20 +52,22 @@ The parent passes W3C `traceparent` and optional `tracestate` to the child throu
 
 ## Run Pi in a Boxd sandbox
 
-Provide `BOXD_API_KEY` in your Boxd env file and set `BOXD_ORG` to the key's organization. `BOXD_REGION` is optional. Build the workspace packages and load the Boxd, Kilo and Grafana configuration when launching the example.
+Provide `BOXD_API_KEY` in your Boxd env file and set `BOXD_ORG` to the key's organization. `BOXD_REGION` is optional. Build the workspace packages and load the Boxd, OpenRouter and Grafana configuration when launching the example.
 
 ```sh
 bun run build:packages
 BOXD_ORG=your-org bun --env-file="$HOME/.config/sandbar.env" \
-  --env-file="$HOME/.config/kilo.env" --env-file="$HOME/.config/grafana.env" \
-  examples/pi-tracing/boxd.ts
+  --env-file="$HOME/.config/openrouter.env" --env-file="$HOME/.config/grafana.env" \
+  examples/pi-tracing/boxd.ts --openrouter
 ```
 
-The parent creates a Boxd microVM from the pinned Bun Debian image using Beachside's scoped sandbox API. It uploads the Pi entrypoint, its telemetry helper and a manifest with exact direct dependency versions, then installs those dependencies. Only the Pi command receives the Kilo key, model, OTLP configuration, and W3C trace context. The Boxd key stays with the host. The sandbox can reach the npm registry, Kilo Gateway, and the configured HTTPS OTLP endpoint.
+To use Kilo instead, load its env file and pass `--kilo`. Boxd also defaults to Kilo when no gateway flag is given.
+
+The parent creates a Boxd microVM from the pinned Bun Debian image using Beachside's scoped sandbox API. It uploads the Pi entrypoint, its helpers and a manifest with exact direct dependency versions, then installs those dependencies. Only the Pi command receives the selected gateway's key, model, OTLP configuration, and W3C trace context. The Boxd key stays with the host. The sandbox can reach the npm registry, the selected gateway hostname, and the configured HTTPS OTLP endpoint.
 
 The active `sandbox.run` span parents the Beachside SDK lifecycle, exec and file spans as well as the guest's `pi.run`. The guest Pi spans and the host's run and verification spans include `demo.run.id` and `demo.sandbox.id`. The parent reads `answer.txt` through Beachside before scoped destruction. The sandbox has a ten-minute provider expiry and uses its temporary machine filesystem without persistent volumes. The example prints the trace ID and sandbox ID for inspection.
 
-On November 20, 2026, a live Boxd run through Kilo verified that `answer.txt` contained exactly `4\n`. The local desktop viewer showed one trace with 42 spans, 36 from the host and six from Pi in the guest. A separate Boxd lookup confirmed the sandbox had been destroyed. In a separate run, Grafana Cloud accepted both OTLP export requests.
+On November 20, 2026, a live Boxd run through OpenRouter used `openai/gpt-6-luna` at reasoning effort `none`. The host verified that `answer.txt` contained exactly `4\n`. OpenTelemetry Desktop Viewer showed 46 spans in one trace, including successful Pi model spans. A separate Boxd lookup confirmed the sandbox had been destroyed. Grafana Cloud accepted both OTLP export requests in an earlier Kilo run.
 
 ## View traces in a terminal
 
@@ -92,7 +101,7 @@ Boxd needs an HTTPS endpoint it can reach. In a second terminal, expose only the
 cloudflared tunnel --url http://127.0.0.1:4318
 ```
 
-Replace the placeholder with the HTTPS URL from the tunnel. Load only the Boxd and Kilo env files. The invocation clears inherited Grafana headers and uses the full trace-specific endpoint.
+Replace the placeholder with the HTTPS URL from the tunnel. Load only the Boxd and OpenRouter env files. The invocation clears inherited Grafana headers and uses the full trace-specific endpoint.
 
 ```sh
 BOXD_ORG=your-org \
@@ -100,8 +109,8 @@ OTEL_EXPORTER_OTLP_ENDPOINT= \
 OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://your-tunnel.trycloudflare.com/v1/traces \
 OTEL_EXPORTER_OTLP_HEADERS= OTEL_EXPORTER_OTLP_TRACES_HEADERS= \
 OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf \
-  bun --env-file="$HOME/.config/sandbar.env" --env-file="$HOME/.config/kilo.env" \
-  examples/pi-tracing/boxd.ts
+  bun --env-file="$HOME/.config/sandbar.env" --env-file="$HOME/.config/openrouter.env" \
+  examples/pi-tracing/boxd.ts --openrouter
 ```
 
 Find the trace ID printed by the run in the viewer. Stop the tunnel when the run finishes.
