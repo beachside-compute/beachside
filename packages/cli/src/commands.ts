@@ -614,17 +614,21 @@ async function createOnce(session: Session, request: CreateRequest): Promise<Cre
       // Adapters without a default image reject an argument-free create in SDK terms, but so
       // does any other bad input (an E2B lifetime over its cap), so the message stays the
       // provider's and only the hint suggests an image.
+      if (report.code === "INVALID_ARGUMENT" && request.lifetimeSeconds !== undefined)
+        throw new CliError(
+          "INVALID_ARGUMENT",
+          `${profile.provider} rejected this sandbox: ${report.message}`,
+          !input.environment && !source
+            ? "if the provider caps sandbox lifetimes, pass a shorter --ttl; if it needs an image, pass --prepared <id> or --image <oci-ref>"
+            : "if the provider caps sandbox lifetimes, pass a shorter --ttl",
+        );
+
       if (report.code === "INVALID_ARGUMENT" && !input.environment && !source)
         throw new CliError(
           "INVALID_ARGUMENT",
           `${profile.provider} rejected this sandbox: ${report.message}`,
-          request.lifetimeSeconds === undefined
-            ? "if the provider needs an image, pass --prepared <id> (a provider template or snapshot) or --image <oci-ref>"
-            : "if the provider caps sandbox lifetimes, pass a shorter --ttl; if it needs an image, pass --prepared <id> or --image <oci-ref>",
+          "if the provider needs an image, pass --prepared <id> (a provider template or snapshot) or --image <oci-ref>",
         );
-
-      if (request.addons.length && report.code === "UNSUPPORTED")
-        throw new CliError("UNSUPPORTED", report.message, withNeedsInternet(request.addons));
       throw cause;
     }
 
@@ -672,7 +676,7 @@ async function createOnce(session: Session, request: CreateRequest): Promise<Cre
 
 /** `--with` always asks for internet access, so a provider's other network advice cannot apply. */
 function withNeedsInternet(addons: readonly string[]): string {
-  return `--with ${addons.join(",")} needs internet access, so use a provider plan or tier that allows it; no other network policy can run --with`;
+  return `if the provider could not give internet access, --with ${addons.join(",")} needs a plan or tier that allows it; no other network policy can run --with`;
 }
 
 /** The sandbox exists but the store does not know it: report it, never hide it. */
