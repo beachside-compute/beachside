@@ -3,10 +3,10 @@ title: Model gateway recipes
 description: Connect sandbox model clients to HTTPS APIs through short-lived credential broker grants.
 ---
 
-From the operator host configured in the credential broker guide, start the setup wizard. [Credential broker setup](/docs/guides/credential-broker/#set-up-runtime-integrations).
+From the broker checkout, save the deployed origin in `.env.deploy` and start the setup wizard. [Credential broker setup](/docs/guides/credential-broker/#set-up-runtime-integrations).
 
 ```sh
-npx beachside-broker integration setup
+bun run broker integration setup
 ```
 
 Select OpenRouter, Kilo AI Gateway, Cloudflare AI Gateway (OpenAI provider), Vercel AI Gateway, OpenAI, Anthropic, or Custom HTTPS endpoint. Enter an integration ID and the requested upstream values. Every preset fills in a generic HTTPS integration. The Cloudflare preset asks for the gateway destination and both credentials. The custom option lets you enter your own URL and headers.
@@ -19,7 +19,7 @@ Use an HTTPS request/response API whose authentication fits fixed headers. The b
 
 ## Noninteractive setup
 
-Each recipe reads upstream secrets from exported variables on the **operator host** and pipes the configuration to the CLI. Add the integration ID to the broker's issuance allowlist after creation. `issuer set` replaces the entire list, so include the existing IDs you want to keep. The sandbox receives a temporary grant and the corresponding broker URL when you select that integration in `endpoints`. See [how to pass those values to your model client](/docs/guides/credential-broker/#model-clients-and-opencode).
+Run these commands from the broker checkout. Each recipe reads upstream secrets from exported variables on the operator host and pipes the configuration to the CLI. After creation, [add the integration to the issuance allowlist](/docs/guides/credential-broker/#set-up-runtime-integrations).
 
 ### OpenRouter
 
@@ -34,7 +34,7 @@ bun -e 'console.log(JSON.stringify({
   credential: { source: "encrypted-store", values: {
     Authorization: process.env.OPENROUTER_API_KEY
   } }
-}))' | npx beachside-broker integration create router-work --provider http --config-stdin
+}))' | bun run broker integration create router-work --provider http --config-stdin
 ```
 
 ### Kilo AI Gateway
@@ -50,7 +50,7 @@ bun -e 'console.log(JSON.stringify({
   credential: { source: "encrypted-store", values: {
     Authorization: process.env.KILO_API_KEY
   } }
-}))' | npx beachside-broker integration create kilo-work --provider http --config-stdin
+}))' | bun run broker integration create kilo-work --provider http --config-stdin
 ```
 
 ### Cloudflare AI Gateway
@@ -71,7 +71,7 @@ bun -e 'console.log(JSON.stringify({
     Authorization: process.env.OPENAI_API_KEY,
     "cf-aig-authorization": process.env.CLOUDFLARE_API_TOKEN
   } }
-}))' | npx beachside-broker integration create cloudflare-work --provider http --config-stdin
+}))' | bun run broker integration create cloudflare-work --provider http --config-stdin
 ```
 
 ### Vercel AI Gateway
@@ -87,7 +87,7 @@ bun -e 'console.log(JSON.stringify({
   credential: { source: "encrypted-store", values: {
     Authorization: process.env.AI_GATEWAY_API_KEY
   } }
-}))' | npx beachside-broker integration create vercel-work --provider http --config-stdin
+}))' | bun run broker integration create vercel-work --provider http --config-stdin
 ```
 
 ### OpenAI
@@ -103,7 +103,7 @@ bun -e 'console.log(JSON.stringify({
   credential: { source: "encrypted-store", values: {
     Authorization: process.env.OPENAI_API_KEY
   } }
-}))' | npx beachside-broker integration create openai-work --provider http --config-stdin
+}))' | bun run broker integration create openai-work --provider http --config-stdin
 ```
 
 ### Anthropic
@@ -119,7 +119,7 @@ bun -e 'console.log(JSON.stringify({
   credential: { source: "encrypted-store", values: {
     "x-api-key": process.env.ANTHROPIC_API_KEY
   } }
-}))' | npx beachside-broker integration create anthropic-work --provider http --config-stdin
+}))' | bun run broker integration create anthropic-work --provider http --config-stdin
 ```
 
 ### Custom HTTPS endpoint
@@ -142,7 +142,7 @@ bun -e 'console.log(JSON.stringify({
   credential: { source: "encrypted-store", values: {
     "x-partner-key": process.env.PARTNER_API_KEY
   } }
-}))' | npx beachside-broker integration create partner-work --provider http --config-stdin
+}))' | bun run broker integration create partner-work --provider http --config-stdin
 ```
 
 ## Select the endpoint in a sandbox
@@ -180,5 +180,5 @@ Export the replacement secret on the operator host and pipe the header value map
 ```sh
 bun -e 'console.log(JSON.stringify({
   Authorization: process.env.REPLACEMENT_OPENROUTER_API_KEY
-}))' | npx beachside-broker integration rotate router-work --credentials-stdin
+}))' | bun run broker integration rotate router-work --credentials-stdin
 ```
