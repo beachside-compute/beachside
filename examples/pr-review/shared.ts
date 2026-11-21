@@ -1,6 +1,6 @@
 import { freestyle } from "@beachside/freestyle";
-import { Beachside, BeachsideError } from "beachside";
-import type { BeachsideClient, SandboxHandle } from "beachside";
+import { Beachside, BeachsideError, NonzeroExitError } from "beachside";
+import type { BeachsideClient, ExecInput, ExecOutput, SandboxHandle } from "beachside";
 
 /** Every sandbox this example creates carries this label, so the sweep can find leftovers. */
 export const LABEL = "beachside.pr-review";
@@ -78,6 +78,17 @@ export const INSTALL_STEPS: readonly { name: string; script: string }[] = [
 /** The smallest surface of a sandbox handle these scripts use, so tests can pass a fake. */
 export type Box = Pick<SandboxHandle, "exec">;
 
+/** Run a command and return its result whatever the exit code; `exec` throws on a nonzero one. */
+export async function run(box: Box, input: ExecInput, signal: AbortSignal): Promise<ExecOutput> {
+  try {
+    return await box.exec(input, { signal });
+  } catch (error) {
+    if (error instanceof NonzeroExitError) return error.result;
+
+    throw error;
+  }
+}
+
 export function required(env: Record<string, string | undefined>, name: string) {
   const value = env[name]?.trim();
 
@@ -94,7 +105,8 @@ export async function sh(
   signal: AbortSignal,
   options: { cwd?: string; env?: Record<string, string>; deadlineSeconds?: number } = {},
 ) {
-  const result = await box.exec(
+  const result = await run(
+    box,
     {
       command: { kind: "argv", argv: ["/bin/sh", "-c", script] },
       cwd: options.cwd ?? HOME,
@@ -102,7 +114,7 @@ export async function sh(
       deadlineSeconds: options.deadlineSeconds ?? 280,
       maxOutputBytes: 65_536,
     },
-    { signal },
+    signal,
   );
 
   if (result.exitCode !== 0) {
@@ -116,9 +128,10 @@ export async function sh(
 
 /** Install the tools unless the image already has this exact set. */
 export async function ensureTools(box: Box, signal: AbortSignal) {
-  const ready = await box.exec(
+  const ready = await run(
+    box,
     { command: { kind: "argv", argv: ["test", "-f", READY] }, cwd: HOME, deadlineSeconds: 30 },
-    { signal },
+    signal,
   );
 
   if (ready.exitCode === 0) return false;

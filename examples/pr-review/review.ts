@@ -9,6 +9,7 @@ import {
   PATH,
   PI,
   required,
+  run,
   savedImage,
   sh,
   type Box,
@@ -97,7 +98,8 @@ export async function review(
 
   console.log(`Reviewing with ${gateway.model} through ${gateway.name}.`);
 
-  const run = await box.exec(
+  const result = await run(
+    box,
     {
       command: {
         kind: "argv",
@@ -122,14 +124,14 @@ export async function review(
       deadlineSeconds: 1_200,
       maxOutputBytes: 262_144,
     },
-    { signal },
+    signal,
   );
 
-  process.stdout.write(run.stdoutText());
+  process.stdout.write(result.stdoutText());
 
-  if (run.exitCode !== 0) {
-    process.stderr.write(run.stderrText({ full: true }).slice(-4_000));
-    throw new Error(`Pi exited with ${run.exitCode}.`);
+  if (result.exitCode !== 0) {
+    process.stderr.write(result.stderrText({ full: true }).slice(-4_000));
+    throw new Error(`Pi exited with ${result.exitCode}.`);
   }
 
   const posted = await sh(

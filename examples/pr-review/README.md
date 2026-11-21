@@ -98,7 +98,7 @@ Then run **PR review maintenance** once by hand to build the first image. Review
 
 ## Images
 
-`image.ts` boots `freestyle/ubuntu-sm`, installs Git and GitHub CLI from apt (GitHub's signed repository for `gh`), Node 24 from its checksummed release tarball, and Pi from npm at a pinned version, then captures a Freestyle snapshot with a 14-day retention. The snapshot ID goes into the Actions cache as `pr-review-image-<run>`, and review jobs restore the newest one. When the cached snapshot has expired, the review falls back to the base image and installs the tools itself. A version change in [`shared.ts`](shared.ts) makes older images reinstall until the next build.
+`image.ts` boots `freestyle/ubuntu-sm`, installs Git and GitHub CLI from apt (GitHub's signed repository for `gh`), Node 24 from its checksummed release tarball, and Pi from npm at a pinned version, then captures a Freestyle snapshot with a 14-day retention. The snapshot ID goes into the Actions cache as `pr-review-image-<run>`, and review jobs restore the newest one. When the cached snapshot has expired, the review falls back to the base image and installs the tools itself. A version change in [`shared.ts`](shared.ts) makes older images reinstall until the next build. On November 21, 2026, a live build took 49 seconds, and a sandbox created from the snapshot was ready with no reinstall in under a second.
 
 ## Run it locally
 

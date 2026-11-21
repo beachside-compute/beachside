@@ -2,6 +2,7 @@ import { expect, spyOn, test } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { NonzeroExitError } from "beachside";
 import type { ExecInput, ExecOutput, SandboxListEntry } from "beachside";
 import { DEFAULT_MODEL, modelsScript, selectGateway } from "./gateway";
 import { cloneScript, marker, review, reviewPrompt, reviewTarget } from "./review";
@@ -41,7 +42,12 @@ function fakeBox(rules: [(args: readonly string[]) => boolean, ExecOutput][]) {
         input: Array.isArray(input) || !("command" in input) ? null : input,
       });
 
-      return rules.find(([match]) => match(args))?.[1] ?? output(0);
+      const result = rules.find(([match]) => match(args))?.[1] ?? output(0);
+
+      // Like the SDK, a nonzero exit throws, carrying the result.
+      if (result.exitCode !== 0) throw new NonzeroExitError(result);
+
+      return result;
     },
   };
 
