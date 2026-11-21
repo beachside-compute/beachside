@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createTraceState, ROOT_CONTEXT, trace, TraceFlags } from "@opentelemetry/api";
-import { guestEnvironment } from "./boxd";
+import { guestEnvironment, otlpEndpoint } from "./boxd";
 import { gatewayConfig, registerGatewayModel, selectedGateway } from "./gateway";
 import { collectTraces } from "./collector";
 
@@ -376,4 +376,29 @@ test("Pi registers the OpenRouter broker and serializes Luna with reasoning effo
 
   expect(result.stopReason).toBe("error");
   expect(result.errorMessage).toContain("Fixture intercepted serialized request before transport.");
+});
+
+test("the Boxd example names the OTLP variable it cannot use", () => {
+  expect(() => otlpEndpoint({})).toThrow("Set OTEL_EXPORTER_OTLP_ENDPOINT before");
+
+  expect(() => otlpEndpoint({ OTEL_EXPORTER_OTLP_ENDPOINT: "otlp.example.com" })).toThrow(
+    "Set OTEL_EXPORTER_OTLP_ENDPOINT to an HTTPS URL",
+  );
+
+  expect(() =>
+    otlpEndpoint({ OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "http://otlp.example.com/v1/traces" }),
+  ).toThrow("Set OTEL_EXPORTER_OTLP_TRACES_ENDPOINT to an HTTPS URL");
+
+  expect(() =>
+    otlpEndpoint({ OTEL_EXPORTER_OTLP_ENDPOINT: "https://otlp.example.com/v1/traces" }),
+  ).toThrow("the exporter adds /v1/traces");
+
+  expect(otlpEndpoint({ OTEL_EXPORTER_OTLP_ENDPOINT: "https://otlp.example.com" }).hostname).toBe(
+    "otlp.example.com",
+  );
+
+  expect(
+    otlpEndpoint({ OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "https://otlp.example.com/v1/traces" })
+      .pathname,
+  ).toBe("/v1/traces");
 });
