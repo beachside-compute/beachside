@@ -88,7 +88,11 @@ export class Cli {
 
   /** Runs with --json and parses the single envelope the CLI prints. */
   async json(args: string[]): Promise<{ run: CliRun; envelope: Envelope }> {
-    const run = await this.run([...args, "--json"]);
+    // Flags after `--` belong to the remote command, so --json goes before it.
+    const split = args.indexOf("--");
+    const run = await this.run(
+      split < 0 ? [...args, "--json"] : [...args.slice(0, split), "--json", ...args.slice(split)],
+    );
     const text = new TextDecoder().decode(run.stdout).trim();
     const parsed = Envelope.safeParse(JSON.parse(text || "null"));
 

@@ -47,7 +47,7 @@ reported `restricted`.
 
 ## Cleanup
 
-Every sandbox carries `ci=beachside-smoke` and `smoke=<run id>` labels and a 15 minute native TTL.
+Every sandbox carries `ci=beachside-smoke` and `run=<run id>` labels and a 15 minute native TTL.
 Each provider's run removes its own sandbox, then runs `gc` on its run label, and every run first
 sweeps smoke sandboxes older than an hour. Archil sandboxes carry no labels, so for Archil the run's
 own `rm` and the native TTL do the work.

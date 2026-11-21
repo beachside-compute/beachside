@@ -15,7 +15,7 @@
     "daytona": {
       "provider": "daytona",
       "credentials": { "apiKey": "env:DAYTONA_API_KEY" },
-      "config": { "network": "daytona-default" }
+      "config": { "target": "us", "network": "daytona-default" }
     },
     "e2b": {
       "provider": "e2b",

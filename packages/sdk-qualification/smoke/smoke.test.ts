@@ -50,7 +50,7 @@ describe.skipIf(!enabled)(`provider smoke: ${provider}`, () => {
   const checks = new Map<CheckName, { status: CheckStatus; detail: string }>();
   const info = new Map<string, string>();
   const probe = new Map<string, string>();
-  const scrubber = new Scrubber(secretValues(process.env, entry?.env ?? []));
+  const scrubber = new Scrubber(secretValues(process.env, entry?.secrets ?? []));
   let cli: Cli;
   let work: string;
   let createdId: string | undefined;
@@ -148,7 +148,7 @@ describe.skipIf(!enabled)(`provider smoke: ${provider}`, () => {
       "--label",
       "ci=beachside-smoke",
       "--label",
-      `smoke=${runId}`,
+      `run=${runId}`,
       "--ttl",
       "15m",
       ...entry.create,
@@ -250,7 +250,7 @@ describe.skipIf(!enabled)(`provider smoke: ${provider}`, () => {
     try {
       if (created && !removed) await cli.run(["rm", name, "--force", "--json"]);
 
-      if (entry.labels) await cli.run(["gc", "--label", `smoke=${runId}`, "--json"]);
+      if (entry.labels) await cli.run(["gc", "--label", `run=${runId}`, "--json"]);
     } finally {
       await mkdir(reportDirectory, { recursive: true });
 
@@ -335,7 +335,7 @@ describe.skipIf(!enabled)(`provider smoke: ${provider}`, () => {
     expect(row?.state).toBe("running");
 
     // gc finds sandboxes only by their labels, so they must come back in the listing.
-    if (entry?.labels) expect(row?.labels?.smoke).toBe(runId);
+    if (entry?.labels) expect(row?.labels?.run).toBe(runId);
   });
 
   check("env-create", async () => {
@@ -511,7 +511,7 @@ describe.skipIf(!enabled)(`provider smoke: ${provider}`, () => {
         "--label",
         "ci=beachside-smoke",
         "--label",
-        `smoke=${runId}`,
+        `run=${runId}`,
         "--ttl",
         "10m",
         ...(entry?.create ?? []),
@@ -548,7 +548,7 @@ describe.skipIf(!enabled)(`provider smoke: ${provider}`, () => {
   check("no-leftovers", async () => {
     if (!entry?.labels) return;
 
-    const { envelope } = await cli.json(["gc", "--label", `smoke=${runId}`, "--dry-run"]);
+    const { envelope } = await cli.json(["gc", "--label", `run=${runId}`, "--dry-run"]);
 
     if (!envelope.ok) throw new Error(`${envelope.error.code}: ${envelope.error.message}`);
     expect(z.object({ removed: z.array(z.unknown()) }).parse(envelope.data).removed).toEqual([]);

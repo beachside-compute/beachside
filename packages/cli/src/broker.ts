@@ -1,6 +1,7 @@
+import { parseEnvFile } from "./env-file";
 import { chmod, readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
-import { parseArgs, parseEnv } from "node:util";
+import { parseArgs } from "node:util";
 import {
   createCredentialBroker,
   CredentialBrokerError,
@@ -343,7 +344,7 @@ async function deploymentFile(session: Session, path: string): Promise<Record<st
     throw usage(`Cannot read --deployment ${file}`);
   }
 
-  return z.record(z.string(), z.string()).parse(parseEnv(text));
+  return parseEnvFile(text, file);
 }
 
 /** `beachside broker add <name> --url <origin> [--issuer-key <ref>] [--admin-key <ref>] [--default]`. */

@@ -1,38 +1,44 @@
 {
-  "$comment": "What each supported provider runs in the smoke matrix. `env` names the variables its profile reads; `create` adds create flags; `labels: false` marks providers whose sandboxes carry no labels (gc cannot see them); `exceptions` maps a check to the written reason it may fail, reported as restricted instead of fail.",
+  "$comment": "What each supported provider runs in the smoke matrix. `env` names the variables its profile reads and `secrets` the ones that are keys (scrubbed from every log); `create` adds create and run flags; `labels: false` marks providers whose sandboxes carry no labels (gc cannot see them); `exceptions` maps a check to the written reason it may fail, reported as restricted instead of fail.",
   "providers": {
     "boxd": {
       "env": ["BOXD_API_KEY", "BOXD_ORG"],
-      "create": ["--image", "node:22-slim"],
+      "secrets": ["BOXD_API_KEY"],
+      "create": ["--image", "node:22-bookworm"],
       "labels": true,
       "exceptions": {}
     },
     "freestyle": {
       "env": ["FREESTYLE_API_KEY"],
+      "secrets": ["FREESTYLE_API_KEY"],
       "create": [],
       "labels": true,
       "exceptions": {}
     },
     "daytona": {
-      "env": ["DAYTONA_API_KEY", "DAYTONA_TARGET"],
+      "env": ["DAYTONA_API_KEY"],
+      "secrets": ["DAYTONA_API_KEY"],
       "create": ["--prepared", "daytona-small"],
       "labels": true,
       "exceptions": {}
     },
     "e2b": {
       "env": ["E2B_API_KEY"],
+      "secrets": ["E2B_API_KEY"],
       "create": [],
       "labels": true,
       "exceptions": {}
     },
     "archil": {
-      "env": ["ARCHIL_API_KEY", "ARCHIL_REGION"],
-      "create": ["--image", "node:24-bookworm"],
+      "env": ["ARCHIL_API_KEY"],
+      "secrets": ["ARCHIL_API_KEY"],
+      "create": ["--image", "node:24-bookworm", "--build"],
       "labels": false,
       "exceptions": {}
     },
     "upstash-box": {
       "env": ["UPSTASH_BOX_API_KEY"],
+      "secrets": ["UPSTASH_BOX_API_KEY"],
       "create": [],
       "labels": true,
       "exceptions": {}

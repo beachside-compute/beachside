@@ -43,7 +43,7 @@ for (const provider of selected)
   if (!smokeProviders[provider]) throw new Error(`Unknown provider ${provider}`);
 
 const allSecrets = selected.flatMap((provider) =>
-  secretValues(environment, smokeProviders[provider]?.env ?? []),
+  secretValues(environment, smokeProviders[provider]?.secrets ?? []),
 );
 
 const scrubber = new Scrubber(allSecrets);
@@ -102,9 +102,7 @@ const outcomes = await Promise.all(
   selected.map(async (provider) => {
     const entry = smokeProviders[provider]!;
 
-    const missing = entry.env.filter(
-      (name) => !environment[name] && !name.endsWith("_TARGET") && !name.endsWith("_REGION"),
-    );
+    const missing = entry.env.filter((name) => !environment[name]);
 
     if (missing.length) return { provider, missing };
 
@@ -122,7 +120,7 @@ const outcomes = await Promise.all(
           ...environment,
           ...Object.fromEntries(cliEnvironment),
           SMOKE_PROVIDER: provider,
-          SMOKE_RUN_ID: `${runId}-${provider}`.slice(0, 40),
+          SMOKE_RUN_ID: runId,
           SMOKE_REPORT_DIR: reportDirectory,
         },
         stdout: "pipe",

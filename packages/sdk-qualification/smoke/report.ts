@@ -6,6 +6,7 @@ const here = import.meta.dir;
 
 const ProviderEntry = z.object({
   env: z.array(z.string()),
+  secrets: z.array(z.string()),
   create: z.array(z.string()),
   labels: z.boolean(),
   exceptions: z.record(z.string(), z.string()),
