@@ -176,6 +176,7 @@ Import from `@beachside/credential-client`.
 
 | Export                         | Kind      |
 | ------------------------------ | --------- |
+| `BrokerDeploymentConfig`       | type      |
 | `BrokerEndpoint`               | type      |
 | `BrokerEndpointCredential`     | type      |
 | `BrokerEndpointHeader`         | type      |
@@ -189,6 +190,7 @@ Import from `@beachside/credential-client`.
 | `BrokerIntegrationKindName`    | type      |
 | `BrokerRequestOptions`         | type      |
 | `BrokerStatus`                 | type      |
+| `BrokerWorkflowPolicy`         | type      |
 | `createCredentialBroker`       | function  |
 | `createCredentialBrokerAdmin`  | re-export |
 | `CredentialBrokerAdminOptions` | type      |
