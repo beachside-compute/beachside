@@ -90,9 +90,11 @@ export class Cli {
   async json(args: string[]): Promise<{ run: CliRun; envelope: Envelope }> {
     // Flags after `--` belong to the remote command, so --json goes before it.
     const split = args.indexOf("--");
+
     const run = await this.run(
       split < 0 ? [...args, "--json"] : [...args.slice(0, split), "--json", ...args.slice(split)],
     );
+
     const text = new TextDecoder().decode(run.stdout).trim();
     const parsed = Envelope.safeParse(JSON.parse(text || "null"));
 
