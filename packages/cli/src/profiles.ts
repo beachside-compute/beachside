@@ -143,7 +143,7 @@ async function listProfiles(session: Session): Promise<number> {
   return 0;
 }
 
-function renderRows(rows: string[][]): string {
+export function renderRows(rows: string[][]): string {
   const widths = rows[0]!.map((_, column) => Math.max(...rows.map((row) => row[column]!.length)));
 
   return rows

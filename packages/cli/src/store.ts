@@ -9,6 +9,20 @@ import { CliError, usage } from "./output";
 
 export const RecordName = z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/);
 
+export const SandboxGrantRecord = z.strictObject({
+  /** The broker's name in beachside.json; absent when it came from BEACHSIDE_BROKER_URL. */
+  broker: z.string().min(1).optional(),
+  /** The broker origin, so `rm` revokes at the broker that issued it. */
+  url: z.string().min(1),
+  id: z.string().min(1).max(128),
+  integrations: z.array(z.string().min(1)),
+  /** Variable names the grant set in the sandbox environment. */
+  env: z.array(z.string().min(1)),
+  expiresAt: z.iso.datetime({ offset: true }),
+});
+
+export type SandboxGrantRecord = z.infer<typeof SandboxGrantRecord>;
+
 export const SandboxRecord = z.strictObject({
   format: z.literal(1),
   kind: z.literal("sandbox"),
@@ -36,6 +50,8 @@ export const SandboxRecord = z.strictObject({
       (value) => z.record(z.string(), z.unknown()).safeParse(value).success,
     )
     .optional(),
+  /** The credential-broker grant `create --grant` put in the sandbox env; never the token. */
+  grant: SandboxGrantRecord.optional(),
 });
 
 export type SandboxRecord = z.infer<typeof SandboxRecord>;

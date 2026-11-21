@@ -556,6 +556,44 @@
         "additionalProperties": false
       }
     },
+    "brokers": {
+      "description": "Credential brokers that `create --grant` and `beachside broker` use",
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2048,
+            "description": "The broker's HTTPS origin; http is allowed only for localhost"
+          },
+          "issuerKey": {
+            "description": "Key for issuing, renewing and revoking grants: a value, env:NAME, or op://, bws://, pass:// or keychain:// reference",
+            "type": "string",
+            "minLength": 1
+          },
+          "adminKey": {
+            "description": "Key for integrations and the issuer allowlist; only needed to manage the broker from this machine",
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "defaultBroker": {
+      "description": "The broker used when --broker and BEACHSIDE_BROKER pick none",
+      "type": "string",
+      "minLength": 1
+    },
     "projectSetups": {
       "description": "Also read setups from a checkout's .beachside/setup.json",
       "type": "boolean"

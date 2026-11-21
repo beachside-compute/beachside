@@ -65,7 +65,12 @@ export const Image = {
 export type NetworkPolicy = "blocked" | "internet" | "allow" | (string & {});
 
 export type CreateInput = {
-  /** Short-lived credentials applied to commands started through this connection. */
+  /**
+   * A short-lived grant, such as `broker.sandbox({ ... })` from `@beachside/credential-client`.
+   * Its environment reaches every command, process and terminal started through this connection.
+   */
+  grant?: SandboxCredentials;
+  /** @deprecated Use `grant`. */
   credentials?: SandboxCredentials;
   environment?: ImageInput;
   requirements?: { snapshot: SnapshotRequest };

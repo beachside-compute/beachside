@@ -25,6 +25,13 @@ import {
 import { z } from "zod";
 import { valueAvailable, type Env, type LoadedConfig } from "./config";
 import {
+  acquireGrant,
+  grantRequest,
+  revokeRecordedGrant,
+  type AcquiredGrant,
+  type GrantRequest,
+} from "./broker";
+import {
   CliError,
   describeError,
   usage,
@@ -175,6 +182,8 @@ type CreateRequest = {
   rmOnFailure: boolean;
   /** `--cache`, `--no-cache`, `--refresh-cache`. */
   cache: CacheFlags;
+  /** `--grant`, `--grant-ttl`, `--broker`: a credential-broker grant in the sandbox env. */
+  grant: GrantRequest | null;
 };
 
 /** Create flags a restore cannot honor: the snapshot fixes the image. */
@@ -203,6 +212,20 @@ function createRequest(flags: Flags, env: Record<string, string> = {}): CreateRe
     throw usage(
       `--with ${addons.join(",")} needs --network internet`,
       "the sandbox downloads the server and reaches Tailscale's control servers",
+    );
+
+  const grant = grantRequest(flags);
+
+  if (grant && (flags.bool("cache") || flags.bool("refresh-cache")))
+    throw usage(
+      "--grant cannot be combined with --cache or --refresh-cache",
+      "a cache snapshot would keep the grant's token; build the cache without --grant",
+    );
+
+  if (grant && network === "blocked")
+    throw usage(
+      "--grant needs a network that reaches the credential broker",
+      "pass --network internet, or a provider allowlist that includes the broker",
     );
 
   if (snapshot) {
@@ -245,6 +268,7 @@ function createRequest(flags: Flags, env: Record<string, string> = {}): CreateRe
       skip: flags.bool("no-cache"),
       refresh: flags.bool("refresh-cache"),
     },
+    grant,
   };
 }
 
@@ -599,6 +623,32 @@ async function createOnce(session: Session, request: CreateRequest): Promise<Cre
     throw cause;
   }
 
+  // The grant's variables join the sandbox env, so every later command in any process has them.
+  let grant: AcquiredGrant | undefined;
+
+  if (request.grant) {
+    const taken = Object.keys(input.env ?? {});
+
+    try {
+      grant = await acquireGrant(session, request.grant, `beachside ${claimed.record.name}`);
+      const clash = Object.keys(grant.grant.env).find((name) => taken.includes(name));
+
+      if (clash) {
+        await grant.grant.revoke(AbortSignal.timeout(15_000)).catch(() => undefined);
+        throw usage(
+          `--env ${clash} would replace the variable --grant sets`,
+          "drop the --env value or name the grant's variables with id=BASE_URL_ENV,API_KEY_ENV",
+        );
+      }
+    } catch (cause) {
+      await store.remove("sandbox", claimed.record.name, claimed.version);
+      throw cause;
+    }
+
+    input.env = { ...input.env, ...grant.grant.env };
+    claimed.record.grant = grant.record;
+  }
+
   let box: SandboxHandle<true>;
 
   try {
@@ -610,6 +660,15 @@ async function createOnce(session: Session, request: CreateRequest): Promise<Cre
 
     if (report.outcome === "rejected") {
       await store.remove("sandbox", claimed.record.name, claimed.version);
+
+      if (grant)
+        await grant.grant
+          .revoke(AbortSignal.timeout(15_000))
+          .catch(() =>
+            session.ctx.out.note(
+              `could not revoke the grant made for ${claimed.record.name} (${grant!.record.id}); it expires ${grant!.record.expiresAt}`,
+            ),
+          );
 
       // Adapters without a default image reject an argument-free create in SDK terms, but so
       // does any other bad input (an E2B lifetime over its cap), so the message stays the
@@ -703,6 +762,7 @@ function sandboxSummary(record: SandboxRecord) {
     adopted: record.adopted ?? false,
     addons: record.addons ?? [],
     setup: record.setup ?? null,
+    grant: record.grant ?? null,
   };
 }
 
@@ -794,6 +854,14 @@ async function prepareCaching(
     setup?.cache !== undefined;
 
   if (!wanted) return null;
+
+  // A cache snapshot would keep the grant's token and hand it to later sandboxes.
+  if (request.grant) {
+    if (setup?.cache !== undefined)
+      session.ctx.out.note("setup cache skipped: a sandbox with --grant is never cached");
+
+    return null;
+  }
 
   const profile = await session.profile();
   const client = await session.connect(profile);
@@ -1138,6 +1206,7 @@ async function setUp(
   try {
     await created.box.destroy();
     await (await session.store()).remove("sandbox", name);
+    await revokeRecordedGrant(session, created.record);
   } catch (cause) {
     return new CliError(
       "CLEANUP_FAILED",
@@ -1812,6 +1881,7 @@ export async function inspectCommand(session: Session, flags: Flags): Promise<nu
     `observed  ${info.observedAt}`,
     ...setupLines(record.setup),
     ...addonLines(record.addons ?? []),
+    ...grantLines(record),
   ];
 
   session.ctx.out.success(
@@ -1824,6 +1894,22 @@ export async function inspectCommand(session: Session, flags: Flags): Promise<nu
   );
 
   return 0;
+}
+
+/** The recorded grant: what it reaches, its variables and when it lapses. Never the token. */
+function grantLines(record: SandboxRecord): string[] {
+  const grant = record.grant;
+
+  if (!grant) return [];
+  const expired = Date.parse(grant.expiresAt) <= Date.now();
+
+  return [
+    `grant     ${grant.integrations.join(", ")} via ${grant.broker ?? grant.url}, ${expired ? "expired" : "expires"} ${grant.expiresAt}`,
+    `          env ${grant.env.join(" ")}`,
+    expired
+      ? "          an expired grant cannot be renewed; recreate the sandbox for a new one"
+      : `          renew with \`beachside broker grant renew ${record.name} --ttl 7d\``,
+  ];
 }
 
 type RemoveResult =
@@ -1972,6 +2058,7 @@ async function removeOne(
     item: Extract<RemoveResult, { kind: "removed" }>["item"],
   ): Promise<RemoveResult> => {
     await noteForgetHerdr(session, record.name, record.addons ?? []);
+    await revokeRecordedGrant(session, record);
 
     for (const addon of record.addons ?? []) {
       if (addon.name === "rex" && addon.connect)
@@ -2603,6 +2690,7 @@ export async function runCommand(session: Session, flags: Flags): Promise<number
     // A fresh signal: cleanup must still run after an interrupt aborted the command.
     await created.box.destroy();
     await store.remove("sandbox", created.record.name);
+    await revokeRecordedGrant(session, created.record);
   } catch (cause) {
     const report = describeError(cause);
 

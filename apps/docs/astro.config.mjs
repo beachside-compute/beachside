@@ -19,7 +19,11 @@ const openSearchFromQuery = `addEventListener("DOMContentLoaded", () => {
 });`;
 
 export default defineConfig({
-  redirects: { "/docs/providers/live-qualification/": "/docs/providers/support/" },
+  redirects: {
+    "/docs/providers/live-qualification/": "/docs/providers/support/",
+    "/docs/guides/credential-broker/": "/docs/credential-broker/",
+    "/docs/guides/model-gateways/": "/docs/credential-broker/model-gateways/",
+  },
   site: "https://beachside.run",
   output: "static",
   // The tab renderer uses a native parser; keep its platform binding beside its package.
@@ -105,7 +109,6 @@ export default defineConfig({
           items: [
             { slug: "docs/guides/resources" },
             { slug: "docs/guides/setup" },
-            { slug: "docs/guides/model-gateways" },
             { slug: "docs/guides/snapshots-and-volumes" },
             { slug: "docs/guides/files-and-output" },
             { slug: "docs/guides/text-streaming", label: "Processes and streaming" },
@@ -117,7 +120,18 @@ export default defineConfig({
             { slug: "docs/guides/troubleshooting" },
           ],
         },
-        { slug: "docs/guides/credential-broker", label: "Credential Broker" },
+        {
+          label: "Credential broker",
+          items: [
+            { slug: "docs/credential-broker", label: "Overview" },
+            { slug: "docs/credential-broker/quickstart" },
+            { slug: "docs/credential-broker/cli" },
+            { slug: "docs/credential-broker/sdk" },
+            { slug: "docs/credential-broker/github" },
+            { slug: "docs/credential-broker/model-gateways" },
+            { slug: "docs/credential-broker/operate" },
+          ],
+        },
         {
           label: "Providers",
           items: [

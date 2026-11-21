@@ -10,9 +10,12 @@ import {
   destroyRevocation,
   hasSandboxCredentials,
   releaseCredentialState,
+  renewSandboxGrant,
   revokeSandboxCredentials,
   SandboxCredentialRevocationError,
+  sandboxGrantStatus,
   type SandboxCredentials,
+  type SandboxGrantStatus,
 } from "./sandbox-credentials";
 import {
   applySetup,
@@ -1658,6 +1661,26 @@ export class AdapterSandbox {
     }
   }
   /**
+   * The grant this handle carries: status, integrations, variable names and expiry, never the
+   * token. `none` for a sandbox created without a grant, or reopened through another connection,
+   * since grants stay in the process that created the sandbox.
+   */
+  grant(): SandboxGrantStatus {
+    return sandboxGrantStatus(this.client, this);
+  }
+  /**
+   * Extend this sandbox's grant to `ttlSeconds` from now (the credential broker allows up to 7
+   * days). Commands keep the same token, so running processes need no restart.
+   */
+  async renewGrant(options: {
+    ttlSeconds: number;
+    signal?: AbortSignal;
+  }): Promise<SandboxGrantStatus> {
+    this.client.ensureOpen();
+
+    return renewSandboxGrant(this.client, this, options.ttlSeconds, options.signal);
+  }
+  /**
    * A destination a standard SSH client can open on this running sandbox, resolved by the
    * adapter's provider-native SSH service. With `publicKey`, adapters whose targets authenticate
    * by the caller's key authorize it first. The target can carry credentials: keep it in memory.
@@ -2962,13 +2985,23 @@ export class AdapterDirectClient {
   private splitCredentials(input: CreateInput | undefined) {
     if (!input || !z.record(z.string(), z.unknown()).safeParse(input).success)
       return { request: input };
-    const { credentials, ...request } = input;
+    const { credentials: legacy, grant, ...request } = input;
+
+    if (legacy !== undefined && grant !== undefined)
+      throw new BeachsideError(
+        "INVALID_ARGUMENT",
+        "Pass `grant` or the deprecated `credentials`, not both",
+      );
+    const credentials = grant ?? legacy;
 
     if (
       credentials !== undefined &&
       !z.object({ acquire: z.function() }).safeParse(credentials).success
     )
-      throw new BeachsideError("INVALID_ARGUMENT", "Invalid sandbox credential configuration");
+      throw new BeachsideError(
+        "INVALID_ARGUMENT",
+        "Invalid sandbox grant. Pass a credential source such as broker.sandbox({ ... })",
+      );
 
     return { credentials, request };
   }
@@ -2981,12 +3014,13 @@ export class AdapterDirectClient {
     );
 
     if (!this.session.exec || !this.session.supports.exec)
-      return "Sandbox credentials require command execution";
+      return "Sandbox grants require command execution";
 
-    if (checked.networkPolicy === "blocked") return "Sandbox credentials require broker egress";
+    if (checked.networkPolicy === "blocked")
+      return 'Sandbox grants need outbound access to the credential broker. Use network: "internet"';
 
     if (checked.requirements?.snapshot)
-      return "Snapshot requirements are unavailable with sandbox credentials";
+      return "Snapshot requirements are unavailable with sandbox grants";
   }
   private async configureCredentialedSandbox(
     box: AdapterSandbox,
@@ -3099,9 +3133,9 @@ export class AdapterDirectClient {
         "Setup runs with sandboxes.create() or sandboxes.with(); after submitCreate(), call box.runSetup()",
       );
 
-    if (input?.credentials !== undefined)
-      throw new UnsupportedFeatureError("submitCreate credentials", [
-        "Configure credentials through sandboxes.create() or sandboxes.with()",
+    if (input?.credentials !== undefined || input?.grant !== undefined)
+      throw new UnsupportedFeatureError("submitCreate grant", [
+        "Request a grant through sandboxes.create() or sandboxes.with()",
       ]);
 
     const request = validateCreate(

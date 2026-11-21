@@ -904,3 +904,135 @@ test("cancelling a wait after confirmed destroy leaves the grant revocation runn
     await client.close();
   }
 });
+
+test("a grant reports its status without the token and renews at its source", async () => {
+  const f = fixture({ credentialEgress: true });
+  const client = await f.connect();
+  const other = await f.connect();
+  const renewals: number[] = [];
+  let expiry = Date.now() + 60_000;
+
+  const grant: SandboxCredentials = {
+    async acquire() {
+      return {
+        id: "grant-1",
+        integrations: ["openrouter"],
+        env: {
+          OPENROUTER_API_KEY: brokerToken,
+          OPENROUTER_BASE_URL: "https://b.invalid/gateway/x",
+        },
+        expiresAt: new Date(expiry).toISOString(),
+        async revoke() {},
+        async renew(ttlSeconds) {
+          renewals.push(ttlSeconds);
+          expiry = Date.now() + ttlSeconds * 1_000;
+
+          return new Date(expiry).toISOString();
+        },
+      };
+    },
+  };
+
+  try {
+    const box = await client.sandboxes.create({ network: "internet", grant });
+    const status = box.grant();
+
+    expect(status).toMatchObject({
+      status: "active",
+      id: "grant-1",
+      integrations: ["openrouter"],
+      env: ["OPENROUTER_API_KEY", "OPENROUTER_BASE_URL"],
+      renewable: true,
+    });
+    expect(JSON.stringify(status)).not.toContain(brokerToken);
+
+    const renewed = await box.renewGrant({ ttlSeconds: 604_800 });
+    expect(renewals).toEqual([604_800]);
+    expect(Date.parse(renewed.status === "none" ? "" : renewed.expiresAt)).toBeGreaterThan(
+      Date.now() + 600_000_000,
+    );
+
+    expect((await other.sandboxes.get(box.reference!)).grant()).toEqual({ status: "none" });
+    await expect(
+      client.sandboxes.create({ network: "internet", grant, credentials: grant }),
+    ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+
+    await box.destroy();
+    expect(box.grant()).toMatchObject({ status: "revoked" });
+    await expect(box.exec(["true"])).rejects.toMatchObject({
+      code: "UNAUTHENTICATED",
+      message: expect.stringContaining("revoked"),
+    });
+    await expect(box.renewGrant({ ttlSeconds: 60 })).rejects.toMatchObject({
+      code: "UNAUTHENTICATED",
+    });
+  } finally {
+    await Promise.all([client.close(), other.close()]);
+  }
+});
+
+test("a renewal that races destruction revokes the grant again", async () => {
+  const f = fixture({ credentialEgress: true });
+  const client = await f.connect();
+  const revocations: string[] = [];
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+
+  const grant: SandboxCredentials = {
+    async acquire() {
+      return {
+        env: { OPENROUTER_API_KEY: brokerToken },
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        async revoke() {
+          revocations.push("revoke");
+        },
+        async renew() {
+          await held;
+
+          return new Date(Date.now() + 600_000).toISOString();
+        },
+      };
+    },
+  };
+
+  try {
+    const box = await client.sandboxes.create({ network: "internet", grant });
+    const renewal = box.renewGrant({ ttlSeconds: 600 });
+    await box.destroy();
+    expect(revocations).toEqual(["revoke"]);
+    release();
+    await expect(renewal).rejects.toMatchObject({ code: "UNAUTHENTICATED" });
+    expect(revocations).toEqual(["revoke", "revoke"]);
+    expect(box.grant()).toMatchObject({ status: "revoked" });
+  } finally {
+    await client.close();
+  }
+});
+
+test("a refused grant names the integration and the fix without echoing the source's message", async () => {
+  const f = fixture({ credentialEgress: true });
+  const client = await f.connect();
+
+  const grant: SandboxCredentials = {
+    async acquire() {
+      throw Object.assign(new Error(brokerToken), {
+        code: "FORBIDDEN",
+        reason: "not_allowlisted",
+        integrations: ["openrouter"],
+      });
+    },
+  };
+
+  try {
+    const failure = await client.sandboxes.create({ network: "internet", grant }).catch((e) => e);
+
+    expect(failure).toMatchObject({
+      code: "FORBIDDEN",
+      message: expect.stringContaining("beachside broker issuer allow openrouter"),
+    });
+    expect(String(failure.message)).not.toContain(brokerToken);
+    expect(f.destroyed).toEqual(["box-1"]);
+  } finally {
+    await client.close();
+  }
+});

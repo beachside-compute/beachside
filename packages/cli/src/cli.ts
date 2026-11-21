@@ -31,6 +31,7 @@ import { snapshotCommand } from "./snapshots";
 import { skillCommand } from "./skill";
 import { adapterCommand } from "./adapters";
 import { profileCommand } from "./profiles";
+import { brokerActions, brokerCommand } from "./broker";
 import { initCommand, initFlagSpecs, interactive } from "./init";
 import { gcCommand } from "./gc";
 import { complete, completionCommand, formatCompletion } from "./completion";
@@ -55,6 +56,11 @@ type CommandSpec = {
   passthrough: boolean;
   /** exec-style commands pass the remote exit code through and use 125 for CLI failures. */
   remoteExit: boolean;
+  /**
+   * Reads only the global flags and `--broker`; every other argument reaches the command as given.
+   * `--help` shows this command's help before an action or after one of `local`, else it passes on.
+   */
+  raw?: { local: readonly string[] };
   examples: readonly string[];
   run: (session: Session, flags: Flags) => Promise<number>;
 };
@@ -203,6 +209,25 @@ const createFlags = {
     value: "duration",
     description:
       "Keep retrying for up to this long when the provider refuses before creating anything (rate limit, capacity), e.g. 5m",
+  },
+  grant: {
+    type: "string",
+    multiple: true,
+    value: "integration",
+    description:
+      "Give the sandbox a credential-broker grant for this integration (repeatable; id=BASE_URL_ENV,API_KEY_ENV picks the variable names)",
+  },
+  "grant-ttl": {
+    type: "string",
+    value: "duration",
+    description:
+      "How long the grant lasts, up to 7d (default 1h); renew it with `beachside broker grant renew <sandbox>`",
+  },
+  broker: {
+    type: "string",
+    value: "name",
+    description:
+      "Broker from beachside.json for --grant (default: defaultBroker or BEACHSIDE_BROKER)",
   },
   ...setupFlags,
   ...cacheFlags,
@@ -663,6 +688,65 @@ export const commands: readonly CommandSpec[] = [
     run: profileCommand,
   },
   {
+    name: "broker",
+    summary:
+      "Set up credential brokers for --grant, and manage a broker's integrations, issuer allowlist and grants",
+    usage:
+      "beachside broker add <name> (--url <origin> [--issuer-key <ref>] [--admin-key <ref>] | --deployment <.env.deploy>) [--default] | ls | use <name> | rm <name> | status | config show | integration <setup|list|show|create|rotate|enable|disable|delete> ... | issuer <show|allow|deny|set> ... | grant <issue|list|renew|revoke> ... [--broker <name>]",
+    flags: {
+      broker: {
+        type: "string",
+        value: "name",
+        description:
+          "The broker to manage (default: defaultBroker, BEACHSIDE_BROKER, or BEACHSIDE_BROKER_URL)",
+      },
+      url: { type: "string", value: "origin", description: "add: the broker's HTTPS origin" },
+      "issuer-key": {
+        type: "string",
+        value: "key|ref",
+        description:
+          "add: the issuer key: env:NAME, an op://, bws://, pass:// or keychain:// reference, - for stdin, or the value",
+      },
+      "admin-key": {
+        type: "string",
+        value: "key|ref",
+        description: "add: the admin key, only needed to manage integrations from this machine",
+      },
+      deployment: {
+        type: "string",
+        value: "path",
+        description:
+          "add: read the URL and both keys from the broker's .env.deploy (BEACHSIDE_BROKER_URL, BROKER_ISSUER_KEY, BROKER_ADMIN_KEY)",
+      },
+      default: { type: "boolean", description: "add: make it the default broker" },
+      "no-check": {
+        type: "boolean",
+        description: "add: save without asking the broker about the keys",
+      },
+      ttl: {
+        type: "string",
+        value: "duration",
+        description: "grant issue|renew: how long the grant lasts, up to 7d",
+      },
+      all: { type: "boolean", description: "grant list: every grant, with the admin key" },
+    },
+    passthrough: false,
+    remoteExit: false,
+    raw: { local: brokerActions },
+    examples: [
+      "beachside broker add work --deployment ./credential-broker/.env.deploy",
+      "beachside broker add work --url https://broker.example.com --issuer-key env:BROKER_ISSUER_KEY --admin-key op://infra/broker/admin",
+      "beachside broker status",
+      "beachside broker integration setup",
+      "beachside broker issuer allow openrouter",
+      "beachside create --name agent --network internet --grant github --grant openrouter --grant-ttl 7d",
+      "beachside broker grant list",
+      "beachside broker grant renew agent --ttl 7d",
+      "beachside broker integration --help   # every management command and flag",
+    ],
+    run: brokerCommand,
+  },
+  {
     name: "providers",
     summary:
       "List official providers, whether their adapter is installed and their credentials set",
@@ -811,6 +895,57 @@ function commandHelp(command: CommandSpec): string {
     "Examples:",
     ...command.examples.map((example) => `  ${example}`),
   ].join("\n");
+}
+
+const shortFlags = new Map([
+  ["-h", "help"],
+  ["-V", "version"],
+]);
+
+/**
+ * Arguments for a raw command: the global flags other than --profile and --provider, and
+ * `--broker`, are read here (`--name value` or `--name=value`), and everything else stays in
+ * order for the command to parse itself.
+ */
+function rawArguments(args: readonly string[], local: readonly string[]) {
+  const values: Record<string, string | boolean> = {};
+  const positionals: string[] = [];
+  // --profile and --provider stay with the command: `integration create --provider http` needs its own.
+  const { profile: _profile, provider: _provider, ...shared } = globalFlags;
+  const own = { ...shared, broker: { type: "string" } } as const;
+
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index]!;
+
+    const [flag, inline] = arg.startsWith("--")
+      ? arg.slice(2).split(/=(.*)/s, 2)
+      : [undefined, undefined];
+
+    const name = shortFlags.get(arg) ?? flag;
+
+    const spec =
+      name === undefined ? undefined : Object.entries(own).find(([key]) => key === name)?.[1];
+
+    const passesOn = name === "help" && positionals.length > 0 && !local.includes(positionals[0]!);
+
+    if (!spec || !name || passesOn) {
+      positionals.push(arg);
+      continue;
+    }
+
+    if (spec.type === "boolean") {
+      if (inline !== undefined) throw usage(`--${name} takes no value`);
+      values[name] = true;
+      continue;
+    }
+
+    const value = inline ?? args[++index];
+
+    if (value === undefined) throw usage(`--${name} needs a value`);
+    values[name] = value;
+  }
+
+  return { values, positionals };
 }
 
 /** One node:util parseArgs option; optional keys stay absent rather than undefined. */
@@ -997,17 +1132,22 @@ export async function main(argv: readonly string[], io: Io): Promise<number> {
     if (rest && !command.passthrough)
       throw usage(`${command.name} does not take a command after --`);
     const options = { ...globalFlags, ...command.flags };
-    let parsed: ReturnType<typeof parseArgs>;
+    let parsed: Pick<ReturnType<typeof parseArgs>, "values" | "positionals">;
 
     try {
-      parsed = parseArgs({
-        args: head.filter((_, index) => index !== nameIndex),
-        options: Object.fromEntries(
-          Object.entries(options).map(([flag, spec]) => [flag, parseOption(spec)]),
-        ),
-        allowPositionals: true,
-        strict: true,
-      });
+      parsed = command.raw
+        ? rawArguments(
+            head.filter((_, index) => index !== nameIndex),
+            command.raw.local,
+          )
+        : parseArgs({
+            args: head.filter((_, index) => index !== nameIndex),
+            options: Object.fromEntries(
+              Object.entries(options).map(([flag, spec]) => [flag, parseOption(spec)]),
+            ),
+            allowPositionals: true,
+            strict: true,
+          });
     } catch (cause) {
       const known = Object.keys(options).map((flag) => `--${flag}`);
 
@@ -1081,6 +1221,7 @@ export async function main(argv: readonly string[], io: Io): Promise<number> {
           snapshot: ["create", "ls", "inspect", "rm", "forget"],
           adapter: ["add", "ls", "rm"],
           skill: ["show", "setup", "status", "remove"],
+          broker: ["add", "ls", "use", "rm", "status", "config", "integration", "issuer", "grant"],
         } satisfies Record<string, readonly string[]>;
 
         const first = flags.positionals[0];
