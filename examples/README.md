@@ -1,5 +1,7 @@
 # Run OpenCode with Beachside
 
+For local cross-process OpenTelemetry with Pi, see the [Pi tracing example](pi-tracing/README.md).
+
 Two small TypeScript applications run OpenCode inside a disposable Daytona or E2B sandbox:
 
 - `hello` asks **“What is 2 + 2?”** and prints captured stdout/stderr. It does not create an answer file.
