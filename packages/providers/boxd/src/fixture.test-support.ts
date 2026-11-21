@@ -1066,3 +1066,7 @@ export async function boxdFixture() {
     },
   };
 }
+
+/** How a user command reaches boxd: behind the prelude that sources the sandbox env file. */
+export const userCommand = (line: string) =>
+  `/bin/sh -c 'if [ -r /etc/beachside.env ]; then . /etc/beachside.env; fi; exec "$@"' beachside ${line}`;

@@ -6,7 +6,7 @@ import { adapterSuite, snapshotSuite } from "@beachside/adapter/testing";
 import { Beachside, OutcomeUnknownError, Preserve } from "beachside";
 import { createBoxdAdapter } from "./adapter";
 import { expectRejection } from "./expect-rejection.test-support";
-import { boxdFixture } from "./fixture.test-support";
+import { boxdFixture, userCommand } from "./fixture.test-support";
 import { regionTarget, type CallContext } from "./transport";
 
 const fixtures: Awaited<ReturnType<typeof boxdFixture>>[] = [];
@@ -337,7 +337,7 @@ test("byte fidelity, bounded exec collection and raw upload acknowledgement", as
     expect(result.exitCode).toBe(0);
     expect(result.truncated).toBe(true);
     expect(fixture.calls.filter((call) => call.method === "Exec").at(-1)?.request).toMatchObject({
-      command: "printf 'with spaces' '$(false)'",
+      command: userCommand("printf 'with spaces' '$(false)'"),
     });
     const bytes = Uint8Array.of(0, 255, 128);
     await box.writeFile("/file", bytes, { overwrite: true });
@@ -1079,23 +1079,70 @@ test("boxd lists org machines with unknown-ownership references that reopen", as
   }
 });
 
-test("boxd declares create env unsupported and rejects it before any native call", async () => {
+test("boxd writes create env to a private file before hand-out and never saves the values", async () => {
   const { fixture, connect } = await setup();
   const client = await connect();
 
   try {
-    expect((await client.capabilities()).createEnv).toBe(false);
-    const calls = fixture.calls.length;
+    expect((await client.capabilities()).createEnv).toBe(true);
+    const before = fixture.calls.length;
+    const box = await client.sandboxes.create({ env: { API_TOKEN: "fixture-env-'value'" } });
+    const calls = fixture.calls.slice(before);
+    const create = calls.find((call) => call.method === "CreateVm");
+    const execs = calls.filter((call) => call.method === "Exec");
 
-    for (const create of [client.sandboxes.create, client.sandboxes.submitCreate])
-      (await expectRejection(create({ env: { API_TOKEN: "fixture-env-value" } }))).toMatchObject({
-        name: "UnsupportedFeatureError",
-        code: "UNSUPPORTED",
+    const writes = execs.slice(
+      execs.findIndex((call) => JSON.stringify(call.request).includes("umask")),
+    );
+
+    // Not sent as native create env, which exec sessions on an image machine never see.
+    expect(JSON.stringify(create?.request)).not.toContain("fixture-env");
+    expect(writes[0]?.request).toMatchObject({
+      command: `/bin/sh -c 'umask 077 && cat >"/etc/beachside.env.tmp" && mv -f "/etc/beachside.env.tmp" "/etc/beachside.env"'`,
+    });
+
+    const written = writes
+      .slice(1)
+      .map((call) => z.object({ data: z.instanceof(Uint8Array) }).parse(call.request).data);
+
+    expect(new TextDecoder().decode(Buffer.concat(written))).toBe(
+      `export API_TOKEN='fixture-env-'\\''value'\\'''\n`,
+    );
+    expect(JSON.stringify(box.reference)).not.toContain("fixture-env");
+    await box.destroy();
+  } finally {
+    await client.close();
+  }
+});
+
+test("boxd reports a machine whose env file was not written instead of handing it out", async () => {
+  const { fixture, connect } = await setup();
+  const client = await connect();
+
+  try {
+    fixture.execFrames([{ data: new Uint8Array(), exitCode: 1 }]);
+
+    (await expectRejection(client.sandboxes.create({ env: { API_TOKEN: "x" } }))).toMatchObject({
+      message: expect.stringContaining("sandbox env was not written"),
+    });
+  } finally {
+    await client.close();
+  }
+});
+
+test("boxd refuses create env it cannot hold before any native call", async () => {
+  const { fixture, connect } = await setup();
+  const client = await connect();
+
+  try {
+    const many = Object.fromEntries(Array.from({ length: 129 }, (_, index) => [`V${index}`, "x"]));
+
+    for (const env of [many, { BIG: "x".repeat(32 * 1024 + 1) }, { "NOT-POSIX": "x" }])
+      (await expectRejection(client.sandboxes.create({ env }))).toMatchObject({
+        code: "INVALID_ARGUMENT",
         effect: "none",
       });
     expect(fixture.effects.create).toBe(0);
-    expect(fixture.calls.slice(calls).map((call) => call.method)).not.toContain("CreateVm");
-    expect(JSON.stringify(fixture.calls)).not.toContain("fixture-env-value");
   } finally {
     await client.close();
   }

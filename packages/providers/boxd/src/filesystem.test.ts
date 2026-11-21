@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { Beachside } from "beachside";
 import { createBoxdAdapter } from "./adapter";
 import { expectRejection } from "./expect-rejection.test-support";
-import { boxdFixture } from "./fixture.test-support";
+import { boxdFixture, userCommand } from "./fixture.test-support";
 
 /**
  * Tests of the guest helper's no-clobber moves, which need Linux `renameat2` as every
@@ -64,7 +64,7 @@ test("finite stdin uses bounded native byte frames followed by EOF, including em
           .parse(c.request),
       );
 
-    expect(frames[0]?.command).toBe("cat");
+    expect(frames[0]?.command).toBe(userCommand("cat"));
     expect(frames.slice(1).map((f) => f.data.length)).toEqual([65536, 65536, 5]);
     expect(frames.slice(1).every((f) => f.stdin && f.command === "")).toBe(true);
     expect(Buffer.concat(frames.slice(1).map((f) => f.data))).toEqual(Buffer.from(input));
