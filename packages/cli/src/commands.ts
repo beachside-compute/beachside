@@ -572,6 +572,14 @@ async function createOnce(session: Session, request: CreateRequest): Promise<Cre
     const taken = Object.keys(input.env ?? {});
 
     try {
+      // Refuse before asking the broker, so a provider without sandbox-wide env mints nothing.
+      if (!(await client.capabilities()).createEnv)
+        throw new CliError(
+          "UNSUPPORTED",
+          `--grant needs sandbox-wide env, which ${profile.provider} does not support`,
+          "use a provider that does, or pass the grant's variables to each command with --env",
+        );
+
       grant = await acquireGrant(session, request.grant, `beachside ${claimed.record.name}`);
       const clash = Object.keys(grant.grant.env).find((name) => taken.includes(name));
 
@@ -2525,12 +2533,45 @@ function shScript(flags: Flags): ShScript {
   if (!flags.rest && flags.positionals.length === 2) return { target: target!, script: inline! };
 
   throw usage(
-    "Usage: beachside sh <sandbox> '<script>' (or put the script after --, as one argument)",
+    "Usage: beachside sh <sandbox> '<script>' (or put the script after --, as one argument, or pass - to read it from stdin)",
   );
 }
 
+/** The most `sh <sandbox> -` reads from stdin as the script. */
+const MAX_STDIN_SCRIPT_BYTES = 1024 * 1024;
+
+/** `sh <sandbox> -`: the script is this process's stdin, read whole before anything runs. */
+async function stdinScript(session: Session, flags: Flags): Promise<string> {
+  if (flags.bool("stdin") || flags.string("stdin-file"))
+    throw usage(
+      "sh <sandbox> - reads the script from stdin, so it cannot also pass --stdin or --stdin-file",
+    );
+
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+
+  for await (const chunk of session.ctx.stdin()) {
+    size += chunk.byteLength;
+
+    if (size > MAX_STDIN_SCRIPT_BYTES)
+      throw usage(
+        "The script on stdin is over 1 MiB",
+        "copy it into the sandbox with `beachside cp` and run it",
+      );
+    chunks.push(chunk);
+  }
+
+  const script = Buffer.concat(chunks).toString("utf8");
+
+  if (!script.trim()) throw usage("sh <sandbox> - got an empty script on stdin");
+
+  return script;
+}
+
 export async function shCommand(session: Session, flags: Flags): Promise<number> {
-  const { target, script } = shScript(flags);
+  const parsed = shScript(flags);
+  const target = parsed.target;
+  const script = parsed.script === "-" ? await stdinScript(session, flags) : parsed.script;
   const { record } = await findTarget(session, target);
   const input = await execInput(session, flags, { kind: "shell", script });
   const box = await session.reopen(record);

@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { Beachside } from "beachside";
 import { createBoxdAdapter } from "./adapter";
-import { boxdFixture } from "./fixture.test-support";
+import { boxdFixture, userCommand } from "./fixture.test-support";
 
 const fixtures: Awaited<ReturnType<typeof boxdFixture>>[] = [];
 
@@ -64,7 +64,7 @@ test("byte output streams per stream before the command exits", async () => {
     ]);
     expect(await process.wait()).toEqual({ exitCode: 3, outputComplete: true });
     expect(fixture.calls.filter((call) => call.method === "Exec").at(-1)?.request).toMatchObject({
-      command: "make test",
+      command: userCommand("make test"),
     });
     await process.detach();
   } finally {

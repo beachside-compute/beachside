@@ -457,11 +457,16 @@ export const commands: readonly CommandSpec[] = [
   {
     name: "sh",
     summary: "Run a shell script in a sandbox; exits with its exit code",
-    usage: "beachside sh <sandbox> '<script>' | beachside sh <sandbox> -- '<script>'",
+    usage:
+      "beachside sh <sandbox> '<script>' | beachside sh <sandbox> -- '<script>' | beachside sh <sandbox> - < script.sh",
     flags: execFlags,
     passthrough: true,
     remoteExit: true,
-    examples: ["beachside sh web 'cd /work && make test'", "beachside sh web -- '-n is fine here'"],
+    examples: [
+      "beachside sh web 'cd /work && make test'",
+      "beachside sh web -- '-n is fine here'",
+      "beachside sh web - < setup.sh",
+    ],
     run: shCommand,
   },
   {
@@ -1172,7 +1177,9 @@ export async function main(argv: readonly string[], io: Io): Promise<number> {
       signal: io.signal,
       stdin: io.stdin,
       terminal: io.stdinTerminal === true && io.stderrTerminal === true,
-      createsConfig: command.name === "init",
+      // `init` and `broker add` write the file, so a --config path that doesn't exist yet is fine.
+      createsConfig:
+        command.name === "init" || (command.name === "broker" && parsed.positionals[0] === "add"),
       flags: {
         json: out.json,
         profile: flags.string("profile"),

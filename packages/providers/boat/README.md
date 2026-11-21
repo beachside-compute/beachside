@@ -35,6 +35,7 @@ Scope is the account id from `GET /me` plus the fixed `https://boat.dev/api/v1` 
 ## Behavior
 
 - **Create** sends the Beachside submission id as `Idempotency-Key` and waits for `ready`/`idle`/`running`.
+- **Create-time `env`** is sent as Boat's per-sandbox `env` (up to 100 variables, 64 KB, no reserved names such as `BOAT_ID`), which every exec and shell sees on top of an attached environment's variables; it works with `noEnv`. Restores keep the source sandbox's env.
 - **Exec** supports argv and shell, `cwd`, `env`, finite stdin and deadlines up to 600 s. A small `sh` wrapper keeps arguments quoted and returns stdout/stderr as base64, so bytes survive Boat's UTF-8 text channel. Output is bounded to 1 MiB per stream.
 - **Streaming processes** start the command detached (no 600 s cap) and follow Boat's attach stream, reattaching from byte offsets on Boat's 10-minute reconnect or a dropped connection. Output is UTF-8 text only, so `format: "bytes"` and callback exec are unsupported. `terminate()` uses Boat's stop endpoint. Piped stdin, terminals, signals and reopen are unsupported.
 - **Files** read and overwrite up to 5 MiB under `/home/user` or `/tmp`, as base64. No-clobber writes are unsupported.

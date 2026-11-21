@@ -43,6 +43,8 @@ The package also exports `boat()`, which takes credentials and config in one obj
 
 Boat runs sandboxes in the EU (Germany, Finland, France) and does not let you pick a region, so `region` and `labels` are rejected. Mounts, snapshot requirements and image builds are unsupported.
 
+Create-time `env` is sent as Boat's per-sandbox environment, which applies to every command and shell on top of any attached environment's variables; per-call `env` overrides a name. It works with the default `noEnv` too, so a sandbox can get its own secret without your account's. Boat allows up to 100 variables and 64 KB in all, and reserves names such as `BOAT_ID` and `BOAT_CLI_TOKEN`; the adapter rejects those before creating anything. A restore keeps the env of the snapshot's source sandbox and takes no new `env`.
+
 ## What works
 
 Everything below is tested on every change, using the real Boat client against a simulated API. **No live Boat run has been made yet.**
@@ -50,7 +52,7 @@ Everything below is tested on every change, using the real Boat client against a
 | Feature           | Support                                                                                                                                                                                  | Live tested |
 | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
 | Compute lifecycle | Create with an `Idempotency-Key`, inspect, inventory, reference reopening, and destroy by permanent delete with confirmed teardown.                                                      | No          |
-| Commands          | argv and shell, with `cwd` and `env`; exact stdout/stderr bytes up to 1 MiB per stream; finite byte stdin; deadlines up to 600 seconds.                                                  | No          |
+| Commands          | argv and shell, with `cwd`, `env` and create-time `env`; exact stdout/stderr bytes up to 1 MiB per stream; finite byte stdin; deadlines up to 600 seconds.                               | No          |
 | Streaming output  | Live stdout/stderr as UTF-8 text from detached commands, with no 600-second cap; stop with `terminate()`. No byte output.                                                                | No          |
 | Files             | Binary read and overwrite write up to 5 MiB, under `/home/user` or `/tmp`. No-clobber writes are unsupported.                                                                            | No          |
 | Suspend/resume    | `suspend()` archives the disk and stops the machine; `resume()` restores the disk onto a fresh machine. Memory, processes and connections are not kept.                                  | No          |

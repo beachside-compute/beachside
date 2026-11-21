@@ -603,6 +603,10 @@ export class AdapterOperation<T, K extends OperationKind = OperationKind> {
       effect: "applied",
       origin: first ? activeTraceParent() : undefined,
     });
+    instrument(this, "continue", client.telemetry, "beachside.operation.continue", {
+      identity: this,
+      effect: "possible",
+    });
   }
   /** Advance proven unsubmitted stages. Applications serialize continuation across processes. */
   async continue(options: { signal?: AbortSignal } = {}): Promise<this> {
@@ -1063,6 +1067,20 @@ export class AdapterSandbox {
     instrument(this, "destroy", client.telemetry, "beachside.sandbox.destroy", {
       effect: "applied",
     });
+
+    for (const [method, name] of [
+      ["Suspend", "suspend"],
+      ["Resume", "resume"],
+      ["Renew", "renew"],
+      ["Snapshot", "snapshot"],
+      ["Fork", "fork"],
+    ] as const) {
+      instrument(this, `submit${method}`, client.telemetry, `beachside.sandbox.submit_${name}`, {
+        effect: "possible",
+      });
+      instrument(this, name, client.telemetry, `beachside.sandbox.${name}`, { effect: "applied" });
+    }
+
     instrument(this.processes, "reopen", client.telemetry, "beachside.process.reopen");
     instrument(this.terminals, "start", client.telemetry, "beachside.terminal.start", {
       effect: "possible",
@@ -1167,7 +1185,11 @@ export class AdapterSandbox {
     );
   }
   async suspend(options: WaitOptions = {}): Promise<SuspendResult> {
-    return (await this.submitSuspend(options)).wait(options);
+    return waitFor(
+      this.client.telemetry,
+      await internalMethod(this.submitSuspend)(options),
+      options,
+    );
   }
   async submitResume(
     options: WaitOptions = {},
@@ -1197,7 +1219,12 @@ export class AdapterSandbox {
     const setupOptions = runOptions({ onSetupOutput, onSetupStep, setupTimeoutSeconds });
 
     validateSetupOptions(setupOptions);
-    const result = await (await this.submitResume(wait)).wait(wait);
+
+    const result = await waitFor(
+      this.client.telemetry,
+      await internalMethod(this.submitResume)(wait),
+      wait,
+    );
 
     if (result.execution === "fresh" && recordedStartup !== "skip" && this.client.session.exec)
       await startupAfterResume(this, this.setupHost(), setupOptions, wait.signal);
@@ -1275,7 +1302,11 @@ export class AdapterSandbox {
     );
   }
   async renew(input?: RenewRequest, options: WaitOptions = {}): Promise<RenewResult> {
-    return (await this.submitRenew(input, options)).wait(options);
+    return waitFor(
+      this.client.telemetry,
+      await internalMethod(this.submitRenew)(input, options),
+      options,
+    );
   }
   async submitSnapshot(
     request: SnapshotRequest = {},
@@ -1323,7 +1354,11 @@ export class AdapterSandbox {
     request: SnapshotRequest = {},
     options: WaitOptions = {},
   ): Promise<SnapshotResult> {
-    return (await this.submitSnapshot(request, options)).wait(options);
+    return waitFor(
+      this.client.telemetry,
+      await internalMethod(this.submitSnapshot)(request, options),
+      options,
+    );
   }
   /**
    * Fork this sandbox with the provider's native fork. The fork is a new sandbox that inherits
@@ -1371,7 +1406,11 @@ export class AdapterSandbox {
     );
   }
   async fork(request: ForkRequest = {}, options: WaitOptions = {}): Promise<SandboxHandle<true>> {
-    return (await this.submitFork(request, options)).wait(options);
+    return waitFor(
+      this.client.telemetry,
+      await internalMethod(this.submitFork)(request, options),
+      options,
+    );
   }
   /**
    * Whether this sandbox can fork natively with these options, without any effect. Beyond the
@@ -1916,6 +1955,14 @@ export class AdapterSandbox {
     return parsed.data;
   }
   readFileStream(path: string, options: FileStreamOptions = {}): AsyncIterable<Uint8Array> {
+    return this.client.telemetry.iterate(
+      "beachside.file.read_stream",
+      this.#streamFile(path, options),
+      options.signal ? AbortSignal.any([options.signal, this.client.signal]) : this.client.signal,
+    );
+  }
+  /** The uninstrumented stream, for calls such as a large `readFile` that own the telemetry. */
+  #streamFile(path: string, options: FileStreamOptions): AsyncIterable<Uint8Array> {
     this.client.ensureOpen();
     fileOptions(options);
     validateFilePath(path);
@@ -1923,15 +1970,11 @@ export class AdapterSandbox {
 
     if (!files?.readStream) unsupported("readFileStream");
 
-    return this.client.telemetry.iterate(
-      "beachside.file.read_stream",
-      streamFile(
-        (ctx) => files.readStream!({ sandbox: sandboxInput(this.id, this.reference), path }, ctx),
-        this.client.signal,
-        options,
-        this.client.transferPolicy,
-      ),
-      options.signal ? AbortSignal.any([options.signal, this.client.signal]) : this.client.signal,
+    return streamFile(
+      (ctx) => files.readStream!({ sandbox: sandboxInput(this.id, this.reference), path }, ctx),
+      this.client.signal,
+      options,
+      this.client.transferPolicy,
     );
   }
   async writeFileStream(
@@ -2204,7 +2247,8 @@ export class AdapterSandbox {
     const chunks: Uint8Array[] = [];
     let total = 0;
 
-    for await (const chunk of this.readFileStream(path, {
+    // One caller-visible read: the stream fallback must not add a second public call.
+    for await (const chunk of this.#streamFile(path, {
       signal: options.signal,
       maxBytes: guard,
     })) {
@@ -2914,6 +2958,7 @@ export class AdapterDirectClient {
     });
     instrument(this.operations, "inventory", this.telemetry, "beachside.sandbox.inventory");
     instrument(this.sandboxes, "list", this.telemetry, "beachside.sandbox.list");
+    instrument(this.sandboxes, "get", this.telemetry, "beachside.sandbox.get");
     instrument(this.operations, "prepare", this.telemetry, "beachside.prepare", { phase: true });
     instrument(this.operations, "observe", this.telemetry, "beachside.observe", { phase: true });
   }

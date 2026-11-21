@@ -146,6 +146,31 @@ test("create sends the submission as Idempotency-Key, withholds account secrets 
   }
 });
 
+test("create sends per-sandbox env natively and refuses env Boat would reject before any call", async () => {
+  const { fixture, connect } = setup();
+  const client = await connect();
+
+  try {
+    expect((await client.capabilities()).createEnv).toBe(true);
+    await (await client.sandboxes.create({ env: { API_TOKEN: "fixture-value" } })).destroy();
+    expect(fixture.calls.find((call) => call.path === "/sandboxes")?.body).toMatchObject({
+      env: { API_TOKEN: "fixture-value" },
+      noEnv: true,
+    });
+
+    const creates = fixture.calls.filter((call) => call.path === "/sandboxes").length;
+    const many = Object.fromEntries(Array.from({ length: 101 }, (_, index) => [`V${index}`, "x"]));
+
+    for (const env of [{ BOAT_ID: "x" }, many, { BIG: "x".repeat(64 * 1024) }])
+      await expect(client.sandboxes.create({ env })).rejects.toMatchObject({
+        code: "INVALID_ARGUMENT",
+      });
+    expect(fixture.calls.filter((call) => call.path === "/sandboxes").length).toBe(creates);
+  } finally {
+    await client.close();
+  }
+});
+
 test("Boat resources pick the smallest machine type and inspect reports its size", async () => {
   const { fixture, adapter } = setup();
 
