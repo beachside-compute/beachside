@@ -6,6 +6,7 @@ import {
   type ProcessStartContext,
   type ProcessStartInput,
 } from "@beachside/adapter";
+import { withSandboxEnv } from "./env";
 import type { BoxdNativeClient, CallContext } from "./transport";
 
 /**
@@ -76,10 +77,12 @@ export function startBoxdProcess(
   const finished = native
     .run(call, () =>
       native.machines.exec(input.sandbox.id, {
-        command:
+        command: withSandboxEnv(
           input.command.kind === "argv"
             ? input.command.argv
             : ["/bin/sh", "-c", input.command.script],
+          input.env,
+        ),
         cwd: input.cwd,
         env: input.env,
         encoding: "buffer",

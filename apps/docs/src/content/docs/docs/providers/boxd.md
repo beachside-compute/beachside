@@ -54,29 +54,31 @@ The package also exports `boxd()`, which takes credentials and config in one obj
 
 boxd sets the allowlist on a machine created from an image once the machine exists, so Beachside applies it (or `blocked`) right after create, before the machine is handed to you; the image's own startup can run for that moment with open egress. A restore sends its allowlist in the machine spec, so it is in force from the first boot. boxd checks entries only when they are applied and refuses provider-wide wildcards such as `*.amazonaws.com`; if it refuses the list, the machine is set to reach nothing and the create reports a partial outcome you can destroy.
 
-Create-time `env` is rejected with `UnsupportedFeatureError` before allocation, because boxd machine variables are not known to reach commands. Pass variables per call with `exec({ env })`; see [environment variables](/docs/guides/images-and-networking/#set-environment-variables).
+## Environment variables
+
+Create-time `env` applies to every command and process, including after reopening; per-call `env` overrides a name. boxd's own create-time `env` reaches only the image's main process, not commands, and a machine spec (whose `env` does reach commands) cannot name an image. So the adapter writes the variables to `~/.beachside.env` for the command user (mode `0600`) before handing the machine to you, and every command reads that file before its own `env`. The file is on the machine's disk, so `fork()` and snapshots keep it. The values are never saved in references or recovery records; a create interrupted before the file is written reports `OUTCOME_UNKNOWN`, so destroy that machine and create another. Up to 128 variables, 32 KiB each and 256 KiB in all. Restores take no `env`. See [environment variables](/docs/guides/images-and-networking/#set-environment-variables).
 
 ## What works
 
-| Feature                      | Support                                                                           | Live tested |
-| ---------------------------- | --------------------------------------------------------------------------------- | ----------- |
-| Sandbox lifecycle            | Create, inspect and destroy.                                                      | Yes         |
-| Reconnect later              | Reopen a saved reference with credentials for the same org.                       | Yes         |
-| Lifetime renewal             | `renew()` resets the expiry; at least 60 seconds, no maximum.                     | No          |
-| Pause and resume             | Keeps memory, processes and sockets.                                              | No          |
-| Commands                     | argv and shell, with `cwd` and `env`; exact output bytes, up to 1 MiB combined.   | Yes         |
-| Streaming output             | Live stdout/stderr as text or exact bytes; stop with `terminate()`. No terminals. | No          |
-| Command input                | Finite stdin up to 1 MiB.                                                         | No          |
-| Files                        | Binary read and overwrite write up to 1 MiB; no-clobber writes; streams.          | Yes         |
-| Directories                  | List, stat, exists, mkdir, remove, copy and move. Most need Python 3.             | No          |
-| HTTP previews                | Public routes on configured ports. Protected previews are not supported.          | No          |
-| Images                       | Boots OCI images. Image builds and image get, list and delete are not supported.  | No          |
-| Network controls             | `internet` (the default), `blocked` and `{ allow: [...] }` allowlists.            | No          |
-| Labels and regions           | Labels on create and restore, returned by listing. One region per connection.     | No          |
-| Snapshots                    | Memory and disk capture, restore into a new machine, inspect, list and delete.    | No          |
-| Fork                         | `box.fork()` copies a running machine's memory, disk and processes.               | No          |
-| Volumes and mounts           | Independent disks: create, inspect, list, delete and whole-disk mounts at create. | No          |
-| Listing sandboxes and images | Lists every machine in the org, with no ownership claim. Images: not supported.   | No          |
+| Feature                      | Support                                                                                            | Live tested |
+| ---------------------------- | -------------------------------------------------------------------------------------------------- | ----------- |
+| Sandbox lifecycle            | Create, inspect and destroy.                                                                       | Yes         |
+| Reconnect later              | Reopen a saved reference with credentials for the same org.                                        | Yes         |
+| Lifetime renewal             | `renew()` resets the expiry; at least 60 seconds, no maximum.                                      | No          |
+| Pause and resume             | Keeps memory, processes and sockets.                                                               | No          |
+| Commands                     | argv and shell, with `cwd`, `env` and create-time `env`; exact output bytes, up to 1 MiB combined. | Yes         |
+| Streaming output             | Live stdout/stderr as text or exact bytes; stop with `terminate()`. No terminals.                  | No          |
+| Command input                | Finite stdin up to 1 MiB.                                                                          | No          |
+| Files                        | Binary read and overwrite write up to 1 MiB; no-clobber writes; streams.                           | Yes         |
+| Directories                  | List, stat, exists, mkdir, remove, copy and move. Most need Python 3.                              | No          |
+| HTTP previews                | Public routes on configured ports. Protected previews are not supported.                           | No          |
+| Images                       | Boots OCI images. Image builds and image get, list and delete are not supported.                   | No          |
+| Network controls             | `internet` (the default), `blocked` and `{ allow: [...] }` allowlists.                             | No          |
+| Labels and regions           | Labels on create and restore, returned by listing. One region per connection.                      | No          |
+| Snapshots                    | Memory and disk capture, restore into a new machine, inspect, list and delete.                     | No          |
+| Fork                         | `box.fork()` copies a running machine's memory, disk and processes.                                | No          |
+| Volumes and mounts           | Independent disks: create, inspect, list, delete and whole-disk mounts at create.                  | No          |
+| Listing sandboxes and images | Lists every machine in the org, with no ownership claim. Images: not supported.                    | No          |
 
 Live results cover the tested image, region and network setting; see [Provider support](/docs/providers/support/).
 
@@ -127,7 +129,7 @@ A refused create carries a matching code and boxd's reason, for example `CAPACIT
 - boxd sets egress on a machine created from an image once it exists, so the image's own startup can run for a moment with open egress before `blocked` or the allowlist applies. Restores carry their egress from the first boot.
 - Public previews are reachable by anyone with the URL, and protected previews are unsupported.
 - Snapshots of machines with mounted disks are rejected, and restores cannot attach disks or change the captured size.
-- Create-time `env`, image builds and image management are unsupported. Each connection works in one region.
+- Image builds and image management are unsupported, and restores take no `env`. Each connection works in one region.
 - Buffered command output, stdin and file transfers are limited to 1 MiB; most filesystem operations need Python 3.
 - Background processes end with the command that started them; use `processes.start()` and `detach()` for servers.
 - Disks survive destroy and must be deleted explicitly. Closing the client destroys nothing.

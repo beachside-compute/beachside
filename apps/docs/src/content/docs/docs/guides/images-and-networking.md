@@ -158,12 +158,18 @@ The variables belong to the sandbox: they still apply after `sandboxes.get(refer
 
 Values are often secrets, so Beachside never writes them into operation references, recovery tokens, telemetry or its own error messages, and adapters redact an echoed value from provider error text. The provider still stores them with the sandbox, and any process inside it can read them.
 
-| Provider       | Create-time `env`                                                               |
-| -------------- | ------------------------------------------------------------------------------- |
-| boxd           | Unsupported: boxd's native machine env is not established for exec sessions.    |
-| Daytona        | Native sandbox `env` on creation.                                               |
-| Vercel Sandbox | Native session `env` on creation; persistent sandboxes keep it on resume.       |
-| Modal          | Native sandbox environment, sent with the single create request (experimental). |
-| E2B            | Native sandbox `envs` on creation.                                              |
+| Provider       | Create-time `env`                                                                                     |
+| -------------- | ----------------------------------------------------------------------------------------------------- |
+| boxd           | Written to a private file in the machine that every command reads; boxd's native env misses commands. |
+| Freestyle      | Written to a private file in the VM that every command reads; Freestyle takes env only per command.   |
+| Daytona        | Native sandbox `env` on creation.                                                                     |
+| E2B            | Native sandbox `envs` on creation.                                                                    |
+| Archil         | Native sandbox `env`, applied to every process.                                                       |
+| Upstash Box    | Native box `env_vars`; Upstash's system names such as `PATH` are rejected.                            |
+| Vercel Sandbox | Native session `env` on creation; persistent sandboxes keep it on resume (experimental).              |
+| Boat           | Native per-sandbox `env`, over any attached environment (experimental).                               |
+| Runloop        | Native environment variables; the image's `~/.bash_profile` can override a name (experimental).       |
+| exe.dev        | Written to a private file in the VM that every command reads (experimental).                          |
+| Modal          | Native sandbox environment, sent with the single create request (experimental).                       |
 
-`client.capabilities().createEnv` reports whether the connection supports it. On a connection that does not, `checkCreate({ env })` returns `unsupported` and `create({ env })` rejects with `UnsupportedFeatureError` before allocating anything; pass the variables per call with `exec({ env })` instead. `snapshot.restore()` does not take `env`; whether a restored sandbox keeps the source's variables depends on the provider's snapshot, so pass them per call if a restored sandbox needs them. Live provider acceptance of create-time variables has not been run.
+`client.capabilities().createEnv` reports whether the connection supports it. On a connection that does not, `checkCreate({ env })` returns `unsupported` and `create({ env })` rejects with `UnsupportedFeatureError` before allocating anything; pass the variables per call with `exec({ env })` instead. `snapshot.restore()` does not take `env`; whether a restored sandbox keeps the source's variables depends on the provider's snapshot, so pass them per call if a restored sandbox needs them. Create-time variables were checked live on boxd, E2B, Freestyle and Archil.

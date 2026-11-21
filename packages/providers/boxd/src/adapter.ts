@@ -62,6 +62,7 @@ import {
   type BoxdNativeClient,
   type CallContext,
 } from "./transport";
+import { checkEnv, envFile, WRITE_ENV_FILE, withSandboxEnv } from "./env";
 import { startBoxdProcess } from "./process";
 
 const Configuration = z
@@ -218,6 +219,8 @@ const CreateToken = z.strictObject({
   network: NetworkPolicy.optional(),
   /** The lifetime to install; recovery re-installs it on a machine left without one. */
   lifetimeSeconds: z.number().int().positive().safe().optional(),
+  /** The create asked for sandbox-wide env; its values are never saved, so recovery cannot write them. */
+  env: z.literal(true).optional(),
 });
 
 /**
@@ -896,6 +899,8 @@ export function createBoxdAdapter(
               mounts: MountSpec[];
               lifetimeSeconds?: number;
               labels?: Record<string, string>;
+              /** Sandbox-wide env, written to the env file before the machine is handed out. */
+              env?: Record<string, string>;
             }
           | {
               snapshot: { id: string; version: number };
@@ -917,6 +922,11 @@ export function createBoxdAdapter(
             : config.lifetimeSeconds;
 
         const mounts = "image" in source ? source.mounts : [];
+
+        const env =
+          "image" in source && source.env && Object.keys(source.env).length
+            ? source.env
+            : undefined;
 
         const expected: Origin | undefined =
           "snapshot" in source
@@ -940,12 +950,9 @@ export function createBoxdAdapter(
             {
               ...readContext(ctx.signal),
               onCreate: async (id) => {
-                acknowledged = {
-                  id: Id.parse(id),
-                  stage: "created",
-                  network,
-                  lifetimeSeconds,
-                };
+                acknowledged = { id: Id.parse(id), stage: "created", network, lifetimeSeconds };
+
+                if (env) acknowledged.env = true;
                 await checkpointCreate(acknowledged, ctx, partial);
               },
             },
@@ -1032,12 +1039,14 @@ export function createBoxdAdapter(
               )
             : ctx.unknown("boxd create acknowledgement has no usable machine UUID");
 
-        const token: Created = acknowledged ?? {
-          id: machine.id,
-          stage: "created",
-          network,
-          lifetimeSeconds,
-        };
+        let token: Created;
+
+        if (acknowledged) token = acknowledged;
+        else {
+          token = { id: machine.id, stage: "created", network, lifetimeSeconds };
+
+          if (env) token.env = true;
+        }
 
         if (!acknowledged) await checkpointCreate(token, ctx, partial);
 
@@ -1116,13 +1125,38 @@ export function createBoxdAdapter(
           await native.run({ ...readContext(ctx.signal), maxBytes: 32 }, () =>
             native.machines.waitUntilReady(token.id, { timeout: 30000, pollInterval: 500 }),
           );
-          token.stage = "ready";
         } catch {
           return ctx.unknown(
             "boxd machine exists but guest readiness was not confirmed; inspect without replay",
             partial(token, ctx),
           );
         }
+
+        // The env file goes in before the machine counts as ready, so no command runs without it.
+        if (env) {
+          const call: CallContext = {
+            ...readContext(ctx.signal, 30),
+            maxBytes: 4096,
+            truncated: false,
+            stdin: envFile(env),
+          };
+
+          try {
+            await native.run(call, () =>
+              native.machines.exec(token.id, { command: WRITE_ENV_FILE, encoding: "buffer" }),
+            );
+          } catch {
+            // Fall through: an unconfirmed exit is reported below.
+          }
+
+          if (call.confirmedExit !== 0)
+            return ctx.unknown(
+              "boxd machine exists but its sandbox env was not written; destroy it and create again",
+              partial(token, ctx),
+            );
+        }
+
+        token.stage = "ready";
 
         await checkpointCreate(token, ctx, partial);
 
@@ -1392,6 +1426,7 @@ export function createBoxdAdapter(
           exec: { commands: ["argv", "shell"], maxOutputBytes: MAX_BYTES },
           fileWrite: { overwrite: true, noClobber: true },
           lifetime: { minSeconds: 1, maxSeconds: Number.MAX_SAFE_INTEGER },
+          createEnv: true,
         },
         create: {
           recovery: { version: 1, token: CreateToken },
@@ -1409,6 +1444,7 @@ export function createBoxdAdapter(
                   : "Set region in the boxd adapter setup to create machines outside the home region",
               );
             checkLabels(input.labels);
+            checkEnv(input.env);
             await mountCheck(input, ctx);
 
             return input;
@@ -1420,6 +1456,7 @@ export function createBoxdAdapter(
                 mounts: input.mounts ?? [],
                 lifetimeSeconds: input.lifetimeSeconds,
                 labels: checkLabels(input.labels),
+                env: input.env,
               },
               requirePolicy(input.networkPolicy),
               ctx,
@@ -1585,10 +1622,12 @@ export function createBoxdAdapter(
             try {
               const result = await native.run(call, () =>
                 native.machines.exec(input.sandbox.id, {
-                  command:
+                  command: withSandboxEnv(
                     input.command.kind === "argv"
                       ? input.command.argv
                       : ["/bin/sh", "-c", input.command.script],
+                    input.env,
+                  ),
                   cwd: input.cwd,
                   env: input.env,
                   encoding: "buffer",

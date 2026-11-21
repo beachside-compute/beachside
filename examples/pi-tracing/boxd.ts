@@ -123,7 +123,9 @@ async function exec(
   );
 
   if (result.exitCode !== 0 || result.truncated) {
-    throw new Error(`Boxd ${stage} failed (exit ${result.exitCode}).`);
+    const reason = result.stderrText({ full: true }).trim().split("\n").at(-1)?.slice(0, 300);
+
+    throw new Error(`Boxd ${stage} failed (exit ${result.exitCode}).${reason ? ` ${reason}` : ""}`);
   }
 }
 
@@ -141,6 +143,36 @@ export function openTraceContext() {
   };
 }
 
+/** The OTLP endpoint the sandbox exports to, named by the variable that set it when it is unusable. */
+export function otlpEndpoint(env: Record<string, string | undefined> = process.env) {
+  const name = env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT?.trim()
+    ? "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"
+    : "OTEL_EXPORTER_OTLP_ENDPOINT";
+
+  const value = env[name]?.trim();
+
+  if (!value) throw new Error(`Set ${name} before starting the Boxd example.`);
+
+  const endpoint = URL.parse(value);
+
+  if (!endpoint || endpoint.protocol !== "https:" || endpoint.username || endpoint.password) {
+    throw new Error(
+      `Set ${name} to an HTTPS URL reachable from the Boxd sandbox, such as https://otlp.example.com.`,
+    );
+  }
+
+  if (
+    name === "OTEL_EXPORTER_OTLP_ENDPOINT" &&
+    endpoint.pathname.replace(/\/+$/, "").endsWith("/v1/traces")
+  ) {
+    throw new Error(
+      "OTEL_EXPORTER_OTLP_ENDPOINT is a base URL; the exporter adds /v1/traces. Drop the path, or set OTEL_EXPORTER_OTLP_TRACES_ENDPOINT instead.",
+    );
+  }
+
+  return endpoint;
+}
+
 async function main() {
   const apiKey = required("BOXD_API_KEY");
   const org = required("BOXD_ORG");
@@ -150,13 +182,7 @@ async function main() {
   const gateway = selectedGateway(process.argv) ?? "kilo";
   const config = gatewayConfig(gateway, process.env);
 
-  const endpoint = new URL(
-    process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT || required("OTEL_EXPORTER_OTLP_ENDPOINT"),
-  );
-
-  if (endpoint.protocol !== "https:" || endpoint.username || endpoint.password) {
-    throw new Error("Set an HTTPS OTLP endpoint reachable from the Boxd sandbox.");
-  }
+  const endpoint = otlpEndpoint();
 
   const runId = randomUUID();
   const closeContext = openTraceContext();
@@ -165,6 +191,7 @@ async function main() {
   const run = telemetry.start("sandbox.run", ROOT_CONTEXT);
   const parent = trace.setSpan(ROOT_CONTEXT, run);
   let failed = true;
+  let exportError: unknown;
   let sandboxId: string | undefined;
   const interrupt = new AbortController();
   const stop = () => interrupt.abort();
@@ -250,6 +277,8 @@ async function main() {
 
     try {
       await telemetry.shutdown();
+    } catch (error) {
+      exportError = error;
     } finally {
       closeContext();
       process.off("SIGINT", stop);
@@ -258,7 +287,14 @@ async function main() {
         `Run ${runId}, trace ${run.spanContext().traceId}${sandboxId ? `, sandbox ${sandboxId}` : ""}`,
       );
     }
+
+    // When the run itself failed, report the export failure too instead of letting it hide that error.
+    if (exportError && failed) {
+      console.error(exportError instanceof Error ? exportError.message : "OTLP export failed.");
+    }
   }
+
+  if (exportError) throw exportError;
 
   console.log('Parent verified answer.txt contains exactly "4\\n". Boxd sandbox destroyed.');
 }

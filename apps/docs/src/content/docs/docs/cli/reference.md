@@ -271,7 +271,7 @@ beachside exec web --cwd /work --env CI=1 -- npm test
 Run a shell script in a sandbox; exits with its exit code.
 
 ```sh
-beachside sh <sandbox> '<script>' | beachside sh <sandbox> -- '<script>'
+beachside sh <sandbox> '<script>' | beachside sh <sandbox> -- '<script>' | beachside sh <sandbox> - < script.sh
 ```
 
 | Flag                   | Description                                                                     |
@@ -292,6 +292,7 @@ Examples:
 ```sh
 beachside sh web 'cd /work && make test'
 beachside sh web -- '-n is fine here'
+beachside sh web - < setup.sh
 ```
 
 ## run

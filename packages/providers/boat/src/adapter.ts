@@ -145,6 +145,48 @@ function sandboxSize(sandbox: NativeSandbox): Fact<SandboxResources> {
 
 const Credentials = z.strictObject({ apiKey: z.string().min(1) });
 
+/** Names Boat reserves for itself; a create that sets one is rejected with `invalid_env`. */
+const RESERVED_ENV = new Set([
+  "ASCII_TOKEN",
+  "ASCII_API_URL",
+  "AGENT_ID",
+  "PRODUCT_MODE",
+  "ENVIRONMENT_ID",
+  "BOAT_ID",
+  "SERVICE_PREVIEW_TOKEN",
+  "BOAT_CLI_TOKEN",
+]);
+
+/**
+ * Per-sandbox env Boat accepts: names of `[A-Za-z_][A-Za-z0-9_]{0,127}`, none reserved, at most 100
+ * variables and 64 KB in all. Checked before any create; messages name the variable, never its value.
+ */
+function checkCreateEnv(env: Record<string, string> | undefined) {
+  if (!env) return;
+
+  const entries = Object.entries(env);
+
+  if (entries.length > 100)
+    throw new AdapterError("INVALID_ARGUMENT", "Boat sandboxes hold at most 100 env variables");
+
+  let total = 0;
+
+  for (const [name, value] of entries) {
+    if (!/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(name))
+      throw new AdapterError(
+        "INVALID_ARGUMENT",
+        "Boat env names are letters, digits and _, up to 128, not starting with a digit",
+      );
+
+    if (RESERVED_ENV.has(name))
+      throw new AdapterError("INVALID_ARGUMENT", `Boat reserves the env variable ${name}`);
+    total += new TextEncoder().encode(name + value).byteLength;
+  }
+
+  if (total > 64 * 1024)
+    throw new AdapterError("INVALID_ARGUMENT", "Boat sandbox env is over 64 KB in all");
+}
+
 const Id = z
   .string()
   .min(1)
@@ -531,7 +573,7 @@ export function createBoatAdapter(options: BoatAdapterOptions = {}) {
 
       /** Create from the stock machine or a name, or restore a snapshot; then wait for readiness. */
       const launch = async (
-        source: { image: string } | { snapshot: string },
+        source: { image: string; env?: Record<string, string> } | { snapshot: string },
         ctx: AttemptContext<z.infer<typeof CreateToken>>,
         lifetimeSeconds = config.lifecycle.lifetimeSeconds,
       ) => {
@@ -546,6 +588,9 @@ export function createBoatAdapter(options: BoatAdapterOptions = {}) {
             request.type = machine;
 
             if (source.image !== BASE_IMAGE) request.from = source.image;
+
+            // Boat gives per-sandbox env to every exec and shell, over the environment's variables.
+            if (source.env && Object.keys(source.env).length) request.env = source.env;
           } else request.from = source.snapshot;
 
           // Without a configured environment, withhold every account secret.
@@ -871,6 +916,7 @@ export function createBoatAdapter(options: BoatAdapterOptions = {}) {
           exec: { commands: ["argv", "shell"], maxOutputBytes: MAX_OUTPUT_BYTES },
           fileWrite: { overwrite: true, noClobber: false },
           lifetime: { minSeconds: 60, maxSeconds: MAX_TTL_SECONDS },
+          createEnv: true,
         },
         create: {
           recovery: { version: 1, token: CreateToken },
@@ -903,12 +949,13 @@ export function createBoatAdapter(options: BoatAdapterOptions = {}) {
                 "UNSUPPORTED",
                 "Boat has no region selection, labels, volume mounts or snapshot requirements",
               );
+            checkCreateEnv(input.env);
 
             return input;
           },
           submit: (input, ctx) =>
             launch(
-              { image: input.image.value },
+              { image: input.image.value, env: input.env },
               ctx,
               input.lifetimeSeconds ?? config.lifecycle.lifetimeSeconds,
             ),
@@ -1493,7 +1540,8 @@ export function createBoatAdapter(options: BoatAdapterOptions = {}) {
         },
         snapshotRestore: {
           recovery: { version: 1, token: CreateToken },
-          // Boat has no create-time env or labels; the archive timer applies as on create.
+          // A restore keeps the env of the snapshot's source sandbox; Boat has no labels. The archive
+          // timer applies as on create.
           options: { lifetime: { minSeconds: 60, maxSeconds: MAX_TTL_SECONDS } },
           async prepare(input, ctx) {
             if (input.request.resources || input.request.mounts?.length)
