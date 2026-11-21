@@ -121,14 +121,14 @@ The stable metric set:
 
 | Metric | Instrument | Meaning |
 | --- | --- | --- |
-| `beachside.operation.duration` | Histogram, `s` | Public-call duration; its count by `beachside.call.outcome` is the completed-call count |
+| `beachside.operation.duration` | Histogram, `s` | Duration of every public call that has a public span; its count by `beachside.call.outcome` is the completed-call count |
 | `beachside.phase.duration` | Histogram, `s` | Phase duration (`prepare`, `submit`, `wait`, `observe`) |
 | `beachside.operation.active` | UpDownCounter, `{call}` | Local in-flight public calls |
-| `beachside.file.bytes` | Counter, `By` | Bytes moved by file reads and writes, including streams |
+| `beachside.file.bytes` | Counter, `By` | Bytes read (including chunks a failed or abandoned stream already delivered) and bytes the provider confirmed writing; a failed write records none |
 
-Metrics are recorded directly from measured operations rather than derived from sampled spans. A per-process count is not a global fleet gauge; terminal observations are not a count of uniquely completed provider mutations. Histograms use explicit second boundaries from 5 ms to 10 minutes.
+Metrics are recorded directly from measured operations rather than derived from sampled spans. Public spans cover sandbox lifecycle (create, suspend, resume, renew, snapshot, fork, destroy, get), files, exec, images, snapshots, volumes and operation observe/wait/continue/recover; convenience paths such as a large `readFile` that falls back to streaming record one call, not two. Each instrument is recorded independently, and the in-flight counter is decremented only after a successful increment, so a faulty application meter cannot skew it or fail the call. A per-process count is not a global fleet gauge; terminal observations are not a count of uniquely completed provider mutations. Histograms use explicit second boundaries from 5 ms to 10 minutes.
 
-Dimensions are the finite `beachside.operation.name`, `beachside.operation.type`, `beachside.mode`, `beachside.phase`, `beachside.call.outcome` and allowlisted `beachside.error.code`, plus a bounded provider label. First-party adapter names (`packages/sdk/src/provider-labels.ts`) are reported as-is; every other name maps to `custom`. A test fails when a package under `packages/providers` declares a name missing from that list, so new first-party adapters cannot silently report `custom`. Operation/resource/tenant IDs, file paths, raw URLs, commands, exception text and arbitrary provider errors never become metric labels.
+Dimensions are the finite `beachside.operation.name`, `beachside.operation.type`, `beachside.mode`, `beachside.phase`, `beachside.call.outcome` and allowlisted `beachside.error.code` (`INTERNAL` for non-SDK errors), plus a bounded provider label. The label is the adapter's declared name, not proof of provenance: first-party adapter names (`packages/sdk/src/provider-labels.ts`) are reported as-is; every other name maps to `custom`. A test fails when a package under `packages/providers` declares a name missing from that list, so new first-party adapters cannot silently report `custom`. Operation/resource/tenant IDs, file paths, raw URLs, commands, exception text and arbitrary provider errors never become metric labels.
 
 Structured diagnostic events should reuse the same sanitized schema and carry trace/span IDs when available. Decide the logger/OTel-log bridge and bounded delivery behavior in that later slice; do not introduce a mandatory logger, console noise, or a second vendor export pipeline in the tracing release. Telemetry is best effort and is never the authoritative operation journal or a billing ledger.
 

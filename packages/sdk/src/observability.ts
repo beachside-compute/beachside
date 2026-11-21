@@ -63,7 +63,7 @@ function instrumentsFor(provider: MeterProvider): Instruments {
     }),
     phase: meter.createHistogram("beachside.phase.duration", {
       unit: "s",
-      description: "Duration of Beachside call phases such as prepare, submit and wait.",
+      description: "Duration of Beachside call phases: prepare, submit, wait and observe.",
       advice,
     }),
     active: meter.createUpDownCounter("beachside.operation.active", {
@@ -264,6 +264,9 @@ const operationKinds = new Set([
   "file_remove",
   "image_build",
   "image_delete",
+  "sandbox_suspend",
+  "sandbox_resume",
+  "sandbox_renew",
   "snapshot_capture",
   "snapshot_restore",
   "sandbox_fork",
@@ -290,30 +293,42 @@ function identityKind(value: unknown): string | undefined {
   });
 }
 
+const callTypes = {
+  "beachside.sandbox.create": "create",
+  "beachside.sandbox.submit_create": "create",
+  "beachside.sandbox.check_create": "create",
+  "beachside.exec": "exec",
+  "beachside.exec.submit": "exec",
+  "beachside.image.build": "image_build",
+  "beachside.image.submit_build": "image_build",
+  "beachside.image.delete": "image_delete",
+  "beachside.image.submit_delete": "image_delete",
+  "beachside.file.write": "file_write",
+  "beachside.file.mkdir": "file_mkdir",
+  "beachside.file.remove": "file_remove",
+  "beachside.sandbox.destroy": "destroy",
+  "beachside.sandbox.suspend": "sandbox_suspend",
+  "beachside.sandbox.submit_suspend": "sandbox_suspend",
+  "beachside.sandbox.resume": "sandbox_resume",
+  "beachside.sandbox.submit_resume": "sandbox_resume",
+  "beachside.sandbox.renew": "sandbox_renew",
+  "beachside.sandbox.submit_renew": "sandbox_renew",
+  "beachside.sandbox.snapshot": "snapshot_capture",
+  "beachside.sandbox.submit_snapshot": "snapshot_capture",
+  "beachside.sandbox.fork": "sandbox_fork",
+  "beachside.sandbox.submit_fork": "sandbox_fork",
+  "beachside.snapshot.restore": "snapshot_restore",
+  "beachside.snapshot.submit_restore": "snapshot_restore",
+  "beachside.snapshot.delete": "snapshot_delete",
+  "beachside.snapshot.submit_delete": "snapshot_delete",
+  "beachside.volume.create": "volume_create",
+  "beachside.volume.submit_create": "volume_create",
+  "beachside.volume.delete": "volume_delete",
+  "beachside.volume.submit_delete": "volume_delete",
+} as const satisfies Record<string, string>;
+
 function callType(name: string): string | undefined {
-  if (
-    [
-      "beachside.sandbox.create",
-      "beachside.sandbox.submit_create",
-      "beachside.sandbox.check_create",
-    ].includes(name)
-  )
-    return "create";
-
-  if (["beachside.exec", "beachside.exec.submit"].includes(name)) return "exec";
-
-  if (["beachside.image.build", "beachside.image.submit_build"].includes(name))
-    return "image_build";
-
-  if (name === "beachside.file.write") return "file_write";
-
-  if (name === "beachside.file.mkdir") return "file_mkdir";
-
-  if (name === "beachside.file.remove") return "file_remove";
-
-  if (name === "beachside.sandbox.destroy") return "destroy";
-
-  return undefined;
+  return Object.entries(callTypes).find(([call]) => call === name)?.[1];
 }
 
 interface CallState {
@@ -485,7 +500,15 @@ export class Telemetry {
 
     if (options.phase) metricAttributes["beachside.phase"] = name.slice("beachside.".length);
 
-    if (meters && !options.phase) attempt(() => meters.active.add(1, metricAttributes));
+    // Decrement only what was counted, so a faulty meter cannot skew the in-flight gauge.
+    const counted =
+      meters && !options.phase
+        ? (attempt(() => {
+            meters.active.add(1, metricAttributes);
+
+            return true;
+          }) ?? false)
+        : false;
 
     const span = !this.enabled
       ? undefined
@@ -534,30 +557,34 @@ export class Telemetry {
 
     const classify = (error: unknown) => {
       if (options.bytes instanceof Function) noteBytes(undefined);
-      errorCode = diagnosticContext(error).errorCode;
+      // Non-Beachside errors (adapter bugs, raw throws) keep a bounded code too.
+      errorCode = diagnosticContext(error).errorCode ?? "INTERNAL";
       outcome = options.signal?.aborted || errorCode === "WAIT_ABORTED" ? "cancelled" : "error";
     };
 
     // Metrics come from the measured call, never from spans, so sampling cannot change them.
     const finish = () => {
       if (!meters) return;
-      attempt(() => {
-        const seconds = (performance.now() - started) / 1000;
-        const attrs: Attributes = { ...metricAttributes, "beachside.call.outcome": outcome };
+      const seconds = (performance.now() - started) / 1000;
+      const attrs: Attributes = { ...metricAttributes, "beachside.call.outcome": outcome };
 
-        if (errorCode) attrs["beachside.error.code"] = errorCode;
+      if (errorCode) attrs["beachside.error.code"] = errorCode;
 
-        if (options.phase) {
-          meters.phase.record(seconds, attrs);
+      // Each instrument is isolated: one throwing recorder cannot skip the others.
+      if (options.phase) {
+        attempt(() => meters.phase.record(seconds, attrs));
 
-          return;
-        }
+        return;
+      }
 
-        meters.duration.record(seconds, attrs);
-        meters.active.add(-1, metricAttributes);
+      attempt(() => meters.duration.record(seconds, attrs));
 
-        if (fileBytes !== undefined) meters.bytes.add(fileBytes, metricAttributes);
-      });
+      if (counted) attempt(() => meters.active.add(-1, metricAttributes));
+
+      if (fileBytes !== undefined) {
+        const bytes = fileBytes;
+        attempt(() => meters.bytes.add(bytes, metricAttributes));
+      }
     };
 
     if (!span) {

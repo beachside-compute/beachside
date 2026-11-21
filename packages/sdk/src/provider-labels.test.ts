@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
@@ -34,7 +35,9 @@ async function declaredNames(dir: string): Promise<string[]> {
 
 test("every first-party provider package has a telemetry label, and no label is stale", async () => {
   const dirs = (await readdir(providersDir, { withFileTypes: true }))
-    .filter((entry) => entry.isDirectory())
+    .filter(
+      (entry) => entry.isDirectory() && existsSync(join(providersDir, entry.name, "src/index.ts")),
+    )
     .map((entry) => entry.name);
 
   const declared = new Set<string>();

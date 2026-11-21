@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { metrics, type Meter, type MeterProvider as ApiMeterProvider } from "@opentelemetry/api";
 import {
   AggregationTemporality,
   MeterProvider,
@@ -11,6 +12,7 @@ import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
 import { AdapterError, defineAdapter } from "@beachside/adapter";
 import { z } from "zod";
 import { Beachside, Image, OutcomeUnknownError } from "./index";
+import { Telemetry } from "./observability";
 import { fixtureAdapter } from "../../sdk-qualification/observability/adapter";
 
 class TestReader extends MetricReader {
@@ -122,48 +124,193 @@ test("failed calls carry the bounded error code and metrics can be off while tra
     .catch((e) => e);
 
   expect(error).toBeInstanceOf(OutcomeUnknownError);
+  const reference = error.reference;
+
+  const observed = await client.operations.observe({
+    scope: client.scope,
+    kind: "create",
+    operationId: reference.operationId,
+    submissionId: reference.submissionId,
+    token: reference.token,
+    tokenVersion: reference.tokenVersion,
+  });
+
+  expect(observed.kind).toBe("pending");
   await client.close();
 
-  const create = (await collect(reader))
+  const found = await collect(reader);
+
+  const create = found
     .get("beachside.operation.duration")!
     .points.find((p) => p.attributes["beachside.operation.name"] === "beachside.sandbox.create")!;
 
   expect(create.attributes["beachside.call.outcome"]).toBe("error");
   expect(create.attributes["beachside.error.code"]).toBe("OUTCOME_UNKNOWN");
-  await meterProvider.shutdown();
 
+  const phases = found
+    .get("beachside.phase.duration")!
+    .points.map((p) => p.attributes["beachside.phase"]);
+
+  expect(phases).toContain("observe");
+  await meterProvider.shutdown();
+});
+
+test("errors outside the SDK vocabulary still carry the bounded INTERNAL code", async () => {
+  const { reader, meterProvider } = meters();
+  const telemetry = new Telemetry({ tracing: false, metrics: { meterProvider } }, "direct", "boxd");
+
+  await expect(
+    telemetry.run("beachside.exec", async () => {
+      throw new Error("CANARY raw adapter failure");
+    }),
+  ).rejects.toThrow();
+
+  const point = (await collect(reader)).get("beachside.operation.duration")!.points[0]!;
+
+  expect(point.attributes).toMatchObject({
+    "beachside.provider": "boxd",
+    "beachside.call.outcome": "error",
+    "beachside.error.code": "INTERNAL",
+  });
+  await meterProvider.shutdown();
+});
+
+test("metrics: false suppresses a registered global provider while tracing stays on", async () => {
   const exporter = new InMemorySpanExporter();
 
   const tracerProvider = new NodeTracerProvider({
     spanProcessors: [new SimpleSpanProcessor(exporter)],
   });
 
-  const off = meters();
+  const global = meters();
+  metrics.setGlobalMeterProvider(global.meterProvider);
 
-  const traced = await Beachside.connect({
+  try {
+    const traced = await Beachside.connect({
+      ...fixtureAdapter(),
+      config: {},
+      credentials: {},
+      tracing: { tracerProvider },
+      metrics: false,
+    });
+
+    await traced.sandboxes.create({ environment: Image.prepared("CANARY_IMAGE") });
+    await traced.close();
+
+    const spans = exporter.getFinishedSpans();
+    expect(spans.some((s) => s.name === "beachside.sandbox.create")).toBe(true);
+    expect(spans.find((s) => s.name === "beachside.prepare")?.attributes["beachside.phase"]).toBe(
+      "prepare",
+    );
+    expect((await global.reader.collect()).resourceMetrics.scopeMetrics).toHaveLength(0);
+  } finally {
+    metrics.disable();
+    await tracerProvider.shutdown();
+    await global.meterProvider.shutdown();
+  }
+});
+
+test("omitted metrics use a global provider registered after connect", async () => {
+  const client = await Beachside.connect({
     ...fixtureAdapter(),
     config: {},
     credentials: {},
-    tracing: { tracerProvider },
-    metrics: false,
+    tracing: false,
   });
 
-  await traced.sandboxes.create({ environment: Image.prepared("CANARY_IMAGE") });
-  await traced.close();
+  const global = meters();
+  metrics.setGlobalMeterProvider(global.meterProvider);
 
-  const spans = exporter.getFinishedSpans();
-  expect(spans.some((s) => s.name === "beachside.sandbox.create")).toBe(true);
-  expect(spans.find((s) => s.name === "beachside.prepare")?.attributes["beachside.phase"]).toBe(
-    "prepare",
-  );
-  expect((await off.reader.collect()).resourceMetrics.scopeMetrics).toHaveLength(0);
-  await tracerProvider.shutdown();
-  await off.meterProvider.shutdown();
+  try {
+    await client.sandboxes.create({ environment: Image.prepared("CANARY_IMAGE") });
+    await client.close();
+
+    const names = (await collect(global.reader))
+      .get("beachside.operation.duration")!
+      .points.map((p) => p.attributes["beachside.operation.name"]);
+
+    expect(names).toContain("beachside.sandbox.create");
+  } finally {
+    metrics.disable();
+    await global.meterProvider.shutdown();
+  }
 });
 
-function streamAdapter(failAfter?: number) {
+test("concurrent calls are counted in flight and settle back to zero", async () => {
+  const { reader, meterProvider } = meters();
+  let release!: () => void;
+  const delay = new Promise<void>((resolve) => (release = resolve));
+  const fixture = fixtureAdapter({ delay });
+
+  const client = await Beachside.connect({
+    ...fixture,
+    config: {},
+    credentials: {},
+    tracing: false,
+    metrics: { meterProvider },
+  });
+
+  const creates = [1, 2].map(() =>
+    client.sandboxes.create({ environment: Image.prepared("CANARY_IMAGE") }),
+  );
+
+  while (fixture.counts.create < 2) await Bun.sleep(1);
+
+  const active = async () =>
+    (await collect(reader))
+      .get("beachside.operation.active")!
+      .points.find((p) => p.attributes["beachside.operation.name"] === "beachside.sandbox.create")
+      ?.value;
+
+  expect(await active()).toBe(2);
+  release();
+  await Promise.all(creates);
+  expect(await active()).toBe(0);
+  await client.close();
+  await meterProvider.shutdown();
+});
+
+test("a throwing meter cannot fail calls or leave the in-flight gauge raised", async () => {
+  const { reader, meterProvider } = meters();
+
+  // A provider whose histograms throw on record while its counters still work.
+  const broken: ApiMeterProvider = {
+    getMeter(name, version, options): Meter {
+      const meter = meterProvider.getMeter(name, version, options);
+
+      return Object.assign(Object.create(meter), {
+        createHistogram: () => ({
+          record() {
+            throw new Error("broken histogram");
+          },
+        }),
+        createUpDownCounter: meter.createUpDownCounter.bind(meter),
+        createCounter: meter.createCounter.bind(meter),
+      });
+    },
+  };
+
+  const client = await Beachside.connect({
+    ...fixtureAdapter(),
+    config: {},
+    credentials: {},
+    tracing: false,
+    metrics: { meterProvider: broken },
+  });
+
+  const box = await client.sandboxes.create({ environment: Image.prepared("CANARY_IMAGE") });
+  await box.writeTextFile("/CANARY_FILE", "CANARY_TEXT");
+  await client.close();
+
+  const found = await collect(reader);
+  expect(found.get("beachside.operation.active")!.points.every((p) => p.value === 0)).toBe(true);
+  expect(found.get("beachside.file.bytes")!.points[0]!.value).toBe(11);
+  await meterProvider.shutdown();
+});
+
+function streamAdapter(options: { name?: string; failAfter?: number; failWrite?: boolean } = {}) {
   return defineAdapter({
-    name: "streams",
+    name: options.name ?? "streams",
     config: z.object({}),
     credentials: z.object({}),
     async connect() {
@@ -173,14 +320,21 @@ function streamAdapter(failAfter?: number) {
         create: async () => ({ id: "one", state: "running" as const }),
         destroy: async () => ({ computeStopped: true, retainedResources: [] }),
         files: {
-          maxBytes: 1024,
+          maxBytes: 16,
+          // Larger than maxBytes, so a buffered readFile falls back to the stream.
+          read: async () => new Uint8Array(30),
+          write: async (input: { bytes: Uint8Array }) => {
+            if (options.failWrite) throw new AdapterError("UNAVAILABLE", "write lost");
+
+            return { bytesWritten: input.bytes.length };
+          },
           readStream: async () => {
             let sent = 0;
 
             return new ReadableStream<Uint8Array>(
               {
                 pull(controller) {
-                  if (sent === failAfter)
+                  if (sent === options.failAfter)
                     controller.error(new AdapterError("UNAVAILABLE", "stream lost"));
                   else if (sent === 3) controller.close();
                   else {
@@ -197,6 +351,8 @@ function streamAdapter(failAfter?: number) {
 
             for await (const chunk of bytes) count += chunk.length;
 
+            if (options.failWrite) throw new AdapterError("UNAVAILABLE", "write lost");
+
             return { bytesWritten: count };
           },
         },
@@ -205,49 +361,104 @@ function streamAdapter(failAfter?: number) {
   });
 }
 
-async function streamBytes(failAfter?: number) {
+async function fileMetrics(
+  options: Parameters<typeof streamAdapter>[0],
+  work: (box: Awaited<ReturnType<typeof boxFor>>) => Promise<void>,
+) {
   const { reader, meterProvider } = meters();
+  const { client, box } = await boxFor(options, meterProvider);
 
+  try {
+    await work(box);
+  } finally {
+    await client.close();
+  }
+
+  const found = await collect(reader);
+  await meterProvider.shutdown();
+
+  const bytes = Object.fromEntries(
+    (found.get("beachside.file.bytes")?.points ?? []).map((p) => [
+      `${p.attributes["beachside.operation.name"]}`,
+      p.value,
+    ]),
+  );
+
+  const calls = found
+    .get("beachside.operation.duration")!
+    .points.map((p) => `${p.attributes["beachside.operation.name"]}`)
+    .filter((name) => name.startsWith("beachside.file."));
+
+  return { bytes, calls, found };
+}
+
+async function boxFor(options: Parameters<typeof streamAdapter>[0], meterProvider: MeterProvider) {
   const client = await Beachside.connect({
-    adapter: streamAdapter(failAfter),
+    adapter: streamAdapter(options),
     config: {},
     credentials: {},
     tracing: false,
     metrics: { meterProvider },
   });
 
-  try {
-    const box = await client.sandboxes.create({ environment: Image.prepared("base") });
-
-    async function* input() {
-      yield new Uint8Array(7);
-      yield new Uint8Array(5);
-    }
-
-    await box.writeFileStream("/out", input());
-
-    try {
-      for await (const _chunk of box.readFileStream("/in"));
-    } catch {
-      // A failed stream still records the bytes it delivered.
-    }
-  } finally {
-    await client.close();
-  }
-
-  const points = (await collect(reader)).get("beachside.file.bytes")!.points;
-  await meterProvider.shutdown();
-
-  return Object.fromEntries(
-    points.map((p) => [`${p.attributes["beachside.operation.name"]}`, p.value]),
-  );
+  return { client, box: await client.sandboxes.create({ environment: Image.prepared("base") }) };
 }
 
-test("stream reads and writes record bytes, including chunks delivered before a failure", async () => {
-  expect(await streamBytes()).toEqual({
+async function* input() {
+  yield new Uint8Array(7);
+  yield new Uint8Array(5);
+}
+
+test("stream reads and writes record bytes; failed and abandoned reads keep delivered chunks", async () => {
+  const full = await fileMetrics({}, async (box) => {
+    await box.writeFileStream("/out", input());
+
+    for await (const _chunk of box.readFileStream("/in"));
+  });
+
+  expect(full.bytes).toEqual({
     "beachside.file.write_stream": 12,
     "beachside.file.read_stream": 30,
   });
 
-  expect((await streamBytes(2))["beachside.file.read_stream"]).toBe(20);
+  const failed = await fileMetrics({ failAfter: 2 }, async (box) => {
+    await expect(
+      (async () => {
+        for await (const _chunk of box.readFileStream("/in"));
+      })(),
+    ).rejects.toThrow();
+  });
+
+  expect(failed.bytes).toEqual({ "beachside.file.read_stream": 20 });
+
+  const abandoned = await fileMetrics({}, async (box) => {
+    for await (const _chunk of box.readFileStream("/in")) break;
+  });
+
+  expect(abandoned.bytes).toEqual({ "beachside.file.read_stream": 10 });
+});
+
+test("failed writes record no bytes, since the provider never confirmed them", async () => {
+  const failed = await fileMetrics({ failWrite: true }, async (box) => {
+    await expect(box.writeFile("/out", new Uint8Array(4))).rejects.toThrow();
+    await expect(box.writeFileStream("/out", input())).rejects.toThrow();
+  });
+
+  expect(failed.bytes).toEqual({});
+  expect(failed.calls.toSorted()).toEqual(["beachside.file.write", "beachside.file.write_stream"]);
+});
+
+test("a large readFile is one call with one byte count, and first-party labels reach metrics", async () => {
+  const large = await fileMetrics({ name: "boxd" }, async (box) => {
+    expect((await box.readFile("/big")).byteLength).toBe(30);
+  });
+
+  expect(large.calls).toEqual(["beachside.file.read"]);
+  expect(large.bytes).toEqual({ "beachside.file.read": 30 });
+
+  const providers = large.found
+    .get("beachside.operation.duration")!
+    .points.map((p) => p.attributes["beachside.provider"]);
+
+  expect(new Set(providers)).toEqual(new Set(["boxd"]));
 });
