@@ -1,0 +1,36 @@
+{
+  "$schema": "https://beachside.run/schema/beachside.json",
+  "adapters": { "searchProject": true },
+  "profiles": {
+    "boxd": {
+      "provider": "boxd",
+      "credentials": { "apiKey": "env:BOXD_API_KEY" },
+      "config": { "org": "env:BOXD_ORG", "network": "internet" }
+    },
+    "freestyle": {
+      "provider": "freestyle",
+      "credentials": { "apiKey": "env:FREESTYLE_API_KEY" },
+      "config": { "network": "internet" }
+    },
+    "daytona": {
+      "provider": "daytona",
+      "credentials": { "apiKey": "env:DAYTONA_API_KEY" },
+      "config": { "network": "daytona-default" }
+    },
+    "e2b": {
+      "provider": "e2b",
+      "credentials": { "apiKey": "env:E2B_API_KEY" },
+      "config": { "network": "internet" }
+    },
+    "archil": {
+      "provider": "archil",
+      "credentials": { "apiKey": "env:ARCHIL_API_KEY" },
+      "config": { "network": "internet" }
+    },
+    "upstash-box": {
+      "provider": "upstash-box",
+      "credentials": { "apiKey": "env:UPSTASH_BOX_API_KEY" },
+      "config": { "image": "node", "network": "internet" }
+    }
+  }
+}

@@ -174,6 +174,33 @@ export function commandExitCode(): 125 {
   return 125;
 }
 
+/** Credential values this invocation resolved; the CLI's own messages never print them. */
+const secretValues = new Set<string>();
+
+/** Shorter values (a region, a flag) are too likely to match ordinary words to redact safely. */
+const MIN_SECRET_LENGTH = 8;
+
+/**
+ * Remember a resolved credential so `redact` removes it, and the encodings an error message
+ * may carry it in (base64, URL-encoded), from everything the CLI itself prints.
+ */
+export function registerSecret(value: string): void {
+  if (value.length < MIN_SECRET_LENGTH) return;
+  secretValues.add(value);
+  secretValues.add(Buffer.from(value).toString("base64").replace(/=+$/, ""));
+  secretValues.add(encodeURIComponent(value));
+}
+
+/** The text with every registered secret replaced by `[redacted]`, longest first. */
+export function redact(text: string): string {
+  let result = text;
+
+  for (const value of [...secretValues].sort((a, b) => b.length - a.length))
+    result = result.split(value).join("[redacted]");
+
+  return result;
+}
+
 export type Streams = {
   stdout: (text: string | Uint8Array) => void;
   /** Resolves once the stream can take more; streaming writers await it so output stays bounded. */
@@ -191,44 +218,51 @@ export class Output {
 
   /** Print the command's single result: a JSON envelope or the human text. */
   success<T>(data: T, human: string): void {
-    if (this.json) this.streams.stdout(`${JSON.stringify({ ok: true, data })}\n`);
-    else if (human) this.streams.stdout(human.endsWith("\n") ? human : `${human}\n`);
+    if (this.json) this.stdout(`${JSON.stringify({ ok: true, data })}\n`);
+    else if (human) this.stdout(human.endsWith("\n") ? human : `${human}\n`);
   }
 
   failure(report: ErrorReport): void {
     if (this.json) {
-      this.streams.stdout(`${JSON.stringify({ ok: false, error: report })}\n`);
+      this.stdout(`${JSON.stringify({ ok: false, error: report })}\n`);
 
       return;
     }
 
-    this.streams.stderr(`beachside: ${report.message}\n`);
+    this.stderr(`beachside: ${report.message}\n`);
 
-    if (report.hint) this.streams.stderr(`hint: ${report.hint}\n`);
+    if (report.hint) this.stderr(`hint: ${report.hint}\n`);
 
     if (report.outcome === "unknown" && report.code !== "INTERNAL")
-      this.streams.stderr(
+      this.stderr(
         "The operation may have taken effect; inspect before retrying (beachside ls, beachside inspect).\n",
       );
 
     if (report.known?.reference)
-      this.streams.stderr(`known sandbox reference: ${JSON.stringify(report.known.reference)}\n`);
+      this.stderr(`known sandbox reference: ${JSON.stringify(report.known.reference)}\n`);
     else if (report.known?.recovery)
-      this.streams.stderr(
-        `operation recovery reference: ${JSON.stringify(report.known.recovery)}\n`,
-      );
+      this.stderr(`operation recovery reference: ${JSON.stringify(report.known.recovery)}\n`);
 
-    for (const item of report.details?.removed ?? []) this.streams.stdout(`${item.name}\n`);
+    for (const item of report.details?.removed ?? []) this.stdout(`${item.name}\n`);
 
     for (const item of report.details?.skipped ?? [])
-      this.streams.stderr(`skipped ${item.name}: ${item.reason ?? item.result}\n`);
+      this.stderr(`skipped ${item.name}: ${item.reason ?? item.result}\n`);
 
     for (const item of report.details?.failed ?? [])
-      this.streams.stderr(`failed ${item.name}: ${item.code} ${item.reason ?? ""}\n`);
+      this.stderr(`failed ${item.name}: ${item.code} ${item.reason ?? ""}\n`);
   }
 
   /** Diagnostics never go to stdout, so stdout stays parseable. */
   note(text: string): void {
-    this.streams.stderr(`${text}\n`);
+    this.stderr(`${text}\n`);
+  }
+
+  // The CLI's own text passes through `redact`; remote command bytes are written untouched.
+  private stdout(text: string): void {
+    this.streams.stdout(redact(text));
+  }
+
+  private stderr(text: string): void {
+    this.streams.stderr(redact(text));
   }
 }

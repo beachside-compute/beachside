@@ -20,7 +20,7 @@ import {
   type LoadedConfig,
   type ProfileConfig,
 } from "./config";
-import { CliError, usage } from "./output";
+import { CliError, registerSecret, usage } from "./output";
 import type { SecretReader } from "./secrets";
 
 /**
@@ -601,6 +601,8 @@ export async function loadAdapter(
   const credentials = z
     .record(z.string(), z.string())
     .parse(await secrets.resolve(profile.credentials, `${where}.credentials`));
+
+  for (const value of Object.values(credentials)) registerSecret(value);
 
   return bindAdapter(exported, config, credentials);
 }

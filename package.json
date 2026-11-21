@@ -30,6 +30,7 @@
     "observability:check": "bun run --cwd packages/sdk-qualification check && bun packages/sdk-qualification/observability/run.mjs",
     "check:built": "bun run --filter '@beachside-internal/*' check && bun run --cwd packages/adapter check && bun run --cwd packages/sdk check && bun run --cwd packages/providers/daytona check && bun run --cwd packages/providers/e2b check && bun run --cwd packages/providers/boxd check && bun run --cwd packages/providers/boat check && bun run --cwd packages/providers/runloop check && bun run --cwd packages/providers/freestyle check && bun run --cwd packages/providers/archil check && bun run --cwd packages/providers/exe-dev check && bun run --cwd packages/providers/upstash-box check && bun run --cwd packages/providers/vercel check && bun run --cwd packages/cli check",
     "test:built": "bun test",
+    "smoke": "bun packages/sdk-qualification/smoke/run.ts",
     "docs:check:built": "bun run --cwd apps/docs check && bun run --cwd apps/docs build && bun run --cwd apps/docs examples:test",
     "package:smoke:built": "bun packages/sdk-qualification/package-smoke.mjs",
     "build:built": "bun run --cwd apps/docs build",
