@@ -161,7 +161,10 @@ export function otlpEndpoint(env: Record<string, string | undefined> = process.e
     );
   }
 
-  if (name === "OTEL_EXPORTER_OTLP_ENDPOINT" && endpoint.pathname.endsWith("/v1/traces")) {
+  if (
+    name === "OTEL_EXPORTER_OTLP_ENDPOINT" &&
+    endpoint.pathname.replace(/\/+$/, "").endsWith("/v1/traces")
+  ) {
     throw new Error(
       "OTEL_EXPORTER_OTLP_ENDPOINT is a base URL; the exporter adds /v1/traces. Drop the path, or set OTEL_EXPORTER_OTLP_TRACES_ENDPOINT instead.",
     );

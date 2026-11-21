@@ -393,6 +393,10 @@ test("the Boxd example names the OTLP variable it cannot use", () => {
     otlpEndpoint({ OTEL_EXPORTER_OTLP_ENDPOINT: "https://otlp.example.com/v1/traces" }),
   ).toThrow("the exporter adds /v1/traces");
 
+  expect(() =>
+    otlpEndpoint({ OTEL_EXPORTER_OTLP_ENDPOINT: "https://otlp.example.com/v1/traces/" }),
+  ).toThrow("the exporter adds /v1/traces");
+
   expect(otlpEndpoint({ OTEL_EXPORTER_OTLP_ENDPOINT: "https://otlp.example.com" }).hostname).toBe(
     "otlp.example.com",
   );
