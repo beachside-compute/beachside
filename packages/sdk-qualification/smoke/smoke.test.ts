@@ -92,6 +92,10 @@ describe.skipIf(!enabled)(`provider smoke: ${provider}`, () => {
       timeoutMs,
     );
 
+  // Sandboxes on providers without labels are found by name instead; gc cannot see them.
+  const labels = () =>
+    entry?.labels ? ["--label", "ci=beachside-smoke", "--label", `run=${runId}`] : [];
+
   const text = (run: CliRun) => new TextDecoder().decode(run.stdout);
 
   const ok = (run: CliRun, what: string) => {
@@ -145,10 +149,7 @@ describe.skipIf(!enabled)(`provider smoke: ${provider}`, () => {
       "create",
       "--name",
       name,
-      "--label",
-      "ci=beachside-smoke",
-      "--label",
-      `run=${runId}`,
+      ...labels(),
       "--ttl",
       "15m",
       ...entry.create,
@@ -508,10 +509,7 @@ describe.skipIf(!enabled)(`provider smoke: ${provider}`, () => {
     async () => {
       const { run, envelope } = await cli.json([
         "run",
-        "--label",
-        "ci=beachside-smoke",
-        "--label",
-        `run=${runId}`,
+        ...labels(),
         "--ttl",
         "10m",
         ...(entry?.create ?? []),

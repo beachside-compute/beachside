@@ -20,7 +20,9 @@
       "secrets": ["DAYTONA_API_KEY"],
       "create": ["--prepared", "daytona-small"],
       "labels": true,
-      "exceptions": {}
+      "exceptions": {
+        "network": "Daytona tier 1 and 2 orgs have restricted egress that a sandbox cannot override; only essential services such as package registries and git hosts are reachable (https://www.daytona.io/docs/en/network-limits/)"
+      }
     },
     "e2b": {
       "env": ["E2B_API_KEY"],
