@@ -71,6 +71,7 @@ const commandNames = [
   "gc",
   "init",
   "broker",
+  "board",
 ] as const;
 
 /** Rebuild every payload from allowed scalar fields; never spread command data into an event. */

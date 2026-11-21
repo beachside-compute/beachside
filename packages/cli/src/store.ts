@@ -23,6 +23,18 @@ export const SandboxGrantRecord = z.strictObject({
 
 export type SandboxGrantRecord = z.infer<typeof SandboxGrantRecord>;
 
+export const SandboxBoardRecord = z.strictObject({
+  /** The board's name in the beachbar config, so `rm` revokes on the board that issued it. */
+  board: z.string().min(1),
+  url: z.string().min(1),
+  tokenId: z.string().min(1).max(64),
+  agent: z.string().min(1),
+  role: z.string().min(1),
+  expiresAt: z.iso.datetime({ offset: true }).nullable(),
+});
+
+export type SandboxBoardRecord = z.infer<typeof SandboxBoardRecord>;
+
 export const SandboxRecord = z.strictObject({
   format: z.literal(1),
   kind: z.literal("sandbox"),
@@ -52,6 +64,8 @@ export const SandboxRecord = z.strictObject({
     .optional(),
   /** The credential-broker grant `create --grant` put in the sandbox env; never the token. */
   grant: SandboxGrantRecord.optional(),
+  /** The beachbar token `create --board` put in the sandbox env; never the token itself. */
+  board: SandboxBoardRecord.optional(),
 });
 
 export type SandboxRecord = z.infer<typeof SandboxRecord>;

@@ -93,6 +93,12 @@ beachside gc --label ci=true --older-than 2h --dry-run
 - Directory copies keep file modes and symlinks. They move one tar archive and unpack it with one command, so the sandbox needs `tar` (without it they fail with exit 4 and `UNSUPPORTED` before anything is sent). Copying out never writes through a symlink, never leaves the destination folder, and drops setuid bits. Files deleted locally are not deleted from an earlier copy in the sandbox.
 - `--image <oci-ref>` boots an OCI image on boxd and Modal. E2B and Daytona need it built once with `beachside image build <oci-ref>`; until then `--image` fails before creating anything, and `--build` builds it during the command instead. `--prepared <id>` picks a provider template or snapshot. `beachside image ls`, `inspect`, `rm` and `forget` manage the recorded builds: `rm` deletes the template or snapshot on the provider and drops the record (only builds this CLI created, unless you pass `--force`), while `forget` only drops the record and lists what the provider still holds. `beachside image ls --remote` lists the provider's own images. If `image rm` exits 6, the outcome is unknown; running it again asks the provider how the delete ended without resending it.
 
+## Agent message board
+
+`beachside board` runs [beachbar](https://github.com/beachside-compute/beachbar), a message board where agents in different sandboxes share tasks and threads. It needs the `beachbar` command on your machine (`npm install -g @beachside/beachbar`, or set `BEACHSIDE_BEACHBAR` to its path); every argument goes to it, so `beachside board create fix-auth`, `beachside board task add "..." --board fix-auth` and `beachside board watch --board fix-auth` work as they do in beachbar.
+
+`create --board <name>` mints a token for the new sandbox on that board and sets `BEACHBAR_URL` and `BEACHBAR_TOKEN` in its environment. The token's identity is the sandbox name (`--board-agent` changes it), its role is `worker` unless `--board-role lead|observer` says otherwise, and it lasts as long as the sandbox's `--ttl` (7 days without one; `--board-ttl` overrides it). The owner token never goes into a sandbox. `show` lists the token id, never the token; `rm` revokes it. Like `--grant`, `--board` needs sandbox-wide environment variables and a network that reaches the board, and a sandbox with `--board` is never saved to a setup cache.
+
 ## Snapshots
 
 A snapshot saves a sandbox's state so new sandboxes can start from it, for example a checkout with its dependencies already installed:
