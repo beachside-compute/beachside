@@ -387,3 +387,36 @@ test("a refused grant names the fix and leaves nothing behind", async () => {
   expect(invalid.code).toBe(2);
   expect(invalid.stderr).toContain("at most 7d");
 });
+
+test("--grant on a provider without sandbox-wide env refuses before asking the broker", async () => {
+  await writeFile(
+    join(dir, "beachside.json"),
+    JSON.stringify({
+      default: "noenv",
+      profiles: { noenv: { module: fixture, export: "withoutCreateEnv" } },
+    }),
+  );
+
+  const env = { BEACHSIDE_BROKER_URL: broker.url.origin, BEACHSIDE_BROKER_ISSUER_KEY: issuerKey };
+  const refused = await cli(["create", "--name", "agent", "--grant", "claude"], env);
+
+  expect(refused.code).not.toBe(0);
+  expect(refused.stderr).toContain("--grant needs sandbox-wide env");
+  expect(calls.filter((call) => call.path === "/v1/grants")).toEqual([]);
+  expect(await sandboxEnv()).toEqual({});
+});
+
+test("broker add creates a --config file that does not exist yet", async () => {
+  const fresh = join(dir, "new", "beachside.json");
+
+  const added = await cli(
+    ["broker", "add", "work", "--url", broker.url.origin, "--issuer-key", "env:K", "--no-check"],
+    { BEACHSIDE_CONFIG: fresh },
+  );
+
+  expect(added.code).toBe(0);
+  expect(JSON.parse(await readFile(fresh, "utf8")).brokers.work).toMatchObject({
+    url: broker.url.origin,
+  });
+  expect((await stat(fresh)).mode & 0o777).toBe(0o600);
+});

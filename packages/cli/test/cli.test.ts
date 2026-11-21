@@ -806,6 +806,24 @@ describe("beachside CLI against the fake provider", () => {
     expect((await cli(["sh", "box", "--", "a", "b"])).code).toBe(125);
   });
 
+  test("sh <sandbox> - reads the script from stdin", async () => {
+    await cli(["create", "--name", "box", "--prepared", "fake-starter"]);
+    await seedExec("echo from stdin\n", 0, "from stdin\n");
+
+    expect(await cli(["sh", "box", "-"], {}, "echo from stdin\n")).toMatchObject({
+      code: 0,
+      stdout: "from stdin\n",
+    });
+
+    const empty = await cli(["sh", "box", "-"], {}, "  \n");
+    expect(empty.code).toBe(125);
+    expect(empty.stderr).toContain("empty script on stdin");
+
+    const both = await cli(["sh", "box", "-", "--stdin"], {}, "echo hi");
+    expect(both.code).toBe(125);
+    expect(both.stderr).toContain("cannot also pass --stdin");
+  });
+
   test("rm recovers a create whose response was lost and destroys the sandbox", async () => {
     await control("/_test/seed", {
       submissionId: "*",
