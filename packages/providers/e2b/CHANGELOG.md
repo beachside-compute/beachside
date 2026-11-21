@@ -1,5 +1,12 @@
 # @beachside/e2b
 
+## 0.21.0
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @beachside/adapter@0.21.0
+
 ## 0.20.0
 
 ### Patch Changes

@@ -1,5 +1,18 @@
 # @beachside/cli
 
+## 0.21.0
+
+### Patch Changes
+
+- [#269](https://github.com/beachside-compute/beachside/pull/269) [`c352207`](https://github.com/beachside-compute/beachside/commit/c352207bb1a5725bdab6a5535a9a9113f0d07084) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - The CLI no longer prints a profile's credentials or a broker key when an adapter, provider or broker quotes them in an error. Resolved credential values, and their base64 and URL-encoded forms, are replaced with `[redacted]` in every message, `--json` envelope, progress status line and crash report the CLI writes. Remote command output is passed through untouched.
+
+  The CLI runs on every Node 20 release again: `beachside broker add --deployment` used `node:util` `parseEnv`, which Node before 20.12 lacks (for example the Node 20.9 in E2B's default template), so the CLI failed to start there. It now reads the file with the same parser as `--env-file`.
+
+- [#266](https://github.com/beachside-compute/beachside/pull/266) [`d53baaf`](https://github.com/beachside-compute/beachside/commit/d53baaf7afa61bbbebd2604ee48d0b49d056891a) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - `create --grant` refuses before asking the broker when the provider has no sandbox-wide env (boxd today), instead of minting a grant and failing with an unrelated env error. `broker add` creates a `--config` / `BEACHSIDE_CONFIG` file that does not exist yet. `sh <sandbox> -` reads the script from stdin.
+- Updated dependencies [[`9fa2cea`](https://github.com/beachside-compute/beachside/commit/9fa2cea1f94d85f4e5b065245343fe4e726e7867)]:
+  - beachside@0.21.0
+  - @beachside/adapter@0.21.0
+
 ## 0.20.0
 
 ### Minor Changes

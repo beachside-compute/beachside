@@ -1,5 +1,13 @@
 # @beachside/daytona
 
+## 0.21.0
+
+### Patch Changes
+
+- [#269](https://github.com/beachside-compute/beachside/pull/269) [`c352207`](https://github.com/beachside-compute/beachside/commit/c352207bb1a5725bdab6a5535a9a9113f0d07084) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Daytona create and delete requests now wait 60 seconds, as the official SDK does, so a slow placement is no longer reported as an unknown outcome that leaves a sandbox behind.
+- Updated dependencies []:
+  - @beachside/adapter@0.21.0
+
 ## 0.20.0
 
 ### Patch Changes
