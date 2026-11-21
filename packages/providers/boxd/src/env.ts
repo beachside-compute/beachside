@@ -3,10 +3,12 @@ import { AdapterError } from "@beachside/adapter";
 /**
  * Sandbox-wide environment. boxd's create-time `env` does not reach exec sessions on a machine
  * booted from an image, and a machine spec cannot name an image, so the adapter writes the
- * variables to this root-only file right after create and every user command sources it first.
- * A fork or snapshot restore copies the file with the disk, so it keeps the env it was made with.
+ * variables to this file, private to the exec user, right after create, and every user command
+ * sources it first. It lives in that user's home: boxd's default image runs exec as the
+ * unprivileged `boxd` user, who cannot write `/etc`. A fork or snapshot restore copies the file
+ * with the disk, so it keeps the env it was made with.
  */
-export const ENV_FILE = "/etc/beachside.env";
+export const ENV_FILE = '"$HOME/.beachside.env"';
 
 /** boxd's own limits for machine env, kept so the file stays within what a machine may hold. */
 const MAX_VARIABLES = 128;
@@ -68,13 +70,13 @@ export function envFile(env: Record<string, string>): Uint8Array {
 export const WRITE_ENV_FILE = [
   "/bin/sh",
   "-c",
-  `umask 077 && cat >"${ENV_FILE}.tmp" && mv -f "${ENV_FILE}.tmp" "${ENV_FILE}"`,
+  'umask 077 && cat >"$HOME/.beachside.env.tmp" && mv -f "$HOME/.beachside.env.tmp" "$HOME/.beachside.env"',
 ];
 
 /**
  * A user command behind a sh prelude that sources the env file. The command's own env still wins:
  * its variables arrive through the native exec env, are saved before the file is sourced and
- * restored after, so their values never appear in the command line.
+ * restored after. The prelude names them but never holds their values.
  */
 export function withSandboxEnv(
   argv: readonly string[],

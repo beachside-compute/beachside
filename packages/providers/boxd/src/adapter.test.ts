@@ -1098,7 +1098,7 @@ test("boxd writes create env to a private file before hand-out and never saves t
     // Not sent as native create env, which exec sessions on an image machine never see.
     expect(JSON.stringify(create?.request)).not.toContain("fixture-env");
     expect(writes[0]?.request).toMatchObject({
-      command: `/bin/sh -c 'umask 077 && cat >"/etc/beachside.env.tmp" && mv -f "/etc/beachside.env.tmp" "/etc/beachside.env"'`,
+      command: `/bin/sh -c 'umask 077 && cat >"$HOME/.beachside.env.tmp" && mv -f "$HOME/.beachside.env.tmp" "$HOME/.beachside.env"'`,
     });
 
     const written = writes
