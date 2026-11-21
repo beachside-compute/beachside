@@ -54,7 +54,6 @@ describe.skipIf(!enabled)(`provider smoke: ${provider}`, () => {
   let cli: Cli;
   let work: string;
   let createdId: string | undefined;
-  let created = false;
   let removed = false;
   let createEnv = true;
 
@@ -183,7 +182,6 @@ describe.skipIf(!enabled)(`provider smoke: ${provider}`, () => {
 
     // A failed setup step keeps the sandbox (exit 9), so every other check can still run.
     if (envelope.ok || run.code === 9) {
-      created = true;
       const data = z.object({ id: z.string() }).safeParse(envelope.ok ? envelope.data : null);
       createdId = data.success ? data.data.id : undefined;
       record("create", "pass");
@@ -249,9 +247,15 @@ describe.skipIf(!enabled)(`provider smoke: ${provider}`, () => {
     if (!entry || !cli) return;
 
     try {
-      if (created && !removed) await cli.run(["rm", name, "--force", "--json"]);
+      // A create whose outcome is unknown may still have made a sandbox, so always try rm.
+      if (!removed) await cli.run(["rm", name, "--force", "--json"]);
 
-      if (entry.labels) await cli.run(["gc", "--label", `run=${runId}`, "--json"]);
+      // A delete a provider has not confirmed yet is retried rather than left as an orphan.
+      for (let attempt = 0; entry.labels && attempt < 4; attempt += 1) {
+        if (attempt) await Bun.sleep(15_000);
+
+        if ((await cli.run(["gc", "--label", `run=${runId}`, "--json"])).code === 0) break;
+      }
     } finally {
       await mkdir(reportDirectory, { recursive: true });
 
@@ -300,12 +304,26 @@ describe.skipIf(!enabled)(`provider smoke: ${provider}`, () => {
       .object({
         info: z.object({
           state: z.string(),
-          expires: z.object({ status: z.string(), at: z.string().optional() }),
+          expires: z.object({
+            status: z.string(),
+            at: z.string().optional(),
+            reason: z.string().optional(),
+          }),
         }),
       })
       .parse(envelope.data);
 
     expect(data.info.state).toBe("running");
+    info.set("expires", data.info.expires.status);
+
+    // An adapter may honestly not know the deadline (Archil reports only a session budget), but
+    // it must say why; "none" would mean --ttl was dropped.
+    if (data.info.expires.status === "unknown") {
+      expect(data.info.expires.reason ?? "").not.toBe("");
+
+      return;
+    }
+
     expect(data.info.expires.status).toBe("known");
     const left = Date.parse(data.info.expires.at ?? "") - Date.now();
 

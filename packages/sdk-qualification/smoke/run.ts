@@ -174,7 +174,16 @@ const rows = checkNames.map((check) => [
   }),
 ]);
 
-const infoKeys = ["cli", "user", "tools", "net_client", "net_status", "clock_skew_s", "probe"];
+const infoKeys = [
+  "cli",
+  "user",
+  "tools",
+  "net_client",
+  "net_status",
+  "clock_skew_s",
+  "expires",
+  "probe",
+];
 
 const infoRows = infoKeys.map((key) => [
   key,
