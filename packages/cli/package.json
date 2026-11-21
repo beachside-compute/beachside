@@ -16,9 +16,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "check": "bun run credential-client:build && tsc -p tsconfig.json",
-    "build": "bun run credential-client:build && rm -rf dist && bun build src/main.ts --target node --format esm --outdir dist --external beachside --external @beachside/adapter --external zod",
-    "credential-client:build": "test ! -f node_modules/@beachside/credential-client/tsconfig.build.json || tsc -p node_modules/@beachside/credential-client/tsconfig.build.json --typeRoots ../../node_modules/@types --types bun"
+    "check": "tsc -p tsconfig.json",
+    "build": "rm -rf dist && bun build src/main.ts --target node --format esm --outdir dist --external beachside --external @beachside/adapter --external zod"
   },
   "dependencies": {
     "@beachside/adapter": "workspace:*",
@@ -38,7 +37,7 @@
     "@beachside/vercel": "workspace:*",
     "@beachside-internal/provider-fake": "workspace:*",
     "@clack/prompts": "1.9.0",
-    "@beachside/credential-client": "github:beachside-compute/credential-broker#9f28ce81f1cce424b22d218d83ff0ab2229b8546"
+    "@beachside/credential-client": "0.2.0"
   },
   "license": "Apache-2.0",
   "repository": {

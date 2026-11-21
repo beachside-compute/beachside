@@ -1347,7 +1347,6 @@ console.log("Packed Upstash Box imports and local validation passed without prov
 
   // Exercise the separately maintained client with the packed SDK.
   const docs = join(root, "apps/docs");
-  run("bun", ["run", "credential-client:build"], docs);
   const externalClient = await pack(join(docs, "node_modules/@beachside/credential-client"));
 
   const credentialClient = join(temporary, "credential-client-consumer");
