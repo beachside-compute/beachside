@@ -5,9 +5,24 @@ import util from "node:util";
 
 type Format = Parameters<typeof util.styleText>[0];
 
+type Options = {
+  validateStream?: boolean;
+  stream?: NodeJS.WritableStream & { hasColors?: () => boolean };
+};
+
 const colors: Readonly<Record<string, readonly [number, number] | undefined>> = util.inspect.colors;
 
-function fallbackStyleText(format: Format, text: string): string {
+// Like native styleText, plain text unless the stream (stdout by default) is a color-capable TTY.
+// tty.WriteStream#hasColors also honours NO_COLOR and FORCE_COLOR.
+function colorable(options: Options | undefined): boolean {
+  if (options?.validateStream === false) return true;
+
+  const stream = options?.stream ?? process.stdout;
+
+  return stream.hasColors?.() ?? false;
+}
+
+function fallbackStyleText(format: Format, text: string, options?: Options): string {
   const formats = Array.isArray(format) ? format : [format];
   let open = "";
   let close = "";
@@ -20,7 +35,7 @@ function fallbackStyleText(format: Format, text: string): string {
     close = `\u001b[${codes[1]}m${close}`;
   }
 
-  return `${open}${text}${close}`;
+  return colorable(options) ? `${open}${text}${close}` : text;
 }
 
 // Absent before Node 20.12 even though the typings always declare it.
