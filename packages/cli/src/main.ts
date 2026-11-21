@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { isatty } from "node:tty";
 import { main } from "./cli";
+import { redact } from "./output";
 
 const controller = new AbortController();
 
@@ -18,6 +19,16 @@ for (const [name, code] of Object.entries(signalExitCodes))
     interrupted = true;
     exitCode = code;
     controller.abort(new Error(`Interrupted by ${name}`));
+  });
+
+// A crash prints its stack, which can quote a request or a credential: redact it like any message.
+for (const event of ["uncaughtException", "unhandledRejection"] as const)
+  // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Node hands over whatever was thrown; it is only printed, redacted.
+  process.on(event, (error: unknown) => {
+    process.stderr.write(
+      `beachside: internal error: ${redact(error instanceof Error ? (error.stack ?? error.message) : String(error))}\n`,
+    );
+    process.exit(125);
   });
 
 /** Wait for a full output buffer to drain, or for the stream to close (a closed pipe). */

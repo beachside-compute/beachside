@@ -22,6 +22,7 @@ import {
   describeError,
   managementExitCode,
   Output,
+  redact,
   usage,
   type Streams,
 } from "./output";
@@ -1069,7 +1070,12 @@ export async function main(argv: readonly string[], io: Io): Promise<number> {
   const nameIndex = commandIndex(head);
   const name = nameIndex === -1 ? undefined : head[nameIndex];
   const jsonFromEnv = io.env.BEACHSIDE_JSON === "1" || io.env.BEACHSIDE_JSON === "true";
-  const status = programStatus(io.env, io.stderrTerminal === true, io.streams.stderr);
+
+  // Status lines quote progress messages, which may carry an adapter's error text.
+  const status = programStatus(io.env, io.stderrTerminal === true, (text) =>
+    io.streams.stderr(redact(text)),
+  );
+
   const out = new Output(jsonFromEnv || head.includes("--json"), io.streams, status);
   const command = commands.find((candidate) => candidate.name === name);
 

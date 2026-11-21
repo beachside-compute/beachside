@@ -45,6 +45,9 @@ function fixedImage(image: string): boolean {
   );
 }
 
+/** The official Daytona SDK gives create and delete requests 60 seconds. */
+const nativeLifecycleTimeoutMs = 60_000;
+
 // Daytona API and toolbox OpenAPI v0.218; see README for the pinned sources.
 const CurrentKey = z.object({ organizationId: z.string().min(1) });
 
@@ -1224,11 +1227,15 @@ export class DaytonaDriver implements ProviderDriver {
         autoStopInterval: this.config.configuration.autoStopMinutes,
       };
 
+      // Daytona answers a create once the sandbox is placed, which can pass 30 seconds; the
+      // official SDK allows 60, so a slow placement is not misread as a lost response.
       const response = await this.request(
         "POST",
         "/sandbox",
         JSON.stringify(body),
         "application/json",
+        undefined,
+        nativeLifecycleTimeoutMs,
       );
 
       // A built OCI snapshot is already an effect, so only a prepared image is rejected cleanly.
@@ -2646,6 +2653,10 @@ export class DaytonaDriver implements ProviderDriver {
       const response = await this.request(
         "DELETE",
         `/sandbox/${encodeURIComponent(input.sandbox.nativeId)}`,
+        undefined,
+        undefined,
+        undefined,
+        nativeLifecycleTimeoutMs,
       );
 
       if (!response.ok) throw new Error(`Daytona HTTP ${response.status}`);

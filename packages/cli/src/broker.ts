@@ -1,6 +1,7 @@
+import { parseEnvFile } from "./env-file";
 import { chmod, readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
-import { parseArgs, parseEnv } from "node:util";
+import { parseArgs } from "node:util";
 import {
   createCredentialBroker,
   CredentialBrokerError,
@@ -11,7 +12,7 @@ import { runBrokerCli } from "@beachside/credential-client/cli";
 import { z } from "zod";
 import { BrokerConfig, BrokerName, resolveEnvReferences } from "./config";
 import type { Flags } from "./commands";
-import { CliError, usage } from "./output";
+import { CliError, redact, registerSecret, usage } from "./output";
 import { renderRows, updateConfig } from "./profiles";
 import type { Session } from "./session";
 import type { SandboxGrantRecord, SandboxRecord } from "./store";
@@ -44,8 +45,12 @@ async function readKey(
 ): Promise<string | undefined> {
   if (value === undefined) return undefined;
   const resolved = z.string().parse(resolveEnvReferences(value, session.ctx.env, where));
+  const key = await session.secret(resolved, where);
 
-  return session.secret(resolved, where);
+  // A broker key is a credential however it was given, so nothing the CLI prints may carry it.
+  registerSecret(key);
+
+  return key;
 }
 
 /**
@@ -343,7 +348,7 @@ async function deploymentFile(session: Session, path: string): Promise<Record<st
     throw usage(`Cannot read --deployment ${file}`);
   }
 
-  return z.record(z.string(), z.string()).parse(parseEnv(text));
+  return parseEnvFile(text, file);
 }
 
 /** `beachside broker add <name> --url <origin> [--issuer-key <ref>] [--admin-key <ref>] [--default]`. */
@@ -692,8 +697,8 @@ async function managedCommand(session: Session, flags: Flags, args: string[]): P
     return runBrokerCli(args, {
       env: {},
       prefix,
-      stdout: (text) => out.streams.stdout(`${text}\n`),
-      stderr: (text) => out.streams.stderr(`${text}\n`),
+      stdout: (text) => out.streams.stdout(redact(`${text}\n`)),
+      stderr: (text) => out.streams.stderr(redact(`${text}\n`)),
     });
   const entry = await sandboxTarget(session, args);
 
@@ -725,11 +730,11 @@ async function managedCommand(session: Session, flags: Flags, args: string[]): P
     prefix,
     stdout: (text) => {
       if (out.json) stdout += text;
-      else out.streams.stdout(`${text}\n`);
+      else out.streams.stdout(redact(`${text}\n`));
     },
     stderr: (text) => {
       if (out.json) stderr += text;
-      else out.streams.stderr(`beachside broker: ${text}\n`);
+      else out.streams.stderr(redact(`beachside broker: ${text}\n`));
     },
   });
 
@@ -748,10 +753,12 @@ async function managedCommand(session: Session, flags: Flags, args: string[]): P
   const error = failure.success ? failure.data.error : { code: "INTERNAL", message: stderr.trim() };
 
   out.streams.stdout(
-    `${JSON.stringify({
-      ok: false,
-      error: { ...error, retryable: code === 7, outcome: code === 6 ? "unknown" : "rejected" },
-    })}\n`,
+    redact(
+      `${JSON.stringify({
+        ok: false,
+        error: { ...error, retryable: code === 7, outcome: code === 6 ? "unknown" : "rejected" },
+      })}\n`,
+    ),
   );
 
   return code;

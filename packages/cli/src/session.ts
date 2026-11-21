@@ -1,6 +1,6 @@
 import type { BeachsideClient, SandboxHandle } from "beachside";
 import { loadConfig, maxSandboxes, stateDir, type Env, type LoadedConfig } from "./config";
-import { CliError, type Output } from "./output";
+import { CliError, registerSecret, type Output } from "./output";
 import { connect, descriptor, resolveProfile, type ResolvedProfile } from "./providers";
 import { SecretReader } from "./secrets";
 import { FsStateStore, type SandboxRecord, type StateStore } from "./store";
@@ -78,7 +78,12 @@ export class Session {
 
   /** A value with any password-manager reference read; plain values pass through. */
   async secret(value: string, where: string): Promise<string> {
-    return String(await this.secrets.resolve(value, where));
+    const resolved = String(await this.secrets.resolve(value, where));
+
+    // Only password-manager values are secret by construction; a plain value passes as given.
+    if (resolved !== value) registerSecret(resolved);
+
+    return resolved;
   }
 
   async connect(profile: ResolvedProfile): Promise<BeachsideClient<true>> {

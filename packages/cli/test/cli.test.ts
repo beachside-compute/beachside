@@ -675,6 +675,42 @@ describe("beachside CLI against the fake provider", () => {
     expect((await cli(["profile", "use", "e2b", "--json"])).code).toBe(3);
   });
 
+  test("a credential an adapter puts in an error never reaches output", async () => {
+    // The guarded fixture refuses a wrong token by echoing it, the worst case for a public CI log.
+    const canary = "CANARY-credential-4f9c2a71";
+    await writeConfig({
+      default: "guarded",
+      profiles: {
+        guarded: { module: fixture, export: "guarded", credentials: { token: "env:CANARY_KEY" } },
+      },
+    });
+
+    const runs = [
+      ["ls", "--remote"],
+      ["ls", "--remote", "--json"],
+      ["doctor"],
+      ["doctor", "--json"],
+      ["create", "--name", "box", "--prepared", "fake-starter"],
+      ["create", "--name", "box", "--prepared", "fake-starter", "--json"],
+      ["run", "--prepared", "fake-starter", "--", "true"],
+      ["gc", "--label", "ci=smoke", "--json"],
+    ];
+
+    for (const args of runs) {
+      const result = await cli(args, { CANARY_KEY: canary });
+
+      expect(result.code).not.toBe(0);
+      expect(`${result.stdout}${result.stderr}`).not.toContain(canary);
+      expect(`${result.stdout}${result.stderr}`).not.toContain(
+        Buffer.from(canary).toString("base64").replace(/=+$/, ""),
+      );
+    }
+
+    const human = await cli(["ls", "--remote"], { CANARY_KEY: canary });
+
+    expect(human.stderr).toContain("wrong token [redacted]");
+  });
+
   test("profile rm is refused while a snapshot record uses the profile", async () => {
     await writeConfig({
       default: "snaps",
