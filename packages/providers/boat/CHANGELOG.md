@@ -1,5 +1,16 @@
 # @beachside/boat
 
+## 0.21.0
+
+### Minor Changes
+
+- [#266](https://github.com/beachside-compute/beachside/pull/266) [`d53baaf`](https://github.com/beachside-compute/beachside/commit/d53baaf7afa61bbbebd2604ee48d0b49d056891a) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - boxd and Boat now support create-time `env` (`capabilities().createEnv`), so `create({ env })`, `beachside create --env` and `--grant` work there. boxd writes the variables to a private `/etc/beachside.env` that every command reads first, because boxd's own create-time env never reaches commands on a machine booted from an image; per-call `env` still wins. Boat sends them as its native per-sandbox env.
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @beachside/adapter@0.21.0
+
 ## 0.20.0
 
 ### Patch Changes
