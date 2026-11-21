@@ -17,7 +17,7 @@
   },
   "scripts": {
     "check": "tsc -p tsconfig.json",
-    "build": "rm -rf dist && bun build src/main.ts --target node --format esm --outdir dist --external beachside --external @beachside/adapter --external zod"
+    "build": "bun scripts/build.ts"
   },
   "dependencies": {
     "@beachside/adapter": "workspace:*",
