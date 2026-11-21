@@ -1,4 +1,10 @@
 {
   "extends": "../../tsconfig.json",
-  "include": ["*.ts", "provider-qualification/*.ts", "live/**/*.ts", "observability/*.ts", "smoke/*.ts"]
+  "include": [
+    "*.ts",
+    "provider-qualification/*.ts",
+    "live/**/*.ts",
+    "observability/*.ts",
+    "smoke/*.ts"
+  ]
 }
