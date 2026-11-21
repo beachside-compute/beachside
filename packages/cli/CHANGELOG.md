@@ -1,5 +1,27 @@
 # @beachside/cli
 
+## 0.20.0
+
+### Minor Changes
+
+- [#265](https://github.com/beachside-compute/beachside/pull/265) [`51a205f`](https://github.com/beachside-compute/beachside/commit/51a205ff29ba544859a9ce1268afdd3ab301d9a5) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Credential broker grants are easier to use and last longer.
+
+  - SDK: pass a grant with `grant:` on `sandboxes.create()` and `sandboxes.with()` (`credentials:` still works and is deprecated). `box.grant()` reports the grant's integrations, variables and expiry, and `box.renewGrant({ ttlSeconds })` extends it up to 7 days. Refused grants say how to fix them.
+  - CLI: `beachside broker add|ls|use|rm` connects the CLI to a broker, and `beachside broker status|integration|issuer|grant ...` manages it. `beachside create --grant <integration>` puts a grant in the sandbox's environment, so every later command and server sees it; `inspect` shows it, `beachside broker grant renew <sandbox>` extends it, and `rm` revokes it.
+
+### Patch Changes
+
+- [#258](https://github.com/beachside-compute/beachside/pull/258) [`98df2b8`](https://github.com/beachside-compute/beachside/commit/98df2b8ee3cd7609892aea88b6d770c251a744ac) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Clearer Archil errors and setup hints from the 0.19.0 smoke test:
+
+  - A lifetime over the plan's cap (the Free plan's 30 minutes) is now `INVALID_ARGUMENT` with the cap named, instead of "sandbox is unsupported". The CLI hint suggests a shorter `--ttl`.
+  - When `--with` meets a provider that cannot give internet access (Archil's Free plan), the CLI says `--with` needs a plan or tier with internet access, since no other network policy can run it.
+  - Archil's setup lists its regions: `beachside init` offers them as choices, and `beachside providers`, `profile` output, missing-profile errors and `init` flag errors name them.
+  - `--with herdr` renames a sandbox whose hostname is its private IP (Archil) to its tailnet name, so Herdr no longer lists the host as "192".
+
+- Updated dependencies [[`51a205f`](https://github.com/beachside-compute/beachside/commit/51a205ff29ba544859a9ce1268afdd3ab301d9a5), [`9aa873a`](https://github.com/beachside-compute/beachside/commit/9aa873a44e1ae2e6c7e1765b7dc86ff9a9e2e563)]:
+  - beachside@0.20.0
+  - @beachside/adapter@0.20.0
+
 ## 0.19.0
 
 ### Minor Changes

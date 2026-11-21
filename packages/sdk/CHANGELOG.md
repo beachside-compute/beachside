@@ -1,5 +1,21 @@
 # beachside
 
+## 0.20.0
+
+### Minor Changes
+
+- [#265](https://github.com/beachside-compute/beachside/pull/265) [`51a205f`](https://github.com/beachside-compute/beachside/commit/51a205ff29ba544859a9ce1268afdd3ab301d9a5) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Credential broker grants are easier to use and last longer.
+
+  - SDK: pass a grant with `grant:` on `sandboxes.create()` and `sandboxes.with()` (`credentials:` still works and is deprecated). `box.grant()` reports the grant's integrations, variables and expiry, and `box.renewGrant({ ttlSeconds })` extends it up to 7 days. Refused grants say how to fix them.
+  - CLI: `beachside broker add|ls|use|rm` connects the CLI to a broker, and `beachside broker status|integration|issuer|grant ...` manages it. `beachside create --grant <integration>` puts a grant in the sandbox's environment, so every later command and server sees it; `inspect` shows it, `beachside broker grant renew <sandbox>` extends it, and `rm` revokes it.
+
+- [#246](https://github.com/beachside-compute/beachside/pull/246) [`9aa873a`](https://github.com/beachside-compute/beachside/commit/9aa873a44e1ae2e6c7e1765b7dc86ff9a9e2e563) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add opt-in sandbox credentials for SDK-started commands, processes, terminals, and setup. Beachside can acquire a short-lived grant from the separately maintained credential broker and attempts revocation during sandbox cleanup.
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @beachside/adapter@0.20.0
+
 ## 0.19.0
 
 ### Minor Changes

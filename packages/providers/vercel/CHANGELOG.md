@@ -1,5 +1,12 @@
 # @beachside/vercel
 
+## 0.20.0
+
+### Patch Changes
+
+- Updated dependencies []:
+  - @beachside/adapter@0.20.0
+
 ## 0.19.0
 
 ### Patch Changes
