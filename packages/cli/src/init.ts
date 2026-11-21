@@ -11,6 +11,7 @@ import {
   type LoadedConfig,
   type ProfileConfig,
 } from "./config";
+import { requirePromptNode } from "./node-version";
 import { CliError, describeError, usage } from "./output";
 import { updateConfig } from "./profiles";
 import {
@@ -1050,7 +1051,14 @@ export async function initCommand(session: Session, flags: Flags): Promise<numbe
   if (!interactive(session, flags)) return initFromFlags(session, flags);
 
   // The prompt library is loaded only here, after deciding a person is at a terminal. It is a
-  // devDependency on purpose: the build bundles it into dist, so installs don't fetch it.
+  // devDependency on purpose: the build bundles it into dist, so installs don't fetch it. The
+  // build splits it into its own chunk, because its `node:util` imports need Node 20.12+ and
+  // every other command must still start on older Node 20.
+  requirePromptNode(
+    "The guided setup",
+    "upgrade Node, or run it with flags: beachside init <provider> --api-key <key|ref>",
+  );
+
   const { clackPrompter } = await import("./init-prompts");
 
   return runWizard(session, flags, clackPrompter(session.ctx.signal));

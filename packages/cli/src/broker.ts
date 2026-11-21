@@ -8,10 +8,11 @@ import {
   maxGrantTtlSeconds,
   type SandboxGrant,
 } from "@beachside/credential-client";
-import { runBrokerCli } from "@beachside/credential-client/cli";
+import type { runBrokerCli as RunBrokerCli } from "@beachside/credential-client/cli";
 import { z } from "zod";
 import { BrokerConfig, BrokerName, resolveEnvReferences } from "./config";
 import type { Flags } from "./commands";
+import { requirePromptNode } from "./node-version";
 import { CliError, redact, registerSecret, usage } from "./output";
 import { renderRows, updateConfig } from "./profiles";
 import type { Session } from "./session";
@@ -687,6 +688,16 @@ async function sandboxGrantCommand(
     throw brokerError(cause, broker);
   }
 }
+
+/**
+ * The broker's command line, loaded on first use: it pulls in @clack/prompts, whose
+ * `node:util` imports need Node 20.12+, so no other command should load it.
+ */
+const runBrokerCli: typeof RunBrokerCli = async (...args) => {
+  requirePromptNode("broker management", "upgrade Node; every other command works on Node 20");
+
+  return (await import("@beachside/credential-client/cli")).runBrokerCli(...args);
+};
 
 /** Hand a management command to the broker's own command line, with this broker's URL and key. */
 async function managedCommand(session: Session, flags: Flags, args: string[]): Promise<number> {
