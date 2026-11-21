@@ -249,6 +249,7 @@ export async function boxdFixture() {
   let machineStates: string[] = [];
   let tokenResponse: Record<string, string | number | boolean | null> | undefined;
   let failNextGet = false;
+  let failNextExpiry = false;
   let rejectCreate: { code: number; message: string } | undefined;
   let wrongGetId = false;
   let failLifecycleRead = false;
@@ -759,7 +760,8 @@ export async function boxdFixture() {
             ok();
             break;
           case "SetDeleteAfter": {
-            if (failExpiry) {
+            if (failExpiry || failNextExpiry) {
+              failNextExpiry = false;
               callback({ code: status.UNAVAILABLE, message: "lost expiry" });
               break;
             }
@@ -1022,6 +1024,9 @@ export async function boxdFixture() {
     },
     failExpiry(value = true) {
       failExpiry = value;
+    },
+    failNextExpiry() {
+      failNextExpiry = true;
     },
     uploadCount(value: number) {
       uploadCount = value;

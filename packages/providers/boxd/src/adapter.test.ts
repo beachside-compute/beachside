@@ -480,6 +480,18 @@ test("fresh credentials reopen saved references; warm lifecycle and renewal repo
   }
 });
 
+test("a create whose SDK follow-up fails once is read back and verified, not left partial", async () => {
+  const { fixture, connect } = await setup();
+  const client = await connect();
+
+  fixture.ignoreCreateTimers();
+  fixture.failNextExpiry();
+  const box = await client.sandboxes.create();
+
+  expect(fixture.effects.create).toBe(1);
+  expect(fixture.machines.get(box.id)?.deleteAtMs).toBeGreaterThan(Date.now());
+});
+
 test("expiry failure preserves an acknowledged UUID and observation never creates again or extends a lifetime", async () => {
   const { fixture } = await setup();
   const refs: unknown[] = [];

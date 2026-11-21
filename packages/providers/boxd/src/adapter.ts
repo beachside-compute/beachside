@@ -945,6 +945,20 @@ export function createBoxdAdapter(
         let machine: Machine;
         let acknowledged: Created | undefined;
 
+        const recoverCreated = async (id: string): Promise<Machine | undefined> => {
+          for (const delayMs of [0, 1000, 3000]) {
+            if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
+
+            if (ctx.signal.aborted) return undefined;
+
+            const found = await find(id, readContext(ctx.signal)).catch(() => null);
+
+            if (found) return found;
+          }
+
+          return undefined;
+        };
+
         try {
           machine = await native.run(
             {
@@ -1002,7 +1016,12 @@ export function createBoxdAdapter(
         } catch (error) {
           if (error instanceof AdapterCheckpointError) throw error;
 
-          if (acknowledged) {
+          // The machine exists but a follow-up call inside the SDK's create failed. Reading it back
+          // usually works a moment later, and the checks below then verify it like any create.
+          const recovered = acknowledged ? await recoverCreated(acknowledged.id) : undefined;
+
+          if (recovered) machine = recovered;
+          else if (acknowledged) {
             // The machine exists but its reply was lost, or the SDK's fallback expiry failed: apply
             // the requested egress and lifetime anyway (both idempotent) so it is never left open
             // or without an end.
@@ -1022,13 +1041,13 @@ export function createBoxdAdapter(
               "boxd machine exists; creation metadata could not be verified",
               partial(acknowledged, ctx),
             );
+          } else {
+            const rejected = createRejection(error, [credentials.apiKey]);
+
+            return rejected
+              ? ctx.reject(rejected.code, rejected.message)
+              : ctx.unknown("boxd create response was not confirmed; do not replay");
           }
-
-          const rejected = createRejection(error, [credentials.apiKey]);
-
-          return rejected
-            ? ctx.reject(rejected.code, rejected.message)
-            : ctx.unknown("boxd create response was not confirmed; do not replay");
         }
 
         if (!Id.safeParse(machine.id).success)
