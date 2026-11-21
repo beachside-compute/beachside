@@ -1,5 +1,13 @@
 # @beachside/boxd
 
+## 0.21.1
+
+### Patch Changes
+
+- [#270](https://github.com/beachside-compute/beachside/pull/270) [`5d8b17b`](https://github.com/beachside-compute/beachside/commit/5d8b17bdd5ca6ed763c8d2a24384a57e124c0cf7) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - A create whose machine boxd acknowledged, but whose follow-up call inside the boxd SDK failed, is now read back and verified like any other create. Before, it always ended as a partial outcome, even when the machine was fine.
+- Updated dependencies []:
+  - @beachside/adapter@0.21.1
+
 ## 0.21.0
 
 ### Minor Changes

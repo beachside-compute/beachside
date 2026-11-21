@@ -1,5 +1,14 @@
 # @beachside/cli
 
+## 0.21.1
+
+### Patch Changes
+
+- [#270](https://github.com/beachside-compute/beachside/pull/270) [`5d8b17b`](https://github.com/beachside-compute/beachside/commit/5d8b17bdd5ca6ed763c8d2a24384a57e124c0cf7) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Run on every Node 20 release again. The bundled prompt library imported `styleText` from `node:util`, which only exists from Node 20.12, so the CLI failed to start on older Node 20 releases such as the one in E2B's default template. The build now routes that import through a small fallback.
+- Updated dependencies []:
+  - @beachside/adapter@0.21.1
+  - beachside@0.21.1
+
 ## 0.21.0
 
 ### Patch Changes
