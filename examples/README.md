@@ -1,6 +1,6 @@
 # Run OpenCode with Beachside
 
-For local cross-process OpenTelemetry with Pi, see the [Pi tracing example](pi-tracing/README.md).
+For local cross-process OpenTelemetry with Pi, see the [Pi tracing example](pi-tracing/README.md). To review pull requests with Pi in a Freestyle sandbox from GitHub Actions, see the [PR review example](pr-review/README.md).
 
 Two small TypeScript applications run OpenCode inside a disposable Daytona or E2B sandbox:
 

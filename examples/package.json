@@ -7,13 +7,16 @@
     "hello": "bun --env-file=.env.local agent-hello-world/main.ts",
     "edit": "bun --env-file=.env.local agent-edit-file/main.ts",
     "pi:trace": "bun pi-tracing/main.ts",
+    "pr-review": "bun pr-review/review.ts",
     "check": "tsc -p tsconfig.json",
     "test": "bun test"
   },
   "dependencies": {
     "@beachside/boxd": "workspace:*",
+    "@beachside/credential-client": "0.2.0",
     "@beachside/daytona": "workspace:*",
     "@beachside/e2b": "workspace:*",
+    "@beachside/freestyle": "workspace:*",
     "@earendil-works/pi-ai": "1.6.0",
     "@earendil-works/pi-coding-agent": "1.6.0",
     "@opentelemetry/api": "1.9.1",
