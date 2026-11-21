@@ -8,6 +8,8 @@ import {
 } from "@opentelemetry/sdk-metrics";
 import { InMemorySpanExporter, SimpleSpanProcessor } from "@opentelemetry/sdk-trace-base";
 import { NodeTracerProvider } from "@opentelemetry/sdk-trace-node";
+import { AdapterError, defineAdapter } from "@beachside/adapter";
+import { z } from "zod";
 import { Beachside, Image, OutcomeUnknownError } from "./index";
 import { fixtureAdapter } from "../../sdk-qualification/observability/adapter";
 
@@ -157,4 +159,95 @@ test("failed calls carry the bounded error code and metrics can be off while tra
   expect((await off.reader.collect()).resourceMetrics.scopeMetrics).toHaveLength(0);
   await tracerProvider.shutdown();
   await off.meterProvider.shutdown();
+});
+
+function streamAdapter(failAfter?: number) {
+  return defineAdapter({
+    name: "streams",
+    config: z.object({}),
+    credentials: z.object({}),
+    async connect() {
+      return {
+        scope: { authority: { kind: "fixture", id: "one" }, partition: {} },
+        supports: { images: ["prepared" as const], network: ["blocked" as const] },
+        create: async () => ({ id: "one", state: "running" as const }),
+        destroy: async () => ({ computeStopped: true, retainedResources: [] }),
+        files: {
+          maxBytes: 1024,
+          readStream: async () => {
+            let sent = 0;
+
+            return new ReadableStream<Uint8Array>(
+              {
+                pull(controller) {
+                  if (sent === failAfter)
+                    controller.error(new AdapterError("UNAVAILABLE", "stream lost"));
+                  else if (sent === 3) controller.close();
+                  else {
+                    sent++;
+                    controller.enqueue(new Uint8Array(10));
+                  }
+                },
+              },
+              { highWaterMark: 0 },
+            );
+          },
+          writeStream: async ({ bytes }: { bytes: AsyncIterable<Uint8Array> }) => {
+            let count = 0;
+
+            for await (const chunk of bytes) count += chunk.length;
+
+            return { bytesWritten: count };
+          },
+        },
+      };
+    },
+  });
+}
+
+async function streamBytes(failAfter?: number) {
+  const { reader, meterProvider } = meters();
+
+  const client = await Beachside.connect({
+    adapter: streamAdapter(failAfter),
+    config: {},
+    credentials: {},
+    tracing: false,
+    metrics: { meterProvider },
+  });
+
+  try {
+    const box = await client.sandboxes.create({ environment: Image.prepared("base") });
+
+    async function* input() {
+      yield new Uint8Array(7);
+      yield new Uint8Array(5);
+    }
+
+    await box.writeFileStream("/out", input());
+
+    try {
+      for await (const _chunk of box.readFileStream("/in"));
+    } catch {
+      // A failed stream still records the bytes it delivered.
+    }
+  } finally {
+    await client.close();
+  }
+
+  const points = (await collect(reader)).get("beachside.file.bytes")!.points;
+  await meterProvider.shutdown();
+
+  return Object.fromEntries(
+    points.map((p) => [`${p.attributes["beachside.operation.name"]}`, p.value]),
+  );
+}
+
+test("stream reads and writes record bytes, including chunks delivered before a failure", async () => {
+  expect(await streamBytes()).toEqual({
+    "beachside.file.write_stream": 12,
+    "beachside.file.read_stream": 30,
+  });
+
+  expect((await streamBytes(2))["beachside.file.read_stream"]).toBe(20);
 });

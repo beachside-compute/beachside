@@ -179,7 +179,7 @@ Beachside also records OpenTelemetry metrics. They use the application's meter p
 | Metric                         | Type               | What it measures                                                                                    |
 | ------------------------------ | ------------------ | --------------------------------------------------------------------------------------------------- |
 | `beachside.operation.duration` | Histogram, seconds | Each public SDK call, such as `beachside.sandbox.create`, `beachside.exec` or `beachside.file.read` |
-| `beachside.phase.duration`     | Histogram, seconds | The `prepare`, `submit` and `wait` phases inside a call                                             |
+| `beachside.phase.duration`     | Histogram, seconds | The `prepare`, `submit`, `wait` and `observe` phases inside a call                                  |
 | `beachside.operation.active`   | Up-down counter    | Public calls in flight in this process                                                              |
 | `beachside.file.bytes`         | Counter, bytes     | Bytes moved by file reads and writes, including streams                                             |
 

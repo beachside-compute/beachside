@@ -399,7 +399,9 @@ export class Telemetry {
       failed = reject;
     });
 
-    const span = this.run(name, () => completion, { signal });
+    let bytes = 0;
+    // A failed or abandoned stream still delivered the chunks it yielded.
+    const span = this.run(name, () => completion, { signal, bytes: () => bytes });
     const cancelled = () => failed(new BeachsideError("WAIT_ABORTED", "File stream cancelled"));
 
     signal?.addEventListener("abort", cancelled, { once: true });
@@ -407,7 +409,6 @@ export class Telemetry {
     if (signal?.aborted) cancelled();
     // The iterator owns the error; observing the promise here prevents unhandled rejections while paused.
     void span.catch(() => undefined);
-    let bytes = 0;
     let ended = false;
 
     try {
@@ -445,8 +446,11 @@ export class Telemetry {
       identity?: unknown;
       operationType?: string;
       signal?: AbortSignal;
-      /** Bytes sent by a call whose result does not report them, such as a file write. */
-      bytes?: number;
+      /**
+       * Bytes moved by a call whose result does not report them: a number for a file write,
+       * or a live count for a stream, which is also recorded when the stream fails.
+       */
+      bytes?: number | (() => number);
     } = {},
   ): Promise<T> {
     const meters = this.instruments();
@@ -521,12 +525,15 @@ export class Telemetry {
           ? result.byteLength
           : typeof result === "number"
             ? result
-            : options.bytes;
+            : options.bytes instanceof Function
+              ? options.bytes()
+              : options.bytes;
 
       if (bytes !== undefined && Number.isSafeInteger(bytes) && bytes >= 0) fileBytes = bytes;
     };
 
     const classify = (error: unknown) => {
+      if (options.bytes instanceof Function) noteBytes(undefined);
       errorCode = diagnosticContext(error).errorCode;
       outcome = options.signal?.aborted || errorCode === "WAIT_ABORTED" ? "cancelled" : "error";
     };
