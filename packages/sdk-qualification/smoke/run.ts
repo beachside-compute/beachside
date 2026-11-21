@@ -106,18 +106,29 @@ const outcomes = await Promise.all(
 
     if (missing.length) return { provider, missing };
 
+    // Each child sees only its own provider's keys, never the others'.
+    const others = new Set(
+      selected.flatMap((other) => (other === provider ? [] : smokeProviders[other]!.env)),
+    );
+
+    const own = Object.fromEntries(
+      Object.entries(environment).filter(([key]) => !others.has(key) || entry.env.includes(key)),
+    );
+
+    const junit = join(reportDirectory, `${provider}.junit.xml`);
+
     const child = Bun.spawn(
       [
         "bun",
         "test",
         join(import.meta.dir, "smoke.test.ts"),
         "--reporter=junit",
-        `--reporter-outfile=${join(reportDirectory, `${provider}.junit.xml`)}`,
+        `--reporter-outfile=${junit}`,
       ],
       {
         cwd: root,
         env: {
-          ...environment,
+          ...own,
           ...Object.fromEntries(cliEnvironment),
           SMOKE_PROVIDER: provider,
           SMOKE_RUN_ID: runId,
@@ -139,6 +150,10 @@ const outcomes = await Promise.all(
       scrubber.scrub(`${stdout}\n${stderr}`),
       { mode: 0o600 },
     );
+
+    // JUnit quotes failure messages, so it is scrubbed like every other artifact.
+    if (existsSync(junit))
+      await writeFile(junit, scrubber.scrub(await readFile(junit, "utf8")), { mode: 0o600 });
     console.log(`${provider}: finished (bun test exit ${code})`);
 
     return { provider, missing };
