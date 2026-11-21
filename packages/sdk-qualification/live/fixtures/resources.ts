@@ -292,6 +292,7 @@ export class TestResources {
     mounts?: MountSpec[],
     network = this.network,
     configuredEnvironment = this.bounds.configuredEnvironment ?? false,
+    env?: Record<string, string>,
   ) {
     this.at(role);
 
@@ -301,6 +302,7 @@ export class TestResources {
           environment: configuredEnvironment ? undefined : Image.prepared(this.imageId),
           networkPolicy: network,
           mounts,
+          env,
         },
         { signal: this.signal },
       ),

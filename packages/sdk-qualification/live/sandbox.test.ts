@@ -299,9 +299,42 @@ export async function directories(t: TestResources, box: AdapterSandbox, fileRoo
   expect(await box.fileExists(root, { signal: t.signal })).toBe(false);
 }
 
+/** Create-time env must reach every later command, from this client and from a reconnected one. */
+export async function createEnvironment(t: TestResources, box: AdapterSandbox, value: string) {
+  const shell = await box.exec(
+    {
+      command: { kind: "shell", script: 'printf \'%s|%s\' "$QUAL_CREATE_ENV" "$QUAL_BOTH"' },
+      deadlineSeconds: 20,
+      maxOutputBytes: 4096,
+    },
+    { signal: t.signal },
+  );
+
+  expect(shell.stdoutText()).toBe(`${value}|create`);
+
+  const override = await box.exec(
+    {
+      command: {
+        kind: "argv",
+        argv: ["/bin/sh", "-c", 'printf \'%s|%s\' "$QUAL_CREATE_ENV" "$QUAL_BOTH"'],
+      },
+      env: { QUAL_BOTH: "call" },
+      deadlineSeconds: 20,
+      maxOutputBytes: 4096,
+    },
+    { signal: t.signal },
+  );
+
+  // A per-call value wins over the create-time value of the same key.
+  expect(override.stdoutText()).toBe(`${value}|call`);
+}
+
 describe("Beachside sandbox", () => {
   let fixture: Awaited<ReturnType<typeof setupLive>> | undefined;
   let box: AdapterSandbox;
+  // Odd characters catch adapters that write create-time env to a file without quoting.
+  const createEnv = `qual ${crypto.randomUUID().slice(0, 8)} 'q' "d" $HOME \\x`;
+  let createEnvSupported = false;
   beforeAll(async () => {
     if (liveEnabled) {
       fixture = await setupLive(
@@ -324,7 +357,14 @@ describe("Beachside sandbox", () => {
       await fixture.resources.setup(async () => {
         await fixture!.resources.open();
         const t = fixture!.resources;
-        box = await t.create("sandbox/source");
+        createEnvSupported = (await t.client.capabilities()).createEnv === true;
+        box = await t.create(
+          "sandbox/source",
+          undefined,
+          undefined,
+          undefined,
+          createEnvSupported ? { QUAL_CREATE_ENV: createEnv, QUAL_BOTH: "create" } : undefined,
+        );
       });
     }
   }, 96000);
@@ -338,7 +378,11 @@ describe("Beachside sandbox", () => {
   );
   (liveEnabled ? test : test.skip)(
     "execution",
-    async () => execution(fixture!.resources, box),
+    async () => {
+      await execution(fixture!.resources, box);
+
+      if (createEnvSupported) await createEnvironment(fixture!.resources, box, createEnv);
+    },
     241000,
   );
   (liveEnabled && featureSupported("finiteStdin") ? test : test.skip)(
@@ -462,6 +506,9 @@ describe("Beachside sandbox", () => {
         box = await t.client.sandboxes.get(reference, { signal: t.signal });
         expect(await t.read(box, path)).toEqual(bytes);
         expect((await box.inspect({ signal: t.signal })).expires).toEqual(expires);
+
+        // A fresh connection holds no copy of create-time env: it must come from the sandbox.
+        if (createEnvSupported) await createEnvironment(t, box, createEnv);
         t.at("sandbox/reopen-delete");
         await t.destroy("sandbox/source");
         await expect(t.client.sandboxes.get(reference, { signal: t.signal })).rejects.toMatchObject(
