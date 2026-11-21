@@ -1,4 +1,5 @@
 import { freezeReference } from "./freeze-reference";
+import { instrument, internalMethod, waitFor } from "./observability";
 import { applySetup, prepareSetup } from "./setup-flow";
 import { hasSetupKeys, splitSetup, type SetupCreateOptions } from "./setup";
 import { CreateEnv } from "@beachside/adapter/portable";
@@ -125,6 +126,19 @@ export class AdapterSnapshot {
     reference: ResourceReference,
   ) {
     this.reference = freezeReference(checkedResource(client, reference, "snapshot"));
+    instrument(this, "inspect", client.telemetry, "beachside.snapshot.inspect");
+    instrument(this, "submitRestore", client.telemetry, "beachside.snapshot.submit_restore", {
+      effect: "possible",
+    });
+    instrument(this, "restore", client.telemetry, "beachside.snapshot.restore", {
+      effect: "applied",
+    });
+    instrument(this, "submitDelete", client.telemetry, "beachside.snapshot.submit_delete", {
+      effect: "possible",
+    });
+    instrument(this, "delete", client.telemetry, "beachside.snapshot.delete", {
+      effect: "applied",
+    });
   }
   get provider(): string {
     return this.reference.provider;
@@ -302,7 +316,12 @@ export class AdapterSnapshot {
   async restore(input: RestoreInput = {}, options: WaitOptions = {}): Promise<SandboxHandle<true>> {
     const { setupOptions, rest } = splitSetup(input);
     const resolved = await prepareSetup(setupOptions);
-    const box = await (await this.submitRestore(rest, options)).wait(options);
+
+    const box = await waitFor(
+      this.client.telemetry,
+      await internalMethod(this.submitRestore)(rest, options),
+      options,
+    );
 
     if (!this.client.session.exec) {
       if (resolved)
@@ -319,7 +338,11 @@ export class AdapterSnapshot {
     return deleteResource(this.client, this.reference, "snapshot", options);
   }
   async delete(options: WaitOptions = {}): Promise<ArtifactDeletionResult> {
-    return (await this.submitDelete(options)).wait(options);
+    return waitFor(
+      this.client.telemetry,
+      await internalMethod(this.submitDelete)(options),
+      options,
+    );
   }
 }
 
@@ -331,6 +354,11 @@ export class AdapterImage {
     reference: ResourceReference,
   ) {
     this.reference = freezeReference(checkedResource(client, reference, "image"));
+    instrument(this, "inspect", client.telemetry, "beachside.image.inspect");
+    instrument(this, "submitDelete", client.telemetry, "beachside.image.submit_delete", {
+      effect: "possible",
+    });
+    instrument(this, "delete", client.telemetry, "beachside.image.delete", { effect: "applied" });
   }
   get provider(): string {
     return this.reference.provider;
@@ -381,7 +409,11 @@ export class AdapterImage {
     return deleteResource(this.client, this.reference, "image", options);
   }
   async delete(options: WaitOptions = {}): Promise<ArtifactDeletionResult> {
-    return (await this.submitDelete(options)).wait(options);
+    return waitFor(
+      this.client.telemetry,
+      await internalMethod(this.submitDelete)(options),
+      options,
+    );
   }
 }
 
@@ -393,6 +425,11 @@ export class AdapterVolume {
     reference: ResourceReference,
   ) {
     this.reference = freezeReference(checkedResource(client, reference, "volume"));
+    instrument(this, "inspect", client.telemetry, "beachside.volume.inspect");
+    instrument(this, "submitDelete", client.telemetry, "beachside.volume.submit_delete", {
+      effect: "possible",
+    });
+    instrument(this, "delete", client.telemetry, "beachside.volume.delete", { effect: "applied" });
   }
   get provider(): string {
     return this.reference.provider;
@@ -435,7 +472,11 @@ export class AdapterVolume {
     return deleteResource(this.client, this.reference, "volume", options);
   }
   async delete(options: WaitOptions = {}): Promise<ArtifactDeletionResult> {
-    return (await this.submitDelete(options)).wait(options);
+    return waitFor(
+      this.client.telemetry,
+      await internalMethod(this.submitDelete)(options),
+      options,
+    );
   }
 }
 
@@ -527,10 +568,13 @@ export function resourceManagers(client: AdapterDirectClient) {
     },
   };
 
+  instrument(snapshots, "get", client.telemetry, "beachside.snapshot.get");
+  instrument(snapshots, "list", client.telemetry, "beachside.snapshot.list");
+
   const volumes = {
     async get(ref: ResourceReference): Promise<VolumeHandle> {
       const handle = new AdapterVolume(client, ref);
-      await handle.inspect();
+      await internalMethod(handle.inspect)();
 
       return handle;
     },
@@ -551,7 +595,11 @@ export function resourceManagers(client: AdapterDirectClient) {
       );
     },
     async create(input: VolumeCreateInput, options: WaitOptions = {}): Promise<VolumeHandle> {
-      return (await volumes.submitCreate(input, options)).wait(options);
+      return waitFor(
+        client.telemetry,
+        await internalMethod(volumes.submitCreate)(input, options),
+        options,
+      );
     },
     async list(input: SandboxListInput = {}) {
       client.ensureOpen();
@@ -582,11 +630,20 @@ export function resourceManagers(client: AdapterDirectClient) {
     },
   };
 
+  instrument(volumes, "get", client.telemetry, "beachside.volume.get");
+  instrument(volumes, "list", client.telemetry, "beachside.volume.list");
+  instrument(volumes, "submitCreate", client.telemetry, "beachside.volume.submit_create", {
+    effect: "possible",
+  });
+  instrument(volumes, "create", client.telemetry, "beachside.volume.create", {
+    effect: "applied",
+  });
+
   const images = {
     /** Inspect a saved image reference and return a handle bound to this connection. */
     async get(ref: ResourceReference): Promise<ImageHandle> {
       const handle = new AdapterImage(client, ref);
-      const info = await handle.inspect();
+      const info = await internalMethod(handle.inspect)();
 
       return new AdapterImage(client, info.reference);
     },
@@ -623,6 +680,9 @@ export function resourceManagers(client: AdapterDirectClient) {
       return new AdapterImage(client, ref).delete(options);
     },
   };
+
+  instrument(images, "get", client.telemetry, "beachside.image.get");
+  instrument(images, "list", client.telemetry, "beachside.image.list");
 
   return { snapshots, volumes, images };
 }

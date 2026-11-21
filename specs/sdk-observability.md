@@ -1,8 +1,8 @@
 # SDK observability and diagnostics
 
-Implemented contract · Tracing/diagnostics and recipes merged in PR #24; metrics/events deferred
+Implemented contract · Tracing/diagnostics and recipes merged in PR #24; metrics implemented; structured events deferred
 
-Make Beachside operations understandable inside the application's existing observability tools. Sections 1–6 record the tracing contract; section 7 is deferred design. The [observability guide](../apps/docs/src/content/docs/docs/observability.mdx), [compiled OTel example](../apps/docs/examples/observability-otel.ts) and [qualification records](../packages/sdk-qualification/observability/README.md) own current usage and exact coverage; public exports are authoritative for signatures.
+Make Beachside operations understandable inside the application's existing observability tools. Sections 1–6 record the tracing contract; section 7 records metrics and the deferred event design. The [observability guide](../apps/docs/src/content/docs/docs/observability.mdx), [compiled OTel example](../apps/docs/examples/observability-otel.ts) and [qualification records](../packages/sdk-qualification/observability/README.md) own current usage and exact coverage; public exports are authoritative for signatures.
 
 ## Developer outcomes
 
@@ -113,17 +113,28 @@ Keep vendor packages in examples/qualification dependencies, never the SDK's run
 
 Sources checked September 28, 2026: [Sentry's OTel integration](https://github.com/getsentry/sentry-javascript/blob/develop/packages/opentelemetry/README.md), [Datadog OTel library instrumentation](https://docs.datadoghq.com/opentelemetry/instrument/dd_sdks/instrumentation_libraries/), [Datadog runtime guidance](https://docs.datadoghq.com/opentelemetry/guide/instrument_unsupported_runtimes/). These establish integration directions, not tested Beachside compatibility. Verify exact released APIs when implementing each recipe.
 
-## 7. Metrics and diagnostic events follow tracing
+## 7. Metrics and diagnostic events
 
-After tracing and error correlation are usable, add a small stable metric set: public-call duration in seconds, completed-call count by outcome, provider-phase duration, and local in-flight calls. Emit metrics directly from measured operations rather than deriving them from sampled spans. A per-client count is not a global fleet gauge; terminal observations are not a count of uniquely completed provider mutations.
+Metrics use the OpenTelemetry metrics API from the same `@opentelemetry/api` dependency, under the same `beachside` instrumentation scope. Ownership matches tracing: the application owns the meter provider, readers, exporters and shutdown. The connection `metrics` option is independent of `tracing`: omission uses the application's global meter provider, `false` disables Beachside metrics for that client, and `{ meterProvider }` injects one. Either signal can be enabled without the other. Beachside reads no `OTEL_*` environment variables; the application's OTel SDK does.
 
-Default dimensions are finite operation/mode/outcome/error-code classes and a bounded provider label. Map unknown/custom provider labels to `custom` unless the application configures a finite allowlist. Exclude operation/resource/tenant IDs, file paths, raw URLs, commands, exception text, and arbitrary provider errors from metric labels.
+The stable metric set:
+
+| Metric | Instrument | Meaning |
+| --- | --- | --- |
+| `beachside.operation.duration` | Histogram, `s` | Duration of every public call that has a public span; its count by `beachside.call.outcome` is the completed-call count |
+| `beachside.phase.duration` | Histogram, `s` | Phase duration (`prepare`, `submit`, `wait`, `observe`) |
+| `beachside.operation.active` | UpDownCounter, `{call}` | Local in-flight public calls |
+| `beachside.file.bytes` | Counter, `By` | Bytes read (including chunks a failed or abandoned stream already delivered) and bytes the provider confirmed writing; a failed write records none |
+
+Metrics are recorded directly from measured operations rather than derived from sampled spans. Public spans cover sandbox lifecycle (create, suspend, resume, renew, snapshot, fork, destroy, get), files, exec, images, snapshots, volumes and operation observe/wait/continue/recover; convenience paths such as a large `readFile` that falls back to streaming record one call, not two. Each instrument is recorded independently, and the in-flight counter is decremented only after a successful increment, so a faulty application meter cannot skew it or fail the call. A per-process count is not a global fleet gauge; terminal observations are not a count of uniquely completed provider mutations. Histograms use explicit second boundaries from 5 ms to 10 minutes.
+
+Dimensions are the finite `beachside.operation.name`, `beachside.operation.type`, `beachside.mode`, `beachside.phase`, `beachside.call.outcome` and allowlisted `beachside.error.code` (`INTERNAL` for non-SDK errors), plus a bounded provider label. The label is the adapter's declared name, not proof of provenance: first-party adapter names (`packages/sdk/src/provider-labels.ts`) are reported as-is; every other name maps to `custom`. A test fails when a package under `packages/providers` declares a name missing from that list, so new first-party adapters cannot silently report `custom`. Operation/resource/tenant IDs, file paths, raw URLs, commands, exception text and arbitrary provider errors never become metric labels.
 
 Structured diagnostic events should reuse the same sanitized schema and carry trace/span IDs when available. Decide the logger/OTel-log bridge and bounded delivery behavior in that later slice; do not introduce a mandatory logger, console noise, or a second vendor export pipeline in the tracing release. Telemetry is best effort and is never the authoritative operation journal or a billing ledger.
 
 ## 8. Regression and evidence boundaries
 
-Tracing, diagnostics and vendor recipes are implemented. Metrics and structured events remain deferred under section 7; they need separate bounded measurements, logger integration and backend/runtime coverage.
+Tracing, diagnostics, vendor recipes and metrics are implemented. Structured events remain deferred under section 7; they need logger integration and backend/runtime coverage. Metrics are covered by SDK unit tests, not yet by packed vendor qualification.
 
 Local Sentry/Datadog export and runtime fixtures are separate from live vendor-UI qualification; consult the maintained observability recipes for the exact coverage. Trace names, attributes, outcomes, diagnostic-helper fields, and privacy guarantees become supported public contracts and need release notes when changed. Changes do not authorize native state operations, accounting, a telemetry database, new provider adapters, or guest instrumentation.
 

@@ -14,12 +14,71 @@ import {
   type SpanContext,
   type TracerProvider,
   type Attributes,
+  metrics,
+  type Counter,
+  type Histogram,
+  type MeterProvider,
+  type UpDownCounter,
 } from "@opentelemetry/api";
 import { BeachsideError, NonzeroExitError, NoExitCodeError } from "./resource";
+import { providerLabel } from "./provider-labels";
 
 export interface ObservabilityOptions {
   /** Omission uses the application provider. Beachside never owns provider shutdown. */
   tracing?: false | { tracerProvider?: TracerProvider };
+  /**
+   * Omission uses the application's global meter provider; `false` disables Beachside metrics.
+   * Independent of tracing: either signal can be on without the other.
+   */
+  metrics?: false | { meterProvider?: MeterProvider };
+}
+
+interface Instruments {
+  duration: Histogram;
+  phase: Histogram;
+  active: UpDownCounter;
+  bytes: Counter;
+}
+
+// Seconds: sandbox calls range from millisecond file reads to multi-minute image builds.
+const durationBuckets = [
+  0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120, 300, 600,
+];
+
+// Keyed by provider so a global provider registered after connect still receives metrics.
+const instrumentCache = new WeakMap<MeterProvider, Instruments>();
+
+function instrumentsFor(provider: MeterProvider): Instruments {
+  const cached = instrumentCache.get(provider);
+
+  if (cached) return cached;
+  const meter = provider.getMeter("beachside", packageMetadata.version);
+  const advice = { explicitBucketBoundaries: durationBuckets };
+
+  const created: Instruments = {
+    duration: meter.createHistogram("beachside.operation.duration", {
+      unit: "s",
+      description: "Duration of public Beachside SDK calls.",
+      advice,
+    }),
+    phase: meter.createHistogram("beachside.phase.duration", {
+      unit: "s",
+      description: "Duration of Beachside call phases: prepare, submit, wait and observe.",
+      advice,
+    }),
+    active: meter.createUpDownCounter("beachside.operation.active", {
+      unit: "{call}",
+      description: "Public Beachside SDK calls in flight in this process.",
+    }),
+    bytes: meter.createCounter("beachside.file.bytes", {
+      unit: "By",
+      description: "Bytes moved by Beachside file reads and writes.",
+    }),
+  };
+
+  instrumentCache.set(provider, created);
+
+  return created;
 }
 
 export interface DiagnosticContext {
@@ -205,6 +264,9 @@ const operationKinds = new Set([
   "file_remove",
   "image_build",
   "image_delete",
+  "sandbox_suspend",
+  "sandbox_resume",
+  "sandbox_renew",
   "snapshot_capture",
   "snapshot_restore",
   "sandbox_fork",
@@ -231,30 +293,42 @@ function identityKind(value: unknown): string | undefined {
   });
 }
 
+const callTypes = {
+  "beachside.sandbox.create": "create",
+  "beachside.sandbox.submit_create": "create",
+  "beachside.sandbox.check_create": "create",
+  "beachside.exec": "exec",
+  "beachside.exec.submit": "exec",
+  "beachside.image.build": "image_build",
+  "beachside.image.submit_build": "image_build",
+  "beachside.image.delete": "image_delete",
+  "beachside.image.submit_delete": "image_delete",
+  "beachside.file.write": "file_write",
+  "beachside.file.mkdir": "file_mkdir",
+  "beachside.file.remove": "file_remove",
+  "beachside.sandbox.destroy": "destroy",
+  "beachside.sandbox.suspend": "sandbox_suspend",
+  "beachside.sandbox.submit_suspend": "sandbox_suspend",
+  "beachside.sandbox.resume": "sandbox_resume",
+  "beachside.sandbox.submit_resume": "sandbox_resume",
+  "beachside.sandbox.renew": "sandbox_renew",
+  "beachside.sandbox.submit_renew": "sandbox_renew",
+  "beachside.sandbox.snapshot": "snapshot_capture",
+  "beachside.sandbox.submit_snapshot": "snapshot_capture",
+  "beachside.sandbox.fork": "sandbox_fork",
+  "beachside.sandbox.submit_fork": "sandbox_fork",
+  "beachside.snapshot.restore": "snapshot_restore",
+  "beachside.snapshot.submit_restore": "snapshot_restore",
+  "beachside.snapshot.delete": "snapshot_delete",
+  "beachside.snapshot.submit_delete": "snapshot_delete",
+  "beachside.volume.create": "volume_create",
+  "beachside.volume.submit_create": "volume_create",
+  "beachside.volume.delete": "volume_delete",
+  "beachside.volume.submit_delete": "volume_delete",
+} as const satisfies Record<string, string>;
+
 function callType(name: string): string | undefined {
-  if (
-    [
-      "beachside.sandbox.create",
-      "beachside.sandbox.submit_create",
-      "beachside.sandbox.check_create",
-    ].includes(name)
-  )
-    return "create";
-
-  if (["beachside.exec", "beachside.exec.submit"].includes(name)) return "exec";
-
-  if (["beachside.image.build", "beachside.image.submit_build"].includes(name))
-    return "image_build";
-
-  if (name === "beachside.file.write") return "file_write";
-
-  if (name === "beachside.file.mkdir") return "file_mkdir";
-
-  if (name === "beachside.file.remove") return "file_remove";
-
-  if (name === "beachside.sandbox.destroy") return "destroy";
-
-  return undefined;
+  return Object.entries(callTypes).find(([call]) => call === name)?.[1];
 }
 
 interface CallState {
@@ -276,11 +350,19 @@ export class Telemetry {
     private readonly mode: "direct" = "direct",
     private readonly provider = "custom",
   ) {
-    this.options = { tracing: options.tracing };
+    this.options = { tracing: options.tracing, metrics: options.metrics };
   }
   private readonly options: ObservabilityOptions;
+  /** Tracing (spans and trace propagation); metrics are controlled separately. */
   get enabled(): boolean {
     return this.options.tracing !== false;
+  }
+  private instruments(): Instruments | undefined {
+    const option = this.options.metrics;
+
+    if (option === false) return;
+
+    return attempt(() => instrumentsFor(option?.meterProvider ?? metrics.getMeterProvider()));
   }
   correlate(value: unknown): void {
     if (!this.enabled) return;
@@ -332,7 +414,9 @@ export class Telemetry {
       failed = reject;
     });
 
-    const span = this.run(name, () => completion, { signal });
+    let bytes = 0;
+    // A failed or abandoned stream still delivered the chunks it yielded.
+    const span = this.run(name, () => completion, { signal, bytes: () => bytes });
     const cancelled = () => failed(new BeachsideError("WAIT_ABORTED", "File stream cancelled"));
 
     signal?.addEventListener("abort", cancelled, { once: true });
@@ -340,7 +424,6 @@ export class Telemetry {
     if (signal?.aborted) cancelled();
     // The iterator owns the error; observing the promise here prevents unhandled rejections while paused.
     void span.catch(() => undefined);
-    let bytes = 0;
     let ended = false;
 
     try {
@@ -378,9 +461,16 @@ export class Telemetry {
       identity?: unknown;
       operationType?: string;
       signal?: AbortSignal;
+      /**
+       * Bytes moved by a call whose result does not report them: a number for a file write,
+       * or a live count for a stream, which is also recorded when the stream fails.
+       */
+      bytes?: number | (() => number);
     } = {},
   ): Promise<T> {
-    if (!this.enabled) return work();
+    const meters = this.instruments();
+
+    if (!this.enabled && !meters) return work();
     const parent = options.parent ?? attempt(() => context.active()) ?? ROOT_CONTEXT;
 
     // SAFETY: Only this instance writes the owner key with a CallState.
@@ -394,38 +484,125 @@ export class Telemetry {
 
     const provider = this.options.tracing && this.options.tracing.tracerProvider;
     const scope = "beachside";
+    const label = providerLabel(this.provider);
+    const started = performance.now();
+    let outcome: "success" | "error" | "cancelled" = "success";
+    let errorCode: string | undefined;
+    let fileBytes: number | undefined;
 
-    const span = attempt(() => {
-      const tracer = provider
-        ? provider.getTracer(scope, packageMetadata.version)
-        : trace.getTracer(scope, packageMetadata.version);
+    const metricAttributes: Attributes = {
+      "beachside.operation.name": name,
+      "beachside.provider": label,
+      "beachside.mode": this.mode,
+    };
 
-      const origin = parseTraceParent(options.origin);
+    if (operationType) metricAttributes["beachside.operation.type"] = operationType;
 
-      const attributes: Attributes = {
-        "beachside.mode": this.mode,
-        "beachside.provider": ["daytona", "e2b", "modal", "fake"].includes(this.provider)
-          ? this.provider
-          : "custom",
-        "beachside.operation.type": operationType ?? name.replace(/^beachside\./, ""),
-      };
+    if (options.phase) metricAttributes["beachside.phase"] = name.slice("beachside.".length);
 
-      if (options.phase) attributes["beachside.phase"] = name.slice(8);
+    // Decrement only what was counted, so a faulty meter cannot skew the in-flight gauge.
+    const counted =
+      meters && !options.phase
+        ? (attempt(() => {
+            meters.active.add(1, metricAttributes);
 
-      if (options.identity) Object.assign(attributes, diagnosticAttributes(options.identity));
+            return true;
+          }) ?? false)
+        : false;
 
-      return tracer.startSpan(
-        name,
-        {
-          kind: options.kind ?? SpanKind.INTERNAL,
-          attributes,
-          links: origin ? [{ context: origin }] : [],
-        },
-        parent,
-      );
-    });
+    const span = !this.enabled
+      ? undefined
+      : attempt(() => {
+          const tracer = provider
+            ? provider.getTracer(scope, packageMetadata.version)
+            : trace.getTracer(scope, packageMetadata.version);
 
-    if (!span) return work();
+          const origin = parseTraceParent(options.origin);
+
+          const attributes: Attributes = {
+            "beachside.mode": this.mode,
+            "beachside.provider": label,
+            "beachside.operation.type": operationType ?? name.replace(/^beachside\./, ""),
+          };
+
+          if (options.phase) attributes["beachside.phase"] = name.slice("beachside.".length);
+
+          if (options.identity) Object.assign(attributes, diagnosticAttributes(options.identity));
+
+          return tracer.startSpan(
+            name,
+            {
+              kind: options.kind ?? SpanKind.INTERNAL,
+              attributes,
+              links: origin ? [{ context: origin }] : [],
+            },
+            parent,
+          );
+        });
+
+    const noteBytes = (result: unknown) => {
+      if (options.phase || !name.startsWith("beachside.file.")) return;
+
+      const bytes =
+        result instanceof Uint8Array
+          ? result.byteLength
+          : typeof result === "number"
+            ? result
+            : options.bytes instanceof Function
+              ? options.bytes()
+              : options.bytes;
+
+      if (bytes !== undefined && Number.isSafeInteger(bytes) && bytes >= 0) fileBytes = bytes;
+    };
+
+    const classify = (error: unknown) => {
+      if (options.bytes instanceof Function) noteBytes(undefined);
+      // Non-Beachside errors (adapter bugs, raw throws) keep a bounded code too.
+      errorCode = diagnosticContext(error).errorCode ?? "INTERNAL";
+      outcome = options.signal?.aborted || errorCode === "WAIT_ABORTED" ? "cancelled" : "error";
+    };
+
+    // Metrics come from the measured call, never from spans, so sampling cannot change them.
+    const finish = () => {
+      if (!meters) return;
+      const seconds = (performance.now() - started) / 1000;
+      const attrs: Attributes = { ...metricAttributes, "beachside.call.outcome": outcome };
+
+      if (errorCode) attrs["beachside.error.code"] = errorCode;
+
+      // Each instrument is isolated: one throwing recorder cannot skip the others.
+      if (options.phase) {
+        attempt(() => meters.phase.record(seconds, attrs));
+
+        return;
+      }
+
+      attempt(() => meters.duration.record(seconds, attrs));
+
+      if (counted) attempt(() => meters.active.add(-1, metricAttributes));
+
+      if (fileBytes !== undefined) {
+        const bytes = fileBytes;
+        attempt(() => meters.bytes.add(bytes, metricAttributes));
+      }
+    };
+
+    if (!span) {
+      if (!meters) return work();
+
+      try {
+        const result = await work();
+        noteBytes(result);
+
+        return result;
+      } catch (error) {
+        classify(error);
+        throw error;
+      } finally {
+        finish();
+      }
+    }
+
     const recording = attempt(() => span.isRecording()) ?? false;
 
     const state: CallState = {
@@ -463,6 +640,7 @@ export class Telemetry {
     try {
       attempt(() => context.with(active, invoke));
       const result = await (promise ?? invoke());
+      noteBytes(result);
 
       if (recording)
         attempt(() => {
@@ -553,6 +731,8 @@ export class Telemetry {
 
       return result;
     } catch (error) {
+      classify(error);
+
       if (recording)
         attempt(() => {
           const attrs = diagnosticAttributes(error);
@@ -601,6 +781,7 @@ export class Telemetry {
           }),
         );
       attempt(() => span.end());
+      finish();
     }
   }
 }
@@ -662,11 +843,17 @@ export function instrument<T extends object, K extends keyof T>(
         ? attempt(() => (args[0] as { signal?: AbortSignal } | undefined)?.signal)
         : undefined;
 
+    const bytes =
+      name === "beachside.file.write" && args[1] instanceof Uint8Array
+        ? args[1].byteLength
+        : undefined;
+
     return telemetry.run(name, () => invoke(...args), {
       ...options,
       identity,
       operationType,
       signal,
+      bytes,
     });
   };
 

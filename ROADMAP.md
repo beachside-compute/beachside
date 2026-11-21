@@ -79,7 +79,7 @@ Daytona and E2B live passes date from October 9, 2026. Snapshot, streaming and f
 - **Storage:** mounted capture, memory-plus-volume restore, mounted suspension, dynamic attachment, forks with mounts, and stronger durability or locking guarantees.
 - **Process and access:** durable remote transcript replay, verified remote runtime enforcement and descendant termination.
 - **Timeouts:** portable remote termination at an exec deadline needs stronger native evidence and its own contract.
-- **Observability:** metrics and structured events. Tracing, diagnostics and the Sentry and Datadog recipes ship today.
+- **Observability:** structured events. Tracing, metrics, diagnostics and the Sentry and Datadog recipes ship today.
 - **Release compatibility:** remove the deprecated empty-object restore-mount alias after its documented window ([migration rules](specs/storage-composition.md#compatibility-and-migration)).
 
 ## Provider candidates

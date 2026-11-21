@@ -30,7 +30,11 @@ try {
     files.push(path);
   }
 
-  assert.equal(files.length, snippets.length + 6, "All six rendered source files must be checked");
+  assert.equal(
+    files.length,
+    snippets.length + 7,
+    "All seven rendered source files must be checked",
+  );
   const config = resolve(directory, "tsconfig.json");
   await writeFile(config, JSON.stringify({ extends: resolve(docs, "../../tsconfig.json"), files }));
 
@@ -44,7 +48,7 @@ try {
   );
 
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  console.log(`Compiled ${snippets.length} actual guide snippets and 6 rendered example files`);
+  console.log(`Compiled ${snippets.length} actual guide snippets and 7 rendered example files`);
 } finally {
   await rm(directory, { recursive: true, force: true });
 }
