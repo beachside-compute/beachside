@@ -1,4 +1,4 @@
-# Reviews a pull request once, when it is ready for review: Pi runs in a Freestyle sandbox and
+# Reviews a pull request when it is opened ready for review or marked ready later: Pi runs in a Freestyle sandbox and
 # posts one review comment with `gh`. GitHub and model access come from a credential-broker grant
 # issued with this job's OIDC token, so the repository holds no GitHub or model keys.
 # Setup and the broker policy are in examples/pr-review/README.md.
@@ -52,6 +52,7 @@ jobs:
           REVIEW_IMAGE_FILE: .pr-review/image-id
           REVIEW_GATEWAY: ${{ vars.PR_REVIEW_GATEWAY }}
           REVIEW_MODEL: ${{ vars.PR_REVIEW_MODEL }}
+          PR_REVIEW_DEBUG: ${{ vars.PR_REVIEW_DEBUG }}
           BEACHSIDE_BROKER_URL: ${{ vars.BEACHSIDE_BROKER_URL }}
           BEACHSIDE_BROKER_AUDIENCE: ${{ vars.BEACHSIDE_BROKER_AUDIENCE }}
           FREESTYLE_API_KEY: ${{ secrets.FREESTYLE_API_KEY }}

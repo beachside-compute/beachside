@@ -8,6 +8,7 @@ import {
   LABEL,
   PATH,
   PI,
+  redact,
   required,
   run,
   savedImage,
@@ -85,6 +86,7 @@ export async function review(
   target: ReviewTarget,
   gateway: SelectedGateway,
   signal: AbortSignal,
+  options: { debug?: boolean } = {},
 ) {
   await ensureTools(box, signal);
 
@@ -127,10 +129,17 @@ export async function review(
     signal,
   );
 
-  process.stdout.write(result.stdoutText());
+  // Pi's output can repeat whatever a pull request talks it into printing, and these logs can be
+  // public, so it is shown only when debugging is turned on. The posted review is the output.
+  if (options.debug) process.stdout.write(redact(result.stdoutText({ full: true })));
+  else
+    console.log(`Pi exited with ${result.exitCode} after printing ${result.stdout.length} bytes.`);
 
   if (result.exitCode !== 0) {
-    process.stderr.write(result.stderrText({ full: true }).slice(-4_000));
+    const stderr = redact(result.stderrText({ full: true }));
+    process.stderr.write(
+      `${(options.debug ? stderr : stderr.split("\n").slice(-20).join("\n")).trim()}\n`,
+    );
     throw new Error(`Pi exited with ${result.exitCode}.`);
   }
 
@@ -196,7 +205,9 @@ async function main() {
       },
       async (box) => {
         console.log(`Created Freestyle sandbox ${box.id}.`);
-        await review(box, target, gateway, signal);
+        await review(box, target, gateway, signal, {
+          debug: process.env.PR_REVIEW_DEBUG?.trim() === "true",
+        });
       },
       { signal, cleanupTimeoutMs: 60_000 },
     );

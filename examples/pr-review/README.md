@@ -1,6 +1,6 @@
 # Review pull requests with Pi
 
-A GitHub Actions workflow that reviews each pull request when it becomes ready for review. Pi runs in a Freestyle sandbox, reads the change in a clone of the repository, and posts one review comment that covers every finding with `gh pr review --comment`.
+A GitHub Actions workflow that reviews each pull request when it is opened ready for review, or when a draft is marked ready. Pi runs in a Freestyle sandbox, reads the change in a clone of the repository, and posts one review comment that covers every finding with `gh pr review --comment`.
 
 The repository holds no GitHub or model keys. The job asks the [credential broker](https://beachside.run/docs/credential-broker/) for a grant with its own GitHub Actions OIDC token. The grant lets `git` and `gh` in the sandbox reach GitHub, and Pi reach the model gateway, through the broker. The only secret in the repository is the Freestyle API key, which stays on the runner.
 
@@ -26,8 +26,16 @@ The review job runs on `pull_request_target` for `opened` and `ready_for_review`
 4. Clones the repository, fetches the base branch and `refs/pull/<n>/head`, and checks out the head.
 5. Writes Pi's `models.json` inside the sandbox from the grant's base URL. Pi reads the grant token from the environment.
 6. Runs `pi --print` with the `read`, `bash`, `grep`, `find` and `ls` tools and asks for exactly one comment-only review.
-7. Checks that a review ending with this run's marker was posted, and fails the job if not.
+7. Checks that a review containing this run's marker was posted, and fails the job if not.
 8. Destroys the sandbox, which also revokes the grant.
+
+## Logs
+
+The job log shows the steps, Pi's exit code and how much it printed, but not what Pi printed. The review on the pull request is the output. A pull request could talk Pi into printing its environment, which holds the grant token, and Actions logs of a public repository are public. When Pi fails, the log shows the last 20 lines of its stderr. Anything shaped like a grant, GitHub token or model key (`bsg_`, `github_pat_`, `ghp_`, `sk-`) is blanked out of everything logged.
+
+Set `PR_REVIEW_DEBUG` to `true` to print Pi's full output, still with those shapes blanked out. Turn it off again afterwards.
+
+The log is not the only way out: Pi could also be talked into writing the token in the review, or sending it over the network. That is why the grant only reads code, posts reviews and calls the model, and expires after 30 minutes. A spend limit on the gateway key caps the rest.
 
 ## Model gateway
 
@@ -93,6 +101,7 @@ Run `beachside broker issuer allow github-review kilo openrouter` if the issuer 
 | Variable | `PR_REVIEW_ENABLED` | `true` to turn reviews, images and sweeps on. |
 | Variable | `PR_REVIEW_GATEWAY` | Optional: `kilo` (default) or `openrouter`. |
 | Variable | `PR_REVIEW_MODEL` | Optional: a model ID; defaults to `deepseek/deepseek-v4.1-flash-1017`. |
+| Variable | `PR_REVIEW_DEBUG` | Optional: `true` to print Pi's full output in the job log. |
 
 Then run **PR review maintenance** once by hand to build the first image. Reviews still work before it exists; they install the tools at the start, which takes longer.
 
