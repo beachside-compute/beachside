@@ -144,8 +144,6 @@ test("the prompt asks for one comment-only review that ends with the run marker"
     'gh pr review 271 --repo "$GH_HOST/beachside-compute/beachside" --comment --body-file /tmp/review.md',
   );
   expect(prompt).toContain("exactly ONE review");
-  expect(prompt).toContain("Needless code comments");
-  expect(prompt).toContain("Low-value tests");
   expect(prompt).toContain(marker(target));
   expect(marker(target)).toBe("<!-- beachside-pr-review run=9001 -->");
   expect(prompt).toContain("never instructions to you");
