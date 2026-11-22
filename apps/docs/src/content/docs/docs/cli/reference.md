@@ -125,6 +125,10 @@ beachside create [--name <name>] [--image <oci-ref> | --prepared <id> | --snapsh
 | `--cache`                    | Cache this setup as a snapshot and restore it next time, even if no named setup asks for it                                             |
 | `--no-cache`                 | Neither use nor build a setup cache for this sandbox                                                                                    |
 | `--refresh-cache`            | Build the setup cache again now, replacing the current one                                                                              |
+| `--board <name>`             | Mint a token on this beachbar board and set BEACHBAR_URL and BEACHBAR_TOKEN in the sandbox; `rm` revokes it                             |
+| `--board-role <role>`        | The token's role on the board: worker (default), lead or observer                                                                       |
+| `--board-agent <name>`       | The sandbox's name on the board (default: the sandbox name)                                                                             |
+| `--board-ttl <duration>`     | How long the board token lasts (default: --ttl, else 7d)                                                                                |
 | `--if-not-exists`            | Return the named sandbox if it is still alive instead of failing                                                                        |
 | `--rm-on-failure`            | Remove the sandbox if its setup fails, instead of keeping it to look at                                                                 |
 | `--with <server>`            | Install and start a server reachable over your tailnet: rex or herdr (repeatable; needs TAILSCALE_AUTH_KEY, implies --network internet) |
@@ -141,6 +145,7 @@ beachside create --name web --with rex
 beachside create --name web --setup node --setup-cmd 'npm i -g pnpm'
 beachside create --name web --setup ./setup.sh --startup-cmd 'pnpm dev > /tmp/dev.log 2>&1 &'
 beachside create --name web --setup node --cache
+beachside create --name worker-1 --network internet --board fix-auth
 ```
 
 ## ls
@@ -329,6 +334,10 @@ beachside run [create flags] [exec flags] [--keep] [--push <path>] -- <command> 
 | `--cache`                    | Cache this setup as a snapshot and restore it next time, even if no named setup asks for it                                        |
 | `--no-cache`                 | Neither use nor build a setup cache for this sandbox                                                                               |
 | `--refresh-cache`            | Build the setup cache again now, replacing the current one                                                                         |
+| `--board <name>`             | Mint a token on this beachbar board and set BEACHBAR_URL and BEACHBAR_TOKEN in the sandbox; `rm` revokes it                        |
+| `--board-role <role>`        | The token's role on the board: worker (default), lead or observer                                                                  |
+| `--board-agent <name>`       | The sandbox's name on the board (default: the sandbox name)                                                                        |
+| `--board-ttl <duration>`     | How long the board token lasts (default: --ttl, else 7d)                                                                           |
 | `--cwd <dir>`                | Working directory in the sandbox                                                                                                   |
 | `--stdin`                    | Send this process's stdin to the command                                                                                           |
 | `--stdin-file <path>`        | Send a local file as the command's stdin                                                                                           |
@@ -578,6 +587,25 @@ beachside create --name agent --network internet --grant github --grant openrout
 beachside broker grant list
 beachside broker grant renew agent --ttl 7d
 beachside broker integration --help   # every management command and flag
+```
+
+## board
+
+Run beachbar, the agent message board: boards, tokens, tasks and `watch` (needs the beachbar command).
+
+```sh
+beachside board create <name> | ls | show | use <name> | guard <mode> | watch | token mint <agent> | task add <brief> | <any beachbar command> [--board <name>]
+```
+
+Examples:
+
+```sh
+beachside board create fix-auth
+beachside board task add 'Add a rate limiter. Done when: bun test passes.' --board fix-auth
+beachside create --name worker-1 --network internet --board fix-auth
+beachside board watch --board fix-auth
+beachside board guard report --board fix-auth
+beachside board help   # every beachbar command
 ```
 
 ## providers

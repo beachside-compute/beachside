@@ -121,6 +121,16 @@ import {
   type LocalTree,
 } from "./transfer";
 import { meter } from "./program-status";
+import {
+  boardLines,
+  boardRequest,
+  mintBoardToken,
+  revokeBoardToken,
+  revokeNote,
+  revokeRecordedBoardToken,
+  type AcquiredBoardToken,
+  type BoardRequest,
+} from "./board";
 import { parseDuration, parsePairs, parseSize } from "./units";
 
 /** Parsed command-line values for one command. */
@@ -185,6 +195,8 @@ type CreateRequest = {
   cache: CacheFlags;
   /** `--grant`, `--grant-ttl`, `--broker`: a credential-broker grant in the sandbox env. */
   grant: GrantRequest | null;
+  /** `--board` and its options: a beachbar token in the sandbox env. */
+  board: BoardRequest | null;
 };
 
 /** Create flags a restore cannot honor: the snapshot fixes the image. */
@@ -216,6 +228,19 @@ function createRequest(flags: Flags, env: Record<string, string> = {}): CreateRe
     );
 
   const grant = grantRequest(flags);
+  const board = boardRequest(flags, ttl === undefined ? undefined : parseDuration(ttl, "ttl"));
+
+  if (board && (flags.bool("cache") || flags.bool("refresh-cache")))
+    throw usage(
+      "--board cannot be combined with --cache or --refresh-cache",
+      "a cache snapshot would keep the board token; build the cache without --board",
+    );
+
+  if (board && network === "blocked")
+    throw usage(
+      "--board needs a network that reaches the board",
+      "pass --network internet, or a provider allowlist that includes the board's Worker",
+    );
 
   if (grant && (flags.bool("cache") || flags.bool("refresh-cache")))
     throw usage(
@@ -270,6 +295,7 @@ function createRequest(flags: Flags, env: Record<string, string> = {}): CreateRe
       refresh: flags.bool("refresh-cache"),
     },
     grant,
+    board,
   };
 }
 
@@ -599,6 +625,42 @@ async function createOnce(session: Session, request: CreateRequest): Promise<Cre
     claimed.record.grant = grant.record;
   }
 
+  // The board token joins the sandbox env the same way; it is minted only once nothing else refused.
+  let board: AcquiredBoardToken | undefined;
+
+  if (request.board) {
+    const taken = Object.keys(input.env ?? {});
+    const clash = taken.find((name) => name === "BEACHBAR_URL" || name === "BEACHBAR_TOKEN");
+
+    const giveBack = async () => {
+      if (grant) await grant.grant.revoke(AbortSignal.timeout(15_000)).catch(() => undefined);
+    };
+
+    try {
+      if (clash)
+        throw usage(
+          `--env ${clash} would replace the variable --board sets`,
+          "drop the --env value; --board sets BEACHBAR_URL and BEACHBAR_TOKEN",
+        );
+
+      if (!(await client.capabilities()).createEnv)
+        throw new CliError(
+          "UNSUPPORTED",
+          `--board needs sandbox-wide env, which ${profile.provider} does not support`,
+          "use a provider that does, or mint a token with `beachside board token mint <agent>` and pass it with --env",
+        );
+
+      board = await mintBoardToken(session, request.board, claimed.record.name);
+    } catch (cause) {
+      await giveBack();
+      await store.remove("sandbox", claimed.record.name, claimed.version);
+      throw cause;
+    }
+
+    input.env = { ...input.env, ...board.env };
+    claimed.record.board = board.record;
+  }
+
   let box: SandboxHandle<true>;
 
   try {
@@ -619,6 +681,11 @@ async function createOnce(session: Session, request: CreateRequest): Promise<Cre
               `could not revoke the grant made for ${claimed.record.name} (${grant!.record.id}); it expires ${grant!.record.expiresAt}`,
             ),
           );
+
+      if (board)
+        await revokeBoardToken(session, board.record).catch((cause) =>
+          session.ctx.out.note(revokeNote(claimed.record.name, board!.record, cause)),
+        );
 
       // Adapters without a default image reject an argument-free create in SDK terms, but so
       // does any other bad input (an E2B lifetime over its cap), so the message stays the
@@ -693,8 +760,14 @@ function unrecordedError(created: Created): CliError {
   return new CliError(
     "STORE_WRITE_FAILED",
     `Created ${created.record.name} but could not record it in the store: ${created.unrecorded?.message}`,
-    "save the reference below to a file and use `beachside rm @<file>` to destroy it",
-    { sandbox: created.record.name, reference: created.record.reference },
+    created.record.board
+      ? `save the reference below to a file and use \`beachside rm @<file>\` to destroy it, then revoke its board token with \`beachside board token revoke ${created.record.board.tokenId} --board ${created.record.board.board}\``
+      : "save the reference below to a file and use `beachside rm @<file>` to destroy it",
+    {
+      sandbox: created.record.name,
+      reference: created.record.reference,
+      ...(created.record.board && { boardToken: created.record.board.tokenId }),
+    },
     "partial",
   );
 }
@@ -713,6 +786,7 @@ function sandboxSummary(record: SandboxRecord) {
     addons: record.addons ?? [],
     setup: record.setup ?? null,
     grant: record.grant ?? null,
+    board: record.board ?? null,
   };
 }
 
@@ -805,10 +879,12 @@ async function prepareCaching(
 
   if (!wanted) return null;
 
-  // A cache snapshot would keep the grant's token and hand it to later sandboxes.
-  if (request.grant) {
+  // A cache snapshot would keep the grant's or board's token and hand it to later sandboxes.
+  if (request.grant || request.board) {
     if (setup?.cache !== undefined)
-      session.ctx.out.note("setup cache skipped: a sandbox with --grant is never cached");
+      session.ctx.out.note(
+        `setup cache skipped: a sandbox with ${request.grant ? "--grant" : "--board"} is never cached`,
+      );
 
     return null;
   }
@@ -923,6 +999,7 @@ export async function createCommand(session: Session, flags: Flags): Promise<num
   if (created.existing) {
     requireSetup(created.record, setup);
     requireAddons(created.record, request.addons);
+    requireBoard(created.record, request.board?.board ?? null);
   } else {
     const failure = await setUp(session, created, setup, request, undefined, caching);
 
@@ -945,6 +1022,19 @@ export async function createCommand(session: Session, flags: Flags): Promise<num
   );
 
   return 0;
+}
+
+/** `--if-not-exists --board` found the sandbox: it must carry a token for that board. */
+function requireBoard(record: SandboxRecord, board: string | null): void {
+  if (board === null || record.board?.board === board) return;
+
+  throw new CliError(
+    "CONFLICT",
+    record.board
+      ? `${record.name} exists with a token for board ${record.board.board}, not ${board}`
+      : `${record.name} exists without a board token`,
+    `remove it with \`beachside rm ${record.name}\` and create it again with --board ${board}`,
+  );
 }
 
 /** `--if-not-exists` found the sandbox: its recorded setup must match and be ready. */
@@ -1157,6 +1247,7 @@ async function setUp(
     await created.box.destroy();
     await (await session.store()).remove("sandbox", name);
     await revokeRecordedGrant(session, created.record);
+    await revokeRecordedBoardToken(session, created.record);
   } catch (cause) {
     return new CliError(
       "CLEANUP_FAILED",
@@ -1832,6 +1923,7 @@ export async function inspectCommand(session: Session, flags: Flags): Promise<nu
     ...setupLines(record.setup),
     ...addonLines(record.addons ?? []),
     ...grantLines(record),
+    ...boardLines(record),
   ];
 
   session.ctx.out.success(
@@ -2009,6 +2101,7 @@ async function removeOne(
   ): Promise<RemoveResult> => {
     await noteForgetHerdr(session, record.name, record.addons ?? []);
     await revokeRecordedGrant(session, record);
+    await revokeRecordedBoardToken(session, record);
 
     for (const addon of record.addons ?? []) {
       if (addon.name === "rex" && addon.connect)
@@ -2674,6 +2767,7 @@ export async function runCommand(session: Session, flags: Flags): Promise<number
     await created.box.destroy();
     await store.remove("sandbox", created.record.name);
     await revokeRecordedGrant(session, created.record);
+    await revokeRecordedBoardToken(session, created.record);
   } catch (cause) {
     const report = describeError(cause);
 

@@ -18,6 +18,8 @@ export class CliError extends Error {
     readonly outcome: Outcome = code === "OUTCOME_UNKNOWN" ? "unknown" : "rejected",
     /** Per-item results for batch commands that stopped partway. */
     readonly details?: BatchDetails,
+    /** Whether the same call may succeed if tried again, such as a rate limit from beachbar. */
+    readonly retryable = false,
   ) {
     super(message);
     this.name = "CliError";
@@ -52,6 +54,8 @@ export type Known = {
   /** The snapshot a capture made when recording it failed. */
   snapshotReference?: ResourceReference;
   reference?: SandboxReference | null;
+  /** The beachbar token id a sandbox the store does not know still carries. */
+  boardToken?: string;
   /** The SDK's operation reference for an uncertain create; `beachside rm` uses it to recover. */
   recovery?: RecoveryReference;
   /** The command's captured result when a later step (cleanup, exit status) failed. */
@@ -82,7 +86,7 @@ export function describeError(cause: unknown): ErrorReport {
     return {
       code: cause.code,
       message: cause.message,
-      retryable: false,
+      retryable: cause.retryable && cause.outcome === "rejected",
       outcome: cause.outcome,
       hint: cause.hint,
       known: cause.known,
@@ -144,6 +148,7 @@ const managementExitCodes = new Map([
   ["ADAPTER_INSTALLER_MISSING", 4],
   ["LIMIT_REACHED", 4],
   ["SECRET_TOOL_MISSING", 4],
+  ["BEACHBAR_NOT_INSTALLED", 4],
   ["SECRET_UNAVAILABLE", 5],
   ["UNAUTHENTICATED", 5],
   ["FORBIDDEN", 5],
