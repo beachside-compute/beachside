@@ -1,0 +1,66 @@
+# Keeps the PR reviewer fast and leak-free: a weekly Freestyle snapshot with Git, GitHub CLI, Node
+# and Pi installed, and an hourly sweep that destroys any review sandbox older than an hour.
+# Sandboxes and grants also expire on their own after 30 minutes, and snapshots after 14 days.
+name: PR review maintenance
+on:
+  schedule:
+    - cron: "23 * * * *"
+    - cron: "41 9 * * 1"
+  workflow_dispatch:
+    inputs:
+      image:
+        description: Build a new review image as well as sweeping
+        type: boolean
+        default: true
+permissions:
+  contents: read
+concurrency:
+  group: pr-review-maintenance-${{ github.event.schedule || 'manual' }}
+  cancel-in-progress: false
+jobs:
+  sweep:
+    if: vars.PR_REVIEW_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: bun install --frozen-lockfile
+      - run: bun run build:packages
+      - run: bun examples/pr-review/sweep.ts
+        env:
+          FREESTYLE_API_KEY: ${{ secrets.FREESTYLE_API_KEY }}
+  image:
+    if: >-
+      vars.PR_REVIEW_ENABLED == 'true' &&
+      (github.event.schedule == '41 9 * * 1' || (github.event_name == 'workflow_dispatch' && inputs.image))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: bun install --frozen-lockfile
+      - run: bun run build:packages
+      - run: bun examples/pr-review/image.ts
+        env:
+          REVIEW_IMAGE_FILE: .pr-review/image-id
+          FREESTYLE_API_KEY: ${{ secrets.FREESTYLE_API_KEY }}
+      # Review jobs restore the newest pr-review-image-* entry, so each build replaces the last.
+      - uses: actions/cache/save@v4
+        with:
+          path: .pr-review/image-id
+          key: pr-review-image-${{ github.run_id }}-${{ github.run_attempt }}
