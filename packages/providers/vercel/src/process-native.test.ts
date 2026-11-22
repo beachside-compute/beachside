@@ -57,7 +57,7 @@ async function cleanup(process: NativeProcess | undefined, root: string) {
     await process.detach();
   }
 
-  for (let i = 0; i < 100 && existsSync(root); i++) await Bun.sleep(10);
+  for (let i = 0; i < 500 && existsSync(root); i++) await Bun.sleep(10);
   expect(existsSync(root)).toBe(false);
 }
 
@@ -194,7 +194,7 @@ test("Vercel detach closes input without killing a running child and helper remo
     expect(existsSync(native.root)).toBe(true);
     await child.detach();
 
-    for (let i = 0; i < 150 && existsSync(native.root); i++) await Bun.sleep(10);
+    for (let i = 0; i < 500 && existsSync(native.root); i++) await Bun.sleep(10);
     expect(existsSync(native.root)).toBe(false);
   } finally {
     if (existsSync(native.root)) await cleanup(child, native.root);

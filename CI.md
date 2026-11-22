@@ -14,7 +14,7 @@ The [CI workflow](.github/workflows/ci.yml) builds the shared graph once per com
 
 Packed validation runs when manifests (including export maps), dependency locks, TypeScript/build configuration, package ignore files, public build entrypoints, package assets, qualification code or the packed recovery example change. Changes to CI workflows, release scripts or Changesets configuration also select it. Routine implementation edits, tests outside the qualification harness, documentation and changeset prose do not select it. Manual CI dispatches and unavailable base commits select packed validation conservatively. Renames check both the old and new paths.
 
-When a PR's only code changes are under `examples/`, `actions/` or `tools/`, `offline` runs only those directories' tests, since nothing else imports them. A change to a `package.json`, `tsconfig` or ignore file there runs the full suite.
+When a PR's only code changes are under `examples/`, `actions/` or `tools/`, `offline` runs only the tests in those directories, since nothing else imports them. A change to a `package.json`, `tsconfig` or ignore file there runs the full suite.
 
 The `release` job runs the stable/prerelease rehearsal when release scripts (`release`, `release-fixture`, `check-installers`, `npm-bootstrap`, `refresh-workspace-lock`, `assert-pending-changesets`), `scripts/release-packages.json`, Changesets configuration, the CI, release or version workflows, or the root `package.json` change. It tests the release tooling rather than the packages being released, so the release workflow no longer repeats it. Manual dispatches and unavailable base commits select it conservatively. The npm/pnpm/Bun installer checks of the exact release tarballs stay in the release workflow.
 

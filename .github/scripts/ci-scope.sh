@@ -20,13 +20,13 @@ if [ "$EVENT" = pull_request ] && git cat-file -e "$BASE^{commit}" 2>/dev/null; 
       .github/ISSUE_TEMPLATE/*) ;;
       apps/docs/src/*|apps/docs/public/*|apps/docs/test/*|*.md|*.mdx)
         docs=true ;;
-      # Packaging files there select packed validation, which needs the full suite.
+      # Packaging files there can change how the rest of the workspace resolves.
       */package.json|*/tsconfig*.json|*/.gitignore|*/.npmignore)
         full=true; docs=true; shared=true ;;
       # Nothing else imports these, so their own tests cover a change to them.
       examples/*|actions/*|tools/*)
         full=true; docs=true
-        root=${path%%/*}
+        root=./${path%%/*}/
         case " $roots " in *" $root "*) ;; *) roots="$roots $root" ;; esac ;;
       *) full=true; docs=true; shared=true ;;
     esac
