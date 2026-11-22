@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, jest, test } from "bun:test";
 import { z } from "zod";
 import {
   AdapterError,
@@ -1051,16 +1051,26 @@ test("preparation deadline settles ordinary and advanced calls without submissio
     },
   });
 
-  const ordinary = client.sandboxes.create({ environment: Image.prepared("image") });
+  jest.useFakeTimers();
+  let ordinary: Promise<unknown>;
+  let advanced: Promise<unknown>;
 
-  const advanced = client.operations.prepare("create", {
-    image: { kind: "prepared", value: "image" },
-    networkPolicy: "blocked",
-  });
+  try {
+    ordinary = client.sandboxes.create({ environment: Image.prepared("image") });
+
+    advanced = client.operations.prepare("create", {
+      image: { kind: "prepared", value: "image" },
+      networkPolicy: "blocked",
+    });
+
+    for (let turn = 0; turn < 1000 && preparations < 2; turn++) await Promise.resolve();
+    expect(preparations).toBe(2);
+    jest.advanceTimersByTime(30_000);
+  } finally {
+    jest.useRealTimers();
+  }
 
   const outcomes = await Promise.allSettled([ordinary, advanced]);
-
-  expect(preparations).toBe(2);
 
   for (const outcome of outcomes) {
     expect(outcome.status).toBe("rejected");
@@ -1079,7 +1089,7 @@ test("preparation deadline settles ordinary and advanced calls without submissio
   expect(submissions).toBe(0);
   expect(references).toBe(0);
   await client.close();
-}, 40_000);
+});
 
 test("advanced submit cancellation leaves an unknown outcome and original identity", async () => {
   for (const mode of ["caller", "close"] as const) {

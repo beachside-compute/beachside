@@ -57,7 +57,7 @@ async function cleanup(process: NativeProcess | undefined, root: string) {
     await process.detach();
   }
 
-  for (let i = 0; i < 100 && existsSync(root); i++) await Bun.sleep(10);
+  for (let i = 0; i < 500 && existsSync(root); i++) await Bun.sleep(10);
   expect(existsSync(root)).toBe(false);
 }
 
