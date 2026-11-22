@@ -1,6 +1,6 @@
 # Review pull requests with Pi
 
-A GitHub Actions workflow that reviews each pull request once, when it is ready for review. Pi runs in a Freestyle sandbox, reads the change in a clone of the repository, and posts one review comment that covers every finding with `gh pr review --comment`.
+A GitHub Actions workflow that reviews each pull request when it becomes ready for review. Pi runs in a Freestyle sandbox, reads the change in a clone of the repository, and posts one review comment that covers every finding with `gh pr review --comment`.
 
 The repository holds no GitHub or model keys. The job asks the [credential broker](https://beachside.run/docs/credential-broker/) for a grant with its own GitHub Actions OIDC token. The grant lets `git` and `gh` in the sandbox reach GitHub, and Pi reach the model gateway, through the broker. The only secret in the repository is the Freestyle API key, which stays on the runner.
 
@@ -16,7 +16,7 @@ The review job runs on `pull_request_target` for `opened` and `ready_for_review`
 - the pull request comes from this repository, never a fork;
 - its author is an `OWNER`, `MEMBER` or `COLLABORATOR` of the repository.
 
-`pull_request_target` runs the workflow from the default branch, so a pull request cannot change the workflow or the scripts. The job checks out only the default branch. The pull request is cloned inside the sandbox, through the broker. Each pull request is reviewed once: later pushes do not start another review. A new run for the same pull request, such as one marked ready again after going back to draft, cancels the previous one.
+`pull_request_target` runs the workflow from the default branch, so a pull request cannot change the workflow or the scripts. The job checks out only the default branch. The pull request is cloned inside the sandbox, through the broker. A pull request is reviewed when it becomes ready for review; later pushes do not start another review. Marking it ready again after it went back to draft starts a new review, which cancels one still running for the same pull request.
 
 ## What the review does
 
