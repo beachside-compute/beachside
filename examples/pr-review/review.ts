@@ -54,7 +54,7 @@ export function reviewPrompt(target: ReviewTarget) {
 
   return `You are reviewing pull request #${pr} in ${repository}. The repository is checked out in the current directory at the pull request's head commit. The base branch is origin/${base}.
 
-This is a STATIC review: read the code and reason about it. Do not build, install dependencies, run tests, or run any of the project's code or scripts. Use only git and read-only commands to inspect the checkout.
+This is a STATIC review: read the code and reason about it. Do not build, install dependencies, run tests, or run any of the project's code or scripts. Inspect the checkout with git and read-only commands; the only things you write or run beyond that are the review file and the command that posts it.
 
 1. See the change with \`git diff --merge-base origin/${base} HEAD\` and \`git log --oneline origin/${base}..HEAD\`. Read the surrounding code wherever you need context.
 2. Look for correctness bugs, security problems, missing or broken tests, and changes that will confuse the next reader. Skip style points that a formatter or linter would catch.
