@@ -6,7 +6,16 @@ import { NonzeroExitError } from "beachside";
 import type { ExecInput, ExecOutput, SandboxListEntry } from "beachside";
 import { DEFAULT_MODEL, modelsScript, selectGateway } from "./gateway";
 import { cloneScript, marker, review, reviewPrompt, reviewTarget } from "./review";
-import { ensureTools, INSTALL_STEPS, LABEL, PI, READY, savedImage, type Box } from "./shared";
+import {
+  ensureTools,
+  INSTALL_STEPS,
+  LABEL,
+  PI,
+  READY,
+  redact,
+  savedImage,
+  type Box,
+} from "./shared";
 import { leftovers } from "./sweep";
 
 function output(exitCode: number, stdout = "", stderr = ""): ExecOutput {
@@ -196,6 +205,9 @@ test("a review runs Pi in the clone and fails unless the marked review was poste
     ]);
 
     await review(posted.box, target, gateway, signal);
+    // Pi's output stays out of the log unless debugging is on.
+    expect(quiet[1]).not.toHaveBeenCalledWith("Posted.\n");
+    expect(quiet[0]).toHaveBeenCalledWith("Pi exited with 0 after printing 8 bytes.");
 
     const pi = posted.calls.find((call) => isPi(call.argv))!;
     expect(pi.input?.cwd).toBe("/home/ubuntu/repo");
@@ -271,4 +283,14 @@ test("a saved image id is used only when it looks like a Freestyle snapshot", as
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("logged text has grant, GitHub and model key shapes blanked out", () => {
+  const text = redact(
+    "BEACHSIDE_GRANT=bsg_abcdef123456 GH_ENTERPRISE_TOKEN=github_pat_11AAAA_bbbbCCCC ghp_0123456789ab sk-or-v1-deadbeefcafe keep me",
+  );
+
+  expect(text).toBe(
+    "BEACHSIDE_GRANT=bsg_[redacted] GH_ENTERPRISE_TOKEN=github_pat_[redacted] ghp_[redacted] sk-[redacted] keep me",
+  );
 });

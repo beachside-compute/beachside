@@ -89,6 +89,14 @@ export async function run(box: Box, input: ExecInput, signal: AbortSignal): Prom
   }
 }
 
+/** Blank out anything shaped like a broker grant, GitHub token or model key before it is logged. */
+export function redact(text: string) {
+  return text.replace(
+    /\b(bsg_|github_pat_|gh[pousr]_|sk-)[A-Za-z0-9_-]{8,}/g,
+    (_, prefix: string) => `${prefix}[redacted]`,
+  );
+}
+
 export function required(env: Record<string, string | undefined>, name: string) {
   const value = env[name]?.trim();
 
@@ -118,7 +126,9 @@ export async function sh(
   );
 
   if (result.exitCode !== 0) {
-    const reason = result.stderrText({ full: true }).trim().split("\n").at(-1)?.slice(0, 300);
+    const reason = redact(
+      result.stderrText({ full: true }).trim().split("\n").at(-1)?.slice(0, 300) ?? "",
+    );
 
     throw new Error(`${stage} failed (exit ${result.exitCode}).${reason ? ` ${reason}` : ""}`);
   }
