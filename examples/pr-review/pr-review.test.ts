@@ -132,7 +132,7 @@ test("the prompt asks for one comment-only review that ends with the run marker"
   const prompt = reviewPrompt(target);
 
   expect(prompt).toContain(
-    'gh pr review 271 --repo "$GH_HOST/beachside-compute/beachside" --comment --body-file /tmp/review.md',
+    'gh api --hostname "$GH_HOST" --method POST repos/beachside-compute/beachside/pulls/271/reviews --input /tmp/review.json',
   );
   expect(prompt).toContain("exactly ONE review");
   expect(prompt).toContain(marker(target));
