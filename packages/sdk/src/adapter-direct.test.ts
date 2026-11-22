@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, jest, test } from "bun:test";
 import { z } from "zod";
 import {
   AdapterError,
@@ -1051,6 +1051,7 @@ test("preparation deadline settles ordinary and advanced calls without submissio
     },
   });
 
+  jest.useFakeTimers();
   const ordinary = client.sandboxes.create({ environment: Image.prepared("image") });
 
   const advanced = client.operations.prepare("create", {
@@ -1058,6 +1059,9 @@ test("preparation deadline settles ordinary and advanced calls without submissio
     networkPolicy: "blocked",
   });
 
+  for (let turn = 0; turn < 1000 && preparations < 2; turn++) await Promise.resolve();
+  jest.advanceTimersByTime(30_000);
+  jest.useRealTimers();
   const outcomes = await Promise.allSettled([ordinary, advanced]);
 
   expect(preparations).toBe(2);
@@ -1079,7 +1083,7 @@ test("preparation deadline settles ordinary and advanced calls without submissio
   expect(submissions).toBe(0);
   expect(references).toBe(0);
   await client.close();
-}, 40_000);
+});
 
 test("advanced submit cancellation leaves an unknown outcome and original identity", async () => {
   for (const mode of ["caller", "close"] as const) {

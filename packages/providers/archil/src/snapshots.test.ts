@@ -272,9 +272,8 @@ test("an aborted fork still resumes its source, and recovery returns the fork", 
 
     const pending = source.fork({}, { signal: controller.signal }).catch((error: Error) => error);
 
-    // Abort once the fork request is on its way, then let Archil answer.
-    for (let i = 0; i < 200 && !fixture.calls.some((call) => call.path.endsWith("/fork")); i++)
-      await Bun.sleep(5);
+    // Abort once Archil has made the fork but before its answer arrives.
+    for (let i = 0; i < 200 && fixture.effects.fork === 0; i++) await Bun.sleep(5);
     controller.abort();
     fixture.releaseHeldCreateResponse();
     const error = await pending;

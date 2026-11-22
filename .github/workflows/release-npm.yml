@@ -121,8 +121,8 @@ jobs:
             [ -n "${id}" ] || continue
             [ "$(gh api "repos/${GITHUB_REPOSITORY}/git/commits/${sha}" --jq .tree.sha)" = "${tree}" ] || continue
             passed=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${id}/jobs" --jq \
-              '[.jobs[] | select(.conclusion == "success") | .name] | map(select(IN("quality", "build", "offline", "packed", "docs"))) | unique | length')
-            if [ "${passed}" = 5 ]; then
+              '[.jobs[] | select(.conclusion == "success") | .name] | map(select(IN("quality", "build", "typecheck", "offline", "packed", "docs"))) | unique | length')
+            if [ "${passed}" = 6 ]; then
               echo "reused=true" >> "$GITHUB_OUTPUT"
               echo "Reused CI that passed on the same tree: ${url}" >> "$GITHUB_STEP_SUMMARY"
               exit 0
