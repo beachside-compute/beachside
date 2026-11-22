@@ -56,9 +56,9 @@ export function reviewPrompt(target: ReviewTarget) {
 
 1. See the change with \`git diff --merge-base origin/${base} HEAD\` and \`git log --oneline origin/${base}..HEAD\`. Read the surrounding code wherever you need context.
 2. Look for correctness bugs, security problems, missing or broken tests, and changes that will confuse the next reader. Skip style points that a formatter or linter would catch. Do not install anything or run the project's code.
-   Also flag slop:
+   In the lines the diff adds or changes, also flag slop:
    - Needless comments. Comments should be rare: they explain why, or something the code cannot say. Flag any that restate what the code already says, narrate the change, or label the obvious.
-   - Low-value tests. Tests should protect real behavior this change adds or relies on. Flag tests that only exercise the language, runtime or a library (builtins, getters, type shapes), tests of unlikely edge cases that add upkeep without protecting anything, and tests that duplicate existing coverage.
+   - Low-value tests. Tests should protect real behavior this change adds or relies on. Flag tests that only exercise the language, runtime or a library (builtins, getters, type shapes), tests of unlikely edge cases that add upkeep without protecting anything, and tests that repeat what another test in the same file already checks.
 3. Post exactly ONE review, as a brief summary plus inline comments:
    - The summary is the review body: two or three sentences on what the change does and its overall state, with no list of findings. If you find nothing worth raising, say so there. End the body with this line exactly:
      ${marker(target)}
