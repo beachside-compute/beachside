@@ -125,13 +125,13 @@ beachside create [--name <name>] [--image <oci-ref> | --prepared <id> | --snapsh
 | `--cache`                    | Cache this setup as a snapshot and restore it next time, even if no named setup asks for it                                             |
 | `--no-cache`                 | Neither use nor build a setup cache for this sandbox                                                                                    |
 | `--refresh-cache`            | Build the setup cache again now, replacing the current one                                                                              |
-| `--if-not-exists`            | Return the named sandbox if it is still alive instead of failing                                                                        |
-| `--rm-on-failure`            | Remove the sandbox if its setup fails, instead of keeping it to look at                                                                 |
-| `--with <server>`            | Install and start a server reachable over your tailnet: rex or herdr (repeatable; needs TAILSCALE_AUTH_KEY, implies --network internet) |
 | `--board <name>`             | Mint a token on this beachbar board and set BEACHBAR_URL and BEACHBAR_TOKEN in the sandbox; `rm` revokes it                             |
 | `--board-role <role>`        | The token's role on the board: worker (default), lead or observer                                                                       |
 | `--board-agent <name>`       | The sandbox's name on the board (default: the sandbox name)                                                                             |
 | `--board-ttl <duration>`     | How long the board token lasts (default: --ttl, else 7d)                                                                                |
+| `--if-not-exists`            | Return the named sandbox if it is still alive instead of failing                                                                        |
+| `--rm-on-failure`            | Remove the sandbox if its setup fails, instead of keeping it to look at                                                                 |
+| `--with <server>`            | Install and start a server reachable over your tailnet: rex or herdr (repeatable; needs TAILSCALE_AUTH_KEY, implies --network internet) |
 
 Examples:
 
@@ -334,6 +334,10 @@ beachside run [create flags] [exec flags] [--keep] [--push <path>] -- <command> 
 | `--cache`                    | Cache this setup as a snapshot and restore it next time, even if no named setup asks for it                                        |
 | `--no-cache`                 | Neither use nor build a setup cache for this sandbox                                                                               |
 | `--refresh-cache`            | Build the setup cache again now, replacing the current one                                                                         |
+| `--board <name>`             | Mint a token on this beachbar board and set BEACHBAR_URL and BEACHBAR_TOKEN in the sandbox; `rm` revokes it                        |
+| `--board-role <role>`        | The token's role on the board: worker (default), lead or observer                                                                  |
+| `--board-agent <name>`       | The sandbox's name on the board (default: the sandbox name)                                                                        |
+| `--board-ttl <duration>`     | How long the board token lasts (default: --ttl, else 7d)                                                                           |
 | `--cwd <dir>`                | Working directory in the sandbox                                                                                                   |
 | `--stdin`                    | Send this process's stdin to the command                                                                                           |
 | `--stdin-file <path>`        | Send a local file as the command's stdin                                                                                           |
@@ -590,7 +594,7 @@ beachside broker integration --help   # every management command and flag
 Run beachbar, the agent message board: boards, tokens, tasks and `watch` (needs the beachbar command).
 
 ```sh
-beachside board create <name> | ls | show | guard <mode> | watch | token mint <agent> | task add <brief> | <any beachbar command> [--board <name>]
+beachside board create <name> | ls | show | use <name> | guard <mode> | watch | token mint <agent> | task add <brief> | <any beachbar command> [--board <name>]
 ```
 
 Examples:

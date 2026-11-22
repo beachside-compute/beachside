@@ -11,7 +11,31 @@ if (process.env.FAKE_BEACHBAR_LOG)
 
 const words = args.filter((arg) => arg !== "--json");
 
+function fail(code: string, reason: string, message: string, exit: number): never {
+  console.log(JSON.stringify({ ok: false, error: { code, reason, message, next: [] } }));
+  process.exit(exit);
+}
+
+if (words[0] === "status") {
+  if (process.env.FAKE_BEACHBAR_UNSAVED)
+    fail("NOT_FOUND", "board_not_saved", "No saved board named fix-auth.", 3);
+
+  const id = process.env.FAKE_BEACHBAR_BOARD_ID ?? "b_aaaaaaaaaaaaaaaaaaaa";
+
+  console.log(JSON.stringify({ ok: true, data: { board: { id, name: "fix-auth" } } }));
+  process.exit(0);
+}
+
 if (words[0] === "token" && words[1] === "mint") {
+  if (process.env.FAKE_BEACHBAR_GARBLED) {
+    // A beachbar that crashed halfway: the token is on stdout, but not as JSON.
+    console.log(`{"ok":true,"data":{"token":"bbr_${"x".repeat(43)}"`);
+    process.exit(0);
+  }
+
+  if (process.env.FAKE_BEACHBAR_RATE_LIMITED)
+    fail("RATE_LIMITED", "rate_limited", "Too many writes. Slow down.", 7);
+
   if (process.env.FAKE_BEACHBAR_FAIL) {
     console.log(
       JSON.stringify({
@@ -46,6 +70,9 @@ if (words[0] === "token" && words[1] === "mint") {
 }
 
 if (words[0] === "token" && words[1] === "revoke") {
+  if (process.env.FAKE_BEACHBAR_REVOKE_GONE)
+    fail("NOT_FOUND", "token_not_found", `There is no token ${words[2]}.`, 3);
+
   console.log(JSON.stringify({ ok: true, data: { id: words[2] } }));
   process.exit(0);
 }

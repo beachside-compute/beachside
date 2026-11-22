@@ -126,6 +126,7 @@ import {
   boardRequest,
   mintBoardToken,
   revokeBoardToken,
+  revokeNote,
   revokeRecordedBoardToken,
   type AcquiredBoardToken,
   type BoardRequest,
@@ -682,10 +683,8 @@ async function createOnce(session: Session, request: CreateRequest): Promise<Cre
           );
 
       if (board)
-        await revokeBoardToken(session, board.record.board, board.record.tokenId).catch(() =>
-          session.ctx.out.note(
-            `could not revoke the board token made for ${claimed.record.name} (${board!.record.tokenId}); revoke it with \`beachside board token revoke ${board!.record.tokenId} --board ${board!.record.board}\``,
-          ),
+        await revokeBoardToken(session, board.record).catch((cause) =>
+          session.ctx.out.note(revokeNote(claimed.record.name, board!.record, cause)),
         );
 
       // Adapters without a default image reject an argument-free create in SDK terms, but so
@@ -761,8 +760,14 @@ function unrecordedError(created: Created): CliError {
   return new CliError(
     "STORE_WRITE_FAILED",
     `Created ${created.record.name} but could not record it in the store: ${created.unrecorded?.message}`,
-    "save the reference below to a file and use `beachside rm @<file>` to destroy it",
-    { sandbox: created.record.name, reference: created.record.reference },
+    created.record.board
+      ? `save the reference below to a file and use \`beachside rm @<file>\` to destroy it, then revoke its board token with \`beachside board token revoke ${created.record.board.tokenId} --board ${created.record.board.board}\``
+      : "save the reference below to a file and use `beachside rm @<file>` to destroy it",
+    {
+      sandbox: created.record.name,
+      reference: created.record.reference,
+      ...(created.record.board && { boardToken: created.record.board.tokenId }),
+    },
     "partial",
   );
 }
@@ -994,6 +999,7 @@ export async function createCommand(session: Session, flags: Flags): Promise<num
   if (created.existing) {
     requireSetup(created.record, setup);
     requireAddons(created.record, request.addons);
+    requireBoard(created.record, request.board?.board ?? null);
   } else {
     const failure = await setUp(session, created, setup, request, undefined, caching);
 
@@ -1016,6 +1022,19 @@ export async function createCommand(session: Session, flags: Flags): Promise<num
   );
 
   return 0;
+}
+
+/** `--if-not-exists --board` found the sandbox: it must carry a token for that board. */
+function requireBoard(record: SandboxRecord, board: string | null): void {
+  if (board === null || record.board?.board === board) return;
+
+  throw new CliError(
+    "CONFLICT",
+    record.board
+      ? `${record.name} exists with a token for board ${record.board.board}, not ${board}`
+      : `${record.name} exists without a board token`,
+    `remove it with \`beachside rm ${record.name}\` and create it again with --board ${board}`,
+  );
 }
 
 /** `--if-not-exists` found the sandbox: its recorded setup must match and be ready. */

@@ -233,6 +233,27 @@ const createFlags = {
   },
   ...setupFlags,
   ...cacheFlags,
+  board: {
+    type: "string",
+    value: "name",
+    description:
+      "Mint a token on this beachbar board and set BEACHBAR_URL and BEACHBAR_TOKEN in the sandbox; `rm` revokes it",
+  },
+  "board-role": {
+    type: "string",
+    value: "role",
+    description: "The token's role on the board: worker (default), lead or observer",
+  },
+  "board-agent": {
+    type: "string",
+    value: "name",
+    description: "The sandbox's name on the board (default: the sandbox name)",
+  },
+  "board-ttl": {
+    type: "string",
+    value: "duration",
+    description: "How long the board token lasts (default: --ttl, else 7d)",
+  },
 } satisfies Record<string, FlagSpec>;
 
 const execFlags = {
@@ -337,27 +358,6 @@ export const commands: readonly CommandSpec[] = [
         value: "server",
         description:
           "Install and start a server reachable over your tailnet: rex or herdr (repeatable; needs TAILSCALE_AUTH_KEY, implies --network internet)",
-      },
-      board: {
-        type: "string",
-        value: "name",
-        description:
-          "Mint a token on this beachbar board and set BEACHBAR_URL and BEACHBAR_TOKEN in the sandbox; `rm` revokes it",
-      },
-      "board-role": {
-        type: "string",
-        value: "role",
-        description: "The token's role on the board: worker (default), lead or observer",
-      },
-      "board-agent": {
-        type: "string",
-        value: "name",
-        description: "The sandbox's name on the board (default: the sandbox name)",
-      },
-      "board-ttl": {
-        type: "string",
-        value: "duration",
-        description: "How long the board token lasts (default: --ttl, else 7d)",
       },
     },
     passthrough: false,
@@ -780,7 +780,7 @@ export const commands: readonly CommandSpec[] = [
     summary:
       "Run beachbar, the agent message board: boards, tokens, tasks and `watch` (needs the beachbar command)",
     usage:
-      "beachside board create <name> | ls | show | guard <mode> | watch | token mint <agent> | task add <brief> | <any beachbar command> [--board <name>]",
+      "beachside board create <name> | ls | show | use <name> | guard <mode> | watch | token mint <agent> | task add <brief> | <any beachbar command> [--board <name>]",
     flags: {},
     passthrough: false,
     remoteExit: false,

@@ -234,3 +234,169 @@ test("--board on a provider without sandbox-wide env refuses before minting", as
   expect(refused.stderr).toContain("--board needs sandbox-wide env");
   expect(await beachbarCalls()).toEqual([]);
 });
+
+test("board words after global flags, and `use`, go under `board`", async () => {
+  const used = await cli(["board", "use", "fix-auth"]);
+
+  expect(used.stdout).toBe("beachbar board use fix-auth\n");
+
+  const flagged = await cli(["board", "--server", "prod", "create", "fix-auth"]);
+
+  expect(flagged.stdout).toBe("beachbar --server prod board create fix-auth\n");
+});
+
+test("a missing beachbar exits 4, like other missing tools", async () => {
+  const missing = await cli(["board", "ls"], { BEACHSIDE_BEACHBAR: join(dir, "no-beachbar") });
+
+  expect(missing.code).toBe(4);
+});
+
+test("run --board mints a token and revokes it when the sandbox goes", async () => {
+  const seeded = await fetch(new URL("/_test/seed", provider.url), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      submissionId: "*",
+      action: "exec",
+      command: {
+        command: { kind: "argv", argv: ["echo", "hi"] },
+        // The fake matches the whole env, which --board fills.
+        env: {
+          BEACHBAR_URL: "https://beachbar.example.workers.dev/v1/b/b_aaaaaaaaaaaaaaaaaaaa",
+          BEACHBAR_TOKEN: boardToken,
+        },
+        exitCode: 0,
+        stdoutBase64: Buffer.from("hi\n").toString("base64"),
+        stderrBase64: "",
+      },
+    }),
+  });
+
+  expect(seeded.status, await seeded.text()).toBe(200);
+
+  const ran = await cli([
+    "run",
+    "--prepared",
+    "fake-starter",
+    "--board",
+    "fix-auth",
+    "--",
+    "echo",
+    "hi",
+  ]);
+
+  expect(ran.code, ran.stderr).toBe(0);
+
+  const calls = await beachbarCalls();
+
+  expect(calls[0]?.slice(0, 3)).toEqual(["--json", "token", "mint"]);
+  expect(calls.at(-1)?.slice(0, 4)).toEqual(["--json", "token", "revoke", "tok_abcdefghijkl"]);
+});
+
+test("gc revokes the board token of each sandbox it destroys", async () => {
+  const made = await cli([
+    "create",
+    "--name",
+    "job-1",
+    "--prepared",
+    "fake-starter",
+    "--label",
+    "run=7",
+    "--board",
+    "fix-auth",
+  ]);
+
+  expect(made.code, made.stderr).toBe(0);
+
+  const collected = await cli(["gc", "--label", "run=7"]);
+
+  expect(collected.code, collected.stderr).toBe(0);
+  expect((await beachbarCalls()).at(-1)?.slice(0, 4)).toEqual([
+    "--json",
+    "token",
+    "revoke",
+    "tok_abcdefghijkl",
+  ]);
+});
+
+test("rm says when a board token could not be revoked, and a token already gone is fine", async () => {
+  const make = (name: string) =>
+    cli(["create", "--name", name, "--prepared", "fake-starter", "--board", "fix-auth"]);
+
+  expect((await make("a")).code).toBe(0);
+
+  const unsaved = await cli(["rm", "a"], { FAKE_BEACHBAR_UNSAVED: "1" });
+
+  expect(unsaved.code, unsaved.stderr).toBe(0);
+  expect(unsaved.stderr).toContain("could not revoke board token tok_abcdefghijkl");
+  expect(unsaved.stderr).toContain(
+    "beachside board token revoke tok_abcdefghijkl --board fix-auth",
+  );
+
+  expect((await make("b")).code).toBe(0);
+
+  const recreated = await cli(["rm", "b"], { FAKE_BEACHBAR_BOARD_ID: "b_bbbbbbbbbbbbbbbbbbbb" });
+
+  expect(recreated.stderr).toContain("is not the board at");
+  expect((await beachbarCalls()).at(-1)?.[0]).toBe("--json");
+  expect((await beachbarCalls()).at(-1)?.[1]).toBe("status");
+
+  expect((await make("c")).code).toBe(0);
+
+  const gone = await cli(["rm", "c"], { FAKE_BEACHBAR_REVOKE_GONE: "1" });
+
+  expect(gone.code).toBe(0);
+  expect(gone.stderr).not.toContain("could not revoke");
+});
+
+test("--board limits are usage errors, and beachbar's codes keep their meaning", async () => {
+  for (const [args, message] of [
+    [["create", "--board", "b", "--board-ttl", "30s"], "between 60s and 366d"],
+    [["create", "--board", "b", "--board-ttl", "400d"], "between 60s and 366d"],
+    [["create", "--board", "b", "--ttl", "30s"], "between 60s and 366d"],
+    [["create", "--board", "Bad_Name"], "--board takes a board name"],
+    [["create", "--name", `w${"x".repeat(50)}`, "--board", "b"], "--board-agent"],
+  ] as const) {
+    const refused = await cli([...args]);
+
+    expect(refused.code, refused.stderr).toBe(2);
+    expect(refused.stderr).toContain(message);
+  }
+
+  const limited = await cli(["create", "--name", "w", "--board", "b", "--json"], {
+    FAKE_BEACHBAR_RATE_LIMITED: "1",
+  });
+
+  expect(limited.code).toBe(7);
+  expect(JSON.parse(limited.stdout).error).toMatchObject({ code: "RATE_LIMIT", retryable: true });
+});
+
+test("a garbled mint answer says the token may be live, and never prints it", async () => {
+  const garbled = await cli(["create", "--name", "w", "--board", "fix-auth"], {
+    FAKE_BEACHBAR_GARBLED: "1",
+  });
+
+  expect(garbled.code).not.toBe(0);
+  expect(garbled.stderr).toContain("the token may be live");
+  expect(await sandboxEnv()).toEqual({});
+});
+
+test("--if-not-exists --board refuses a sandbox made for another board", async () => {
+  expect(
+    (await cli(["create", "--name", "w", "--prepared", "fake-starter", "--board", "one"])).code,
+  ).toBe(0);
+
+  const other = await cli([
+    "create",
+    "--name",
+    "w",
+    "--prepared",
+    "fake-starter",
+    "--if-not-exists",
+    "--board",
+    "two",
+  ]);
+
+  expect(other.code).toBe(1);
+  expect(other.stderr).toContain("token for board one, not two");
+});
