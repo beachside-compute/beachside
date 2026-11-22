@@ -16,7 +16,7 @@ The review job runs on `pull_request_target` for `opened` and `ready_for_review`
 - the pull request comes from this repository, never a fork;
 - its author is an `OWNER`, `MEMBER` or `COLLABORATOR` of the repository.
 
-`pull_request_target` runs the workflow from the default branch, so a pull request cannot change the workflow or the scripts. The job checks out only the default branch. The pull request is cloned inside the sandbox, through the broker. A new run for the same pull request cancels the previous one.
+`pull_request_target` runs the workflow from the default branch, so a pull request cannot change the workflow or the scripts. The job checks out only the default branch. The pull request is cloned inside the sandbox, through the broker. Each pull request is reviewed once: later pushes do not start another review. A new run for the same pull request, such as one marked ready again after going back to draft, cancels the previous one.
 
 ## What the review does
 
