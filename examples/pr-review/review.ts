@@ -57,6 +57,9 @@ export function reviewPrompt(target: ReviewTarget) {
 
 1. See the change with \`git diff --merge-base origin/${base} HEAD\` and \`git log --oneline origin/${base}..HEAD\`. Read the surrounding code wherever you need context.
 2. Look for correctness bugs, security problems, missing or broken tests, and changes that will confuse the next reader. Skip style points that a formatter or linter would catch. Do not install anything or run the project's code.
+   Also flag:
+   - Needless code comments. Comments should be rare: flag any that restate what the code already says, narrate the change, or explain the obvious. Keep only comments that give a reason, a constraint or a non-obvious invariant the code cannot express.
+   - Low-value tests. Tests should check this project's behaviour that matters. Flag tests that only exercise the language, the runtime or a library, assert on mocks rather than outcomes, or chase unlikely edge cases while important paths go untested.
 3. Post exactly ONE review that covers every finding. First write the review body to /tmp/review.md, then run:
    gh pr review ${pr} --repo "$GH_HOST/${repository}" --comment --body-file /tmp/review.md
    For each finding give the file and line, what is wrong, and a suggested fix, most important first. If you find nothing worth raising, say so in one sentence. End the body with this line exactly:
