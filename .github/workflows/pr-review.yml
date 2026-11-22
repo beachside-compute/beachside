@@ -1,5 +1,5 @@
 # Reviews a pull request when it is opened ready for review or marked ready later: Pi runs in a Freestyle sandbox and
-# posts one review comment with `gh`. GitHub and model access come from a credential-broker grant
+# posts one review (a summary plus inline comments) with `gh`. GitHub and model access come from a credential-broker grant
 # issued with this job's OIDC token, so the repository holds no GitHub or model keys.
 # Setup and the broker policy are in examples/pr-review/README.md.
 name: PR review

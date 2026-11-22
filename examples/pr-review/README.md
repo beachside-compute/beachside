@@ -1,6 +1,6 @@
 # Review pull requests with Pi
 
-A GitHub Actions workflow that reviews each pull request when it is opened ready for review, or when a draft is marked ready. Pi runs in a Freestyle sandbox, reads the change in a clone of the repository, and posts one review comment that covers every finding with `gh pr review --comment`.
+A GitHub Actions workflow that reviews each pull request when it is opened ready for review, or when a draft is marked ready. Pi runs in a Freestyle sandbox, reads the change in a clone of the repository, and posts one comment-only review: a brief summary plus an inline comment on each line it has a finding about.
 
 The repository holds no GitHub or model keys. The job asks the [credential broker](https://beachside.run/docs/credential-broker/) for a grant with its own GitHub Actions OIDC token. The grant lets `git` and `gh` in the sandbox reach GitHub, and Pi reach the model gateway, through the broker. The only secret in the repository is the Freestyle API key, which stays on the runner.
 
@@ -25,7 +25,7 @@ The review job runs on `pull_request_target` for `opened` and `ready_for_review`
 3. Installs Git, GitHub CLI, Node and Pi if the image does not have them already.
 4. Clones the repository, fetches the base branch and `refs/pull/<n>/head`, and checks out the head.
 5. Writes Pi's `models.json` inside the sandbox from the grant's base URL. Pi reads the grant token from the environment.
-6. Runs `pi --print` with the `read`, `bash`, `grep`, `find` and `ls` tools and asks for exactly one comment-only review.
+6. Runs `pi --print` with the `read`, `bash`, `grep`, `find` and `ls` tools and asks for exactly one comment-only review, with a short summary and inline comments, which Pi posts with `gh api`.
 7. Checks that a review containing this run's marker was posted, and fails the job if not.
 8. Destroys the sandbox, which also revokes the grant.
 
