@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { z } from "zod";
 import type { Flags } from "./commands";
 import { CliError, registerSecret, usage } from "./output";
@@ -7,11 +6,9 @@ import type { SandboxBoardRecord, SandboxRecord } from "./store";
 import { parseDuration } from "./units";
 
 /**
- * `beachside board ...` and `create --board` drive the standalone `beachbar` command, so boards,
- * tokens and the owner's config stay in one place: `~/.config/beachbar/config.json`.
+ * `beachside board ...` and `create --board` use beachbar's library, which reads the owner's
+ * beachbar config, so boards and owner tokens stay in one place: `~/.config/beachbar/config.json`.
  */
-const install =
-  "install it with `npm install -g @beachside/beachbar`, or set BEACHSIDE_BEACHBAR to its path";
 
 /** beachbar's board-management words; `beachside board create x` is `beachbar board create x`. */
 const boardActions = ["create", "ls", "show", "use", "archive", "rm", "set", "guard"] as const;
@@ -95,55 +92,22 @@ export function boardRequest(
   };
 }
 
-type Ran = { code: number; stdout: string; stderr: string };
+type Beachbar = typeof import("@beachside/beachbar");
 
-function beachbarPath(session: Session): string {
-  return session.ctx.env.BEACHSIDE_BEACHBAR || "beachbar";
-}
+type BoardFailure = InstanceType<Beachbar["BoardError"]>;
 
-function missing(): CliError {
-  return new CliError(
-    "BEACHBAR_NOT_INSTALLED",
-    "Cannot run beachbar, which `beachside board` and `create --board` use",
-    install,
-  );
-}
-
-/** Run beachbar with its output captured, for the JSON it prints. */
-function capture(session: Session, args: string[]): Promise<Ran> {
-  return new Promise((done, fail) => {
-    const child = spawn(beachbarPath(session), args, {
-      env: { ...session.ctx.env },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-
-    let stdout = "";
-    let stderr = "";
-
-    child.stdout.on("data", (chunk: Buffer) => {
-      stdout += chunk.toString("utf8");
-    });
-    child.stderr.on("data", (chunk: Buffer) => {
-      stderr += chunk.toString("utf8");
-    });
-    child.on("error", (cause) =>
-      fail("code" in cause && cause.code === "ENOENT" ? missing() : cause),
+/** beachbar's library, loaded only by the commands that use a board. */
+async function beachbar(): Promise<Beachbar> {
+  try {
+    return await import("@beachside/beachbar");
+  } catch (cause) {
+    throw new CliError(
+      "BEACHBAR_NOT_INSTALLED",
+      `Cannot load beachbar, which \`beachside board\` and \`create --board\` use: ${cause instanceof Error ? cause.message : String(cause)}`,
+      "reinstall the Beachside CLI; @beachside/beachbar ships with it",
     );
-    child.on("close", (code) => done({ code: code ?? 1, stdout, stderr }));
-  });
+  }
 }
-
-const Failure = z.object({
-  ok: z.literal(false),
-  error: z.object({
-    code: z.string(),
-    reason: z.string(),
-    message: z.string(),
-    next: z.array(z.string()),
-  }),
-});
-
-type BeachbarFailure = z.infer<typeof Failure>["error"];
 
 /** beachbar's error codes as Beachside's, so exit codes and `--retry` mean the same thing. */
 const codes = new Map([
@@ -156,33 +120,20 @@ const codes = new Map([
   ["CONFLICT", "CONFLICT"],
 ]);
 
-/** beachbar's JSON error, or null when stdout is not one (a crash, or another version). */
-function failureOf(ran: Ran): BeachbarFailure | null {
-  try {
-    const parsed = Failure.safeParse(JSON.parse(ran.stdout.trim() || "null"));
-
-    return parsed.success ? parsed.data.error : null;
-  } catch {
-    return null;
-  }
-}
-
-/** beachbar's error, as a Beachside error with its first hint. */
-function failed(ran: Ran, what: string): CliError {
-  const error = failureOf(ran);
-
-  if (error === null)
+/** A beachbar error, as a Beachside error with its first hint. */
+function failed(lib: Beachbar, cause: unknown, what: string): CliError {
+  if (!(cause instanceof lib.BoardError))
     return new CliError(
       "BEACHBAR_FAILED",
-      `${what} failed: ${ran.stderr.trim().split("\n")[0] || `exit ${ran.code}`}`,
+      `${what} failed: ${cause instanceof Error ? cause.message : String(cause)}`,
     );
 
-  const code = codes.get(error.code) ?? "BEACHBAR_FAILED";
+  const code = codes.get(cause.code) ?? "BEACHBAR_FAILED";
 
   return new CliError(
     code,
-    `${what}: ${error.message}`,
-    error.next[0],
+    `${what}: ${cause.message}`,
+    cause.next[0],
     undefined,
     "rejected",
     undefined,
@@ -190,17 +141,13 @@ function failed(ran: Ran, what: string): CliError {
   );
 }
 
-const Minted = z.object({
-  ok: z.literal(true),
-  data: z.object({
-    id: z.string(),
-    agent: z.string(),
-    role: z.string(),
-    token: z.string().min(1),
-    url: z.string().url(),
-    expiresAt: z.number().int().nullable(),
-  }),
-});
+/**
+ * True when the board answered with an error, so the write did not happen. beachbar reports
+ * anything without a clear answer (unreachable, a garbled reply, a dropped socket) as UNAVAILABLE.
+ */
+function rejected(lib: Beachbar, cause: unknown): cause is BoardFailure {
+  return cause instanceof lib.BoardError && cause.code !== "UNAVAILABLE";
+}
 
 export type AcquiredBoardToken = {
   env: Record<(typeof boardEnv)[number], string>;
@@ -221,111 +168,82 @@ export async function mintBoardToken(
       "name the sandbox's identity on the board with --board-agent <name>",
     );
 
-  const ran = await capture(session, [
-    "--json",
-    "token",
-    "mint",
-    agent,
-    "--board",
-    request.board,
-    "--role",
-    request.role,
-    "--ttl",
-    `${request.ttlSeconds}s`,
-  ]);
+  const lib = await beachbar();
+  const what = `minting a token on board ${request.board}`;
 
-  // Whatever beachbar printed may hold the token; redact it before anything can echo it.
-  for (const secret of ran.stdout.match(/bbr_[A-Za-z0-9_-]+/g) ?? []) registerSecret(secret);
+  let opened: ReturnType<Beachbar["openSavedBoard"]>;
 
-  if (ran.code !== 0) throw failed(ran, `minting a token on board ${request.board}`);
+  try {
+    opened = lib.openSavedBoard(session.ctx.env, request.board);
+  } catch (cause) {
+    throw failed(lib, cause, what);
+  }
 
-  const minted = parseMinted(ran.stdout);
+  let minted: Awaited<ReturnType<typeof opened.client.mint>>;
 
-  if (minted === null)
+  try {
+    minted = await opened.client.mint(agent, request.role, request.ttlSeconds);
+  } catch (cause) {
+    if (rejected(lib, cause)) throw failed(lib, cause, what);
+
     throw new CliError(
       "BEACHBAR_FAILED",
-      `beachbar minted a token on board ${request.board} but its answer was not understood`,
+      `beachbar may have minted a token on board ${request.board}, but no answer came back`,
       `the token may be live: list it with \`beachside board token ls --board ${request.board}\` and revoke it with \`beachside board token revoke <id> --board ${request.board}\``,
       undefined,
       "unknown",
     );
-
-  const { token, url, id, expiresAt, role } = minted;
+  }
 
   // The token is a credential: nothing the CLI prints may carry it.
-  registerSecret(token);
+  registerSecret(minted.token);
+
+  const url = opened.saved.url;
 
   return {
-    env: { BEACHBAR_URL: url, BEACHBAR_TOKEN: token },
+    env: { BEACHBAR_URL: url, BEACHBAR_TOKEN: minted.token },
     record: {
       board: request.board,
       url,
-      tokenId: id,
+      tokenId: minted.id,
       agent: minted.agent,
-      role,
-      expiresAt: expiresAt === null ? null : new Date(expiresAt).toISOString(),
+      role: minted.role,
+      expiresAt: minted.expiresAt === null ? null : new Date(minted.expiresAt).toISOString(),
     },
   };
 }
 
-type MintedToken = z.infer<typeof Minted>["data"];
-
-function parseMinted(stdout: string): MintedToken | null {
-  try {
-    const parsed = Minted.safeParse(JSON.parse(stdout));
-
-    return parsed.success ? parsed.data.data : null;
-  } catch {
-    return null;
-  }
-}
-
-const BoardStatus = z.object({
-  ok: z.literal(true),
-  data: z.object({ board: z.object({ id: z.string() }) }),
-});
-
 /**
  * Revoke a token by id on the board that issued it. The saved board must still be that board (a
- * re-created board under the same name is another board); a token the board no longer knows counts
+ * re-created board under the same name has another URL); a token the board no longer knows counts
  * as revoked. Anything else is an error, never a silent success.
  */
 export async function revokeBoardToken(
   session: Session,
   record: SandboxBoardRecord,
 ): Promise<void> {
-  const status = await capture(session, ["--json", "status", "--board", record.board]);
-
-  if (status.code !== 0) throw failed(status, `finding board ${record.board}`);
-
-  let boardId: string | null = null;
+  const lib = await beachbar();
+  let opened: ReturnType<Beachbar["openSavedBoard"]>;
 
   try {
-    const parsed = BoardStatus.safeParse(JSON.parse(status.stdout));
-
-    boardId = parsed.success ? parsed.data.data.board.id : null;
-  } catch {
-    boardId = null;
+    opened = lib.openSavedBoard(session.ctx.env, record.board);
+  } catch (cause) {
+    throw failed(lib, cause, `finding board ${record.board}`);
   }
 
-  if (boardId === null || !record.url.endsWith(`/v1/b/${boardId}`))
+  if (opened.saved.url.replace(/\/+$/, "") !== record.url.replace(/\/+$/, ""))
     throw new CliError(
       "CONFLICT",
       `the saved board ${record.board} is not the board at ${record.url} that issued token ${record.tokenId}`,
     );
 
-  const ran = await capture(session, [
-    "--json",
-    "token",
-    "revoke",
-    record.tokenId,
-    "--board",
-    record.board,
-  ]);
+  try {
+    await opened.client.revoke(record.tokenId);
+  } catch (cause) {
+    if (cause instanceof lib.BoardError && cause.reason === "token_not_found") return;
 
-  if (ran.code === 0 || failureOf(ran)?.reason === "token_not_found") return;
-
-  throw failed(ran, `revoking token ${record.tokenId} on board ${record.board}`);
+    throw failed(lib, cause, `revoking token ${record.tokenId} on board ${record.board}`);
+  }
 }
 
 /** The note a cleanup prints when a board token could not be revoked. */
@@ -384,24 +302,26 @@ export function beachbarArguments(args: readonly string[], json: boolean): strin
 }
 
 /**
- * `beachside board ...`: runs `beachbar` with the same arguments, so the board's own commands,
- * help and `watch` work unchanged. Board management words (`create`, `ls`, `guard`, ...) are
- * `beachbar board <word>`; everything else is passed as it is.
+ * `beachside board ...`: runs beachbar's own CLI in this process with the same arguments, so the
+ * board's commands, help and `watch` work unchanged. Board management words (`create`, `ls`,
+ * `guard`, ...) are `beachbar board <word>`; everything else is passed as it is.
  */
 export async function boardCommand(session: Session, flags: Flags): Promise<number> {
   const args = flags.positionals.length
     ? beachbarArguments(flags.positionals, session.ctx.out.json)
     : ["help"];
 
-  return await new Promise<number>((done, fail) => {
-    const child = spawn(beachbarPath(session), args, {
-      env: { ...session.ctx.env },
-      stdio: "inherit",
-    });
+  const lib = await beachbar();
 
-    child.on("error", (cause) =>
-      fail("code" in cause && cause.code === "ENOENT" ? missing() : cause),
-    );
-    child.on("close", (code, signal) => done(code ?? (signal ? 130 : 1)));
+  return await lib.run(args, session.ctx.env, {
+    out: (text) => process.stdout.write(`${text}\n`),
+    err: (text) => process.stderr.write(`${text}\n`),
+    stdin: async () => {
+      const parts: Uint8Array[] = [];
+
+      for await (const chunk of session.ctx.stdin()) parts.push(chunk);
+
+      return Buffer.concat(parts).toString("utf8");
+    },
   });
 }

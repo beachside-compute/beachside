@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@beachside/adapter": "workspace:*",
+    "@beachside/beachbar": "0.2.0",
     "beachside": "workspace:*",
     "zod": "4.6.6"
   },

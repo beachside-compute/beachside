@@ -13,7 +13,7 @@ const result = await Bun.build({
   outdir: `${root}dist`,
   target: "node",
   format: "esm",
-  external: ["beachside", "@beachside/adapter", "zod"],
+  external: ["beachside", "@beachside/adapter", "@beachside/beachbar", "zod"],
   plugins: [
     {
       name: "node-util-compat",
