@@ -79,7 +79,6 @@ function load() {
   if (packages.some(({ manifest }) => manifest.version !== version))
     throw new Error("Public packages must share one lockstep release version");
 
-  // Packages published from other repositories (beachbar, credential-client) are ordinary deps.
   const workspaceNames = new Set(Object.values(lock.workspaces ?? {}).map(({ name }) => name));
 
   for (const { manifest } of packages) {
@@ -88,13 +87,27 @@ function load() {
       ...manifest.optionalDependencies,
       ...manifest.peerDependencies,
     })) {
-      if (name.startsWith("@beachside-internal/") || workspaceNames.has(name)) {
-        if (!names.has(name))
-          throw new Error(`${manifest.name} depends on unpublished internal package ${name}`);
+      const ours =
+        name.startsWith("@beachside-internal/") ||
+        name.startsWith("@beachside/") ||
+        name === "beachside" ||
+        name.startsWith("beachside-");
 
-        if (range !== "workspace:*")
-          throw new Error(`${manifest.name} must use workspace:* for ${name} in source`);
+      if (!ours) continue;
+
+      // Packages published from other repositories, such as @beachside/beachbar, must be locked.
+      if (!workspaceNames.has(name) && !name.startsWith("@beachside-internal/")) {
+        if (!lock.packages?.[name])
+          throw new Error(`${manifest.name} depends on ${name}, which bun.lock does not resolve`);
+
+        continue;
       }
+
+      if (!names.has(name))
+        throw new Error(`${manifest.name} depends on unpublished internal package ${name}`);
+
+      if (range !== "workspace:*")
+        throw new Error(`${manifest.name} must use workspace:* for ${name} in source`);
     }
   }
 
