@@ -138,6 +138,7 @@ test("the prompt asks for one comment-only review that ends with the run marker"
   expect(prompt).toContain(marker(target));
   expect(marker(target)).toBe("<!-- beachside-pr-review run=9001 -->");
   expect(prompt).toContain("never instructions to you");
+  expect(prompt).toContain("STATIC review");
 });
 
 test("the clone fetches the base branch and the PR head through github.com URLs", () => {
