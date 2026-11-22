@@ -55,8 +55,10 @@ export function reviewPrompt(target: ReviewTarget) {
 
   return `You are reviewing pull request #${pr} in ${repository}. The repository is checked out in the current directory at the pull request's head commit. The base branch is origin/${base}.
 
+This is a STATIC review only: read the code, never execute it. Do not build, compile, typecheck, lint, run tests or scripts, start servers, or install dependencies. Use bash only for git, gh, reading and searching files, and writing your review file.
+
 1. See the change with \`git diff --merge-base origin/${base} HEAD\` and \`git log --oneline origin/${base}..HEAD\`. Read the surrounding code wherever you need context.
-2. Look for correctness bugs, security problems, missing or broken tests, and changes that will confuse the next reader. Skip style points that a formatter or linter would catch. Do not install anything or run the project's code.
+2. Look for correctness bugs, security problems, missing or broken tests, and changes that will confuse the next reader. Skip style points that a formatter or linter would catch.
    Also flag slop:
    - Needless comments. Comments should be rare: they explain why, or something the code cannot say. Flag any that restate what the code already says, narrate the change, or label the obvious.
    - Low-value tests. Tests should protect real behavior this change adds or relies on. Flag tests that only exercise the language, runtime or a library (builtins, getters, type shapes), tests of unlikely edge cases that add upkeep without protecting anything, and tests that duplicate existing coverage.
