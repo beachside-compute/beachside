@@ -159,7 +159,11 @@ test("board words go under `board`, even after beachbar's global flags", () => {
     "--board",
     "fix-auth",
   ]);
-  expect(beachbarArguments(["use", "fix-auth"], false)).toEqual(["board", "use", "fix-auth"]);
+  expect(beachbarArguments(["--board", "create", "status"], false)).toEqual([
+    "--board",
+    "create",
+    "status",
+  ]);
 });
 
 test("create --board mints a token, puts it in the sandbox env, records it and revokes it on rm", async () => {

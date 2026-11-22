@@ -120,9 +120,6 @@ const codes = new Map([
   ["CONFLICT", "CONFLICT"],
 ]);
 
-/** beachbar reasons that mean no answer came back, so a write may or may not have happened. */
-const unanswered = new Set(["unreachable", "bad_response"]);
-
 /** A beachbar error, as a Beachside error with its first hint. */
 function failed(lib: Beachbar, cause: unknown, what: string): CliError {
   if (!(cause instanceof lib.BoardError))
@@ -144,9 +141,12 @@ function failed(lib: Beachbar, cause: unknown, what: string): CliError {
   );
 }
 
-/** True when the board answered with an error, so the write did not happen. */
+/**
+ * True when the board answered with an error, so the write did not happen. beachbar reports
+ * anything without a clear answer (unreachable, a garbled reply, a dropped socket) as UNAVAILABLE.
+ */
 function rejected(lib: Beachbar, cause: unknown): cause is BoardFailure {
-  return cause instanceof lib.BoardError && !unanswered.has(cause.reason);
+  return cause instanceof lib.BoardError && cause.code !== "UNAVAILABLE";
 }
 
 export type AcquiredBoardToken = {
@@ -301,15 +301,6 @@ export function beachbarArguments(args: readonly string[], json: boolean): strin
   return json ? ["--json", ...words] : words;
 }
 
-/** Reads all of stdin, for beachbar commands that take a secret or a body on `-`. */
-async function readStdin(): Promise<string> {
-  const chunks: Buffer[] = [];
-
-  for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
-
-  return Buffer.concat(chunks).toString("utf8");
-}
-
 /**
  * `beachside board ...`: runs beachbar's own CLI in this process with the same arguments, so the
  * board's commands, help and `watch` work unchanged. Board management words (`create`, `ls`,
@@ -325,6 +316,12 @@ export async function boardCommand(session: Session, flags: Flags): Promise<numb
   return await lib.run(args, session.ctx.env, {
     out: (text) => process.stdout.write(`${text}\n`),
     err: (text) => process.stderr.write(`${text}\n`),
-    stdin: readStdin,
+    stdin: async () => {
+      const parts: Uint8Array[] = [];
+
+      for await (const chunk of session.ctx.stdin()) parts.push(chunk);
+
+      return Buffer.concat(parts).toString("utf8");
+    },
   });
 }

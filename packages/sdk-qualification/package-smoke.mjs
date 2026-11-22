@@ -1654,6 +1654,10 @@ export const fake = createFakeAdapter({ url: process.env.FAKE_URL, token: proces
 
     if (JSON.parse(beachside("schema")).cliVersion !== cliVersion)
       throw new Error(`${runtime}: CLI schema version differs`);
+
+    if (!/^\d+\.\d+\.\d+/.test(beachside("board", "version")))
+      throw new Error(`${runtime}: beachside board does not load beachbar`);
+
     await fixture.fakeControl("/_test/seed", {
       submissionId: "*",
       action: "exec",
