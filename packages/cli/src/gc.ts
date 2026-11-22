@@ -12,6 +12,7 @@ import { CliError, describeError, usage, type BatchItem } from "./output";
 import type { Session } from "./session";
 import { cacheRows, deleteCaches, pruneLines } from "./cache";
 import { listAll } from "./store";
+import { revokeRecordedBoardToken } from "./board";
 import { parseDuration, parsePairs } from "./units";
 
 /** One sandbox gc looked at; `name` is its store name, or the native id when it has none. */
@@ -129,6 +130,7 @@ export async function gcCommand(session: Session, flags: Flags): Promise<number>
       }
 
       if (entry) {
+        await revokeRecordedBoardToken(session, entry.record);
         await forget(store, entry);
         await noteForgetHerdr(session, entry.record.name, entry.record.addons ?? []);
       }

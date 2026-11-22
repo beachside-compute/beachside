@@ -33,6 +33,7 @@ import { skillCommand } from "./skill";
 import { adapterCommand } from "./adapters";
 import { profileCommand } from "./profiles";
 import { brokerActions, brokerCommand } from "./broker";
+import { boardCommand } from "./board";
 import { initCommand, initFlagSpecs, interactive } from "./init";
 import { gcCommand } from "./gc";
 import { complete, completionCommand, formatCompletion } from "./completion";
@@ -232,6 +233,27 @@ const createFlags = {
   },
   ...setupFlags,
   ...cacheFlags,
+  board: {
+    type: "string",
+    value: "name",
+    description:
+      "Mint a token on this beachbar board and set BEACHBAR_URL and BEACHBAR_TOKEN in the sandbox; `rm` revokes it",
+  },
+  "board-role": {
+    type: "string",
+    value: "role",
+    description: "The token's role on the board: worker (default), lead or observer",
+  },
+  "board-agent": {
+    type: "string",
+    value: "name",
+    description: "The sandbox's name on the board (default: the sandbox name)",
+  },
+  "board-ttl": {
+    type: "string",
+    value: "duration",
+    description: "How long the board token lasts (default: --ttl, else 7d)",
+  },
 } satisfies Record<string, FlagSpec>;
 
 const execFlags = {
@@ -350,6 +372,7 @@ export const commands: readonly CommandSpec[] = [
       "beachside create --name web --setup node --setup-cmd 'npm i -g pnpm'",
       "beachside create --name web --setup ./setup.sh --startup-cmd 'pnpm dev > /tmp/dev.log 2>&1 &'",
       "beachside create --name web --setup node --cache",
+      "beachside create --name worker-1 --network internet --board fix-auth",
     ],
     run: createCommand,
   },
@@ -751,6 +774,26 @@ export const commands: readonly CommandSpec[] = [
       "beachside broker integration --help   # every management command and flag",
     ],
     run: brokerCommand,
+  },
+  {
+    name: "board",
+    summary:
+      "Run beachbar, the agent message board: boards, tokens, tasks and `watch` (needs the beachbar command)",
+    usage:
+      "beachside board create <name> | ls | show | use <name> | guard <mode> | watch | token mint <agent> | task add <brief> | <any beachbar command> [--board <name>]",
+    flags: {},
+    passthrough: false,
+    remoteExit: false,
+    raw: { local: [] },
+    examples: [
+      "beachside board create fix-auth",
+      "beachside board task add 'Add a rate limiter. Done when: bun test passes.' --board fix-auth",
+      "beachside create --name worker-1 --network internet --board fix-auth",
+      "beachside board watch --board fix-auth",
+      "beachside board guard report --board fix-auth",
+      "beachside board help   # every beachbar command",
+    ],
+    run: boardCommand,
   },
   {
     name: "providers",
