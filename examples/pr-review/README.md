@@ -26,7 +26,7 @@ The review job runs on `pull_request_target` for `opened` and `ready_for_review`
 4. Clones the repository, fetches the base branch and `refs/pull/<n>/head`, and checks out the head.
 5. Writes Pi's `models.json` inside the sandbox from the grant's base URL. Pi reads the grant token from the environment.
 6. Runs `pi --print` with the `read`, `bash`, `grep`, `find` and `ls` tools and asks for exactly one comment-only review, with a short summary and inline comments, which Pi posts with `gh api`.
-7. Checks that a review containing this run's marker was posted, and fails the job if not.
+7. Checks that a review was posted while Pi ran (or one carrying this run's marker, for re-runs), and fails the job if not.
 8. Destroys the sandbox, which also revokes the grant.
 
 ## Logs

@@ -91,6 +91,38 @@ export function cloneScript(target: ReviewTarget) {
   ].join("\n");
 }
 
+export type PostedReview = { id: number; body: string };
+
+/** Reviews on the pull request written by accounts (not apps such as Copilot). */
+async function userReviews(box: Box, target: ReviewTarget, signal: AbortSignal) {
+  const result = await sh(
+    box,
+    `gh api --hostname "$GH_HOST" --paginate repos/${target.repository}/pulls/${target.pr}/reviews --jq '.[] | select(.user.type == "User") | {id, body} | @json'`,
+    "Listing reviews",
+    signal,
+    { cwd: REPO_DIR },
+  );
+
+  return result
+    .stdoutText({ full: true })
+    .split("\n")
+    .filter((line) => line.trim())
+    .map((line): PostedReview => {
+      const { id, body } = JSON.parse(line);
+
+      return { id: Number(id), body: String(body ?? "") };
+    });
+}
+
+/**
+ * Models sometimes drop the marker line, so a review that appeared while Pi ran counts as well.
+ */
+export function postedReview(before: PostedReview[], after: PostedReview[], runMarker: string) {
+  const seen = new Set(before.map((review) => review.id));
+
+  return after.some((review) => !seen.has(review.id) || review.body.includes(runMarker));
+}
+
 export async function review(
   box: Box,
   target: ReviewTarget,
@@ -108,6 +140,7 @@ export async function review(
     env: { SCRIPT: modelsScript(gateway, `${PI_DIR}/models.json`) },
   });
 
+  const before = await userReviews(box, target, signal);
   console.log(`Reviewing with ${gateway.model} through ${gateway.name}.`);
 
   const result = await run(
@@ -153,15 +186,9 @@ export async function review(
     throw new Error(`Pi exited with ${result.exitCode}.`);
   }
 
-  const posted = await sh(
-    box,
-    `gh api --hostname "$GH_HOST" --paginate repos/${target.repository}/pulls/${target.pr}/reviews --jq '.[].body'`,
-    "Checking for the posted review",
-    signal,
-    { cwd: REPO_DIR },
-  );
+  const after = await userReviews(box, target, signal);
 
-  if (!posted.stdoutText({ full: true }).includes(marker(target)))
+  if (!postedReview(before, after, marker(target)))
     throw new Error("Pi finished without posting the review.");
 
   console.log(`Review posted on ${target.repository}#${target.pr}.`);
