@@ -23,6 +23,7 @@ export default defineConfig({
     "/docs/providers/live-qualification/": "/docs/providers/support/",
     "/docs/guides/credential-broker/": "/docs/credential-broker/",
     "/docs/guides/model-gateways/": "/docs/credential-broker/model-gateways/",
+    "/docs/guides/runnable-agent-examples/": "/docs/recipes/opencode/",
   },
   site: "https://beachside.run",
   output: "static",
@@ -78,10 +79,15 @@ export default defineConfig({
       sidebar: [
         {
           label: "Getting started",
+          items: [{ slug: "docs", label: "Overview" }, { slug: "docs/direct-quickstart" }],
+        },
+        {
+          label: "Recipes",
           items: [
-            { slug: "docs", label: "Overview" },
-            { slug: "docs/direct-quickstart" },
-            { slug: "docs/guides/runnable-agent-examples" },
+            { slug: "docs/recipes", label: "Overview" },
+            { slug: "docs/recipes/pr-review" },
+            { slug: "docs/recipes/pi-tracing" },
+            { slug: "docs/recipes/opencode" },
           ],
         },
         {

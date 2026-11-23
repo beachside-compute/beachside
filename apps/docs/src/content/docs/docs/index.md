@@ -7,7 +7,7 @@ Beachside is a server-side TypeScript SDK for creating sandboxes, running comman
 
 Start with [Getting started](/docs/direct-quickstart/) to install the SDK, run your first command and clean up the sandbox.
 
-Run OpenCode inside a sandbox with the [runnable agent examples](/docs/guides/runnable-agent-examples/): capture a response or upload a file, ask the agent to edit it, and read it back. The guide includes checkout setup for Daytona and E2B.
+See complete applications in [Recipes](/docs/recipes/): a [pull request reviewer](/docs/recipes/pr-review/) that runs Pi on Freestyle, [traced Pi runs](/docs/recipes/pi-tracing/), and [OpenCode in a Daytona or E2B sandbox](/docs/recipes/opencode/).
 
 ## Build with an agent
 

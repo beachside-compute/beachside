@@ -1,5 +1,7 @@
 # Trace a local Pi run
 
+The docs walk through this example as a recipe: [beachside.run/docs/recipes/pi-tracing/](https://beachside.run/docs/recipes/pi-tracing/).
+
 From the repository root with Bun 1.3.14:
 
 ```sh

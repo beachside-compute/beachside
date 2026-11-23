@@ -83,7 +83,7 @@ If destruction fails or cannot be confirmed, `with()` throws `SandboxCleanupErro
 - `cleanupOperation` and `cleanupReference`: available cleanup recovery information.
 - `outcome`: any confirmed partial cleanup result.
 
-Save recovery references from both work and cleanup errors when present. [Recover the original operation](/docs/guides/recovery/) before deciding what to do next. The [runnable examples](/docs/guides/runnable-agent-examples/) show how to report these failures.
+Save recovery references from both work and cleanup errors when present. [Recover the original operation](/docs/guides/recovery/) before deciding what to do next. The [recipes](/docs/recipes/) show how to report these failures.
 
 If creation itself has an uncertain outcome, `with()` throws the original error. It does not run your callback or try to destroy a sandbox whose identity is unknown.
 

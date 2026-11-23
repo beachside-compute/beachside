@@ -138,4 +138,4 @@ Volumes are object storage, not POSIX filesystems: no file locking or atomic ren
 - `close()` does not stop compute. Snapshots you built from OCI images need separate cleanup.
 - Only the Daytona cloud endpoints are trusted by default.
 
-See the [Daytona docs](https://www.daytona.io/docs/), [snapshots](https://www.daytona.io/docs/en/snapshots/), [volumes](https://www.daytona.io/docs/en/volumes/), [wall-clock TTL](https://www.daytona.io/docs/en/sandboxes/#wall-clock-ttl) and the [runnable agent examples](/docs/guides/runnable-agent-examples/).
+See the [Daytona docs](https://www.daytona.io/docs/), [snapshots](https://www.daytona.io/docs/en/snapshots/), [volumes](https://www.daytona.io/docs/en/volumes/), [wall-clock TTL](https://www.daytona.io/docs/en/sandboxes/#wall-clock-ttl) and the [OpenCode recipe](/docs/recipes/opencode/).

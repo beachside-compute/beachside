@@ -15,7 +15,7 @@ Read these docs first:
 - https://beachside.run/docs/providers/support/
 - https://beachside.run/docs/reference/typescript/
 - https://beachside.run/docs/guides/recovery/
-- https://beachside.run/docs/guides/runnable-agent-examples/
+- https://beachside.run/docs/recipes/
 - https://github.com/beachside-compute/beachside/blob/main/examples/README.md
 
 Inspect the project and installed package versions before changing code.

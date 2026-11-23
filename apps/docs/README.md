@@ -45,10 +45,10 @@ as its displayed code, so all three copyable examples are checked by the example
 TypeScript project. Synchronized provider tabs switch install commands, credentials, code, and run commands together. The examples are not executed in offline checks because they
 create real sandboxes. Getting started installs from npm; the Modal tab runs from a checkout because Modal is unpublished.
 
-The runnable agent examples page at `/docs/guides/runnable-agent-examples/`
-links to the root `examples/README.md` runbook and individual application source.
-It is discoverable from Getting started, the overview, sidebar, and landing page.
-These OpenCode workflows are distinct from the docs fixtures in `apps/docs/examples/`;
+The Recipes section at `/docs/recipes/` has one page per application in the root
+`examples/` directory (PR review, Pi tracing, OpenCode), each linking to its source.
+When an example's README changes, keep its recipe page in step.
+These applications are distinct from the docs fixtures in `apps/docs/examples/`;
 their recorded live acceptance does not run during the docs build.
 
 Provider test evidence comes from the reviewed JSON files in

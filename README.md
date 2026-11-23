@@ -4,7 +4,7 @@
 
 A TypeScript API to create, run code in, and tear down sandboxes on providers like boxd, Freestyle, Daytona, E2B, Boat, Runloop, Archil, exe.dev and Vercel (and more). Keep application workflows consistent while configuring each provider explicitly.
 
-**[Get started →](https://beachside.run/docs/)** · [Run an agent](https://beachside.run/docs/guides/runnable-agent-examples/) · [beachside.run](https://beachside.run/)
+**[Get started →](https://beachside.run/docs/)** · [Recipes](https://beachside.run/docs/recipes/) · [beachside.run](https://beachside.run/)
 
 ## Providers
 
