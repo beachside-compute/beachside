@@ -700,6 +700,13 @@ async function managedCommand(session: Session, flags: Flags, args: string[]): P
       stdout: (text) => out.streams.stdout(redact(`${text}\n`)),
       stderr: (text) => out.streams.stderr(redact(`${text}\n`)),
     });
+
+  // The configured keys only go to the configured broker's URL.
+  if (args.some((arg) => arg === "--url" || arg.startsWith("--url=")))
+    throw usage(
+      `--url applies only to \`${prefix} add\``,
+      "pick a configured broker with --broker <name>, or add one with `beachside broker add <name> --url <origin>`",
+    );
   const entry = await sandboxTarget(session, args);
 
   if (entry)

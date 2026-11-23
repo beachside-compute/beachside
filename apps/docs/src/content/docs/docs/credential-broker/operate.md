@@ -3,7 +3,7 @@ title: Operate the broker
 description: Check, rotate, disable and upgrade a credential broker, see its grants, and run it locally.
 ---
 
-Every command here runs through `beachside broker` with the admin key of a [connected broker](/docs/credential-broker/cli/#connect-a-broker). Add `--json` for scripts. Exit codes match the rest of the CLI: 2 for a usage error, 3 not found, 5 a rejected key or permission, 6 when a write may have applied (check before retrying), 7 retryable.
+Every command here runs through `beachside broker` with the admin key of a [connected broker](/docs/credential-broker/cli/#connect-a-broker). Without it, use [`beachside-broker`](/docs/credential-broker/quickstart/#use-it-from-somewhere-else) with the same commands and `BEACHSIDE_BROKER_ADMIN_KEY` set. Add `--json` for scripts. Exit codes match the rest of the CLI: 2 for a usage error, 3 not found, 5 a rejected key or permission, 6 when a write may have applied (check before retrying), 7 retryable.
 
 ## Check the broker
 
@@ -49,7 +49,7 @@ Disabling revokes the integration's grants. Deleting also removes it from the is
 
 ## Rotate the broker's own keys
 
-The admin, issuer and encryption keys live in the deployment's `.env.deploy`. To replace the issuer or admin key, change it there and run `bun run deploy`, then update each machine with `beachside broker add <name> --issuer-key ...`. Rotating the encryption key takes two deploys and a rotation of every integration. Follow the [encryption key steps](https://github.com/beachside-compute/credential-broker/blob/main/services/credential-broker/README.md#rotate-an-encryption-key) exactly, because losing an old key makes the integrations encrypted with it unreadable.
+The admin, issuer and encryption keys live in the deployment's `.env.deploy`. To replace the issuer or admin key, change it there and run `bun run deploy`, then update each machine: `beachside broker add <name> --issuer-key ...` for the `beachside` CLI, or the `BEACHSIDE_BROKER_*` variables for `beachside-broker`. Rotating the encryption key takes two deploys and a rotation of every integration. Follow the [encryption key steps](https://github.com/beachside-compute/credential-broker/blob/main/services/credential-broker/README.md#rotate-an-encryption-key) exactly, because losing an old key makes the integrations encrypted with it unreadable.
 
 ## Limits
 
