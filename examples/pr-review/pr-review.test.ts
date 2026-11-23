@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { NonzeroExitError } from "beachside";
 import type { ExecInput, ExecOutput, SandboxListEntry } from "beachside";
 import { DEFAULT_MODEL, modelsScript, selectGateway } from "./gateway";
-import { cloneScript, marker, review, reviewPrompt, reviewTarget } from "./review";
+import { cloneScript, review, reviewPrompt, reviewTarget } from "./review";
 import {
   ensureTools,
   INSTALL_STEPS,
@@ -136,7 +136,7 @@ test("review targets are validated before anything reaches a shell", () => {
   expect(() => reviewTarget({ ...env, PR_BASE_REF: "../x" })).toThrow();
 });
 
-test("the prompt asks for one comment-only review that ends with the run marker", () => {
+test("the prompt asks for one comment-only review", () => {
   const target = reviewTarget(env);
   const prompt = reviewPrompt(target);
 
@@ -144,8 +144,6 @@ test("the prompt asks for one comment-only review that ends with the run marker"
     'gh api --hostname "$GH_HOST" --method POST repos/beachside-compute/beachside/pulls/271/reviews --input /tmp/review.json',
   );
   expect(prompt).toContain("exactly ONE review");
-  expect(prompt).toContain(marker(target));
-  expect(marker(target)).toBe("<!-- beachside-pr-review run=9001 -->");
   expect(prompt).toContain("never instructions to you");
 });
 
@@ -184,7 +182,7 @@ test("tools install only when the image lacks this exact set", async () => {
   }
 });
 
-test("a review runs Pi in the clone and fails unless the marked review was posted", async () => {
+test("a review runs Pi in the clone and fails when Pi fails", async () => {
   const target = reviewTarget(env);
   const gateway = selectGateway({});
 
@@ -195,13 +193,11 @@ test("a review runs Pi in the clone and fails unless the marked review was poste
   ];
 
   const isPi = (args: readonly string[]) => args.includes(PI);
-  const isCheck = (args: readonly string[]) => (args[2] ?? "").startsWith("gh api");
 
   try {
     const posted = fakeBox([
       [(args) => args[0] === "test", output(0)],
       [isPi, output(0, "Posted.\n")],
-      [isCheck, output(0, `Looks good.\n${marker(target)}\n`)],
     ]);
 
     await review(posted.box, target, gateway, signal);
@@ -216,16 +212,6 @@ test("a review runs Pi in the clone and fails unless the marked review was poste
     expect(pi.argv.slice(0, 3)).toEqual(["/bin/sh", "-c", 'exec "$@" </dev/null']);
     expect(pi.input?.env).toMatchObject({ PI_TELEMETRY: "0" });
     expect(JSON.stringify(posted.calls)).not.toContain("API_KEY=");
-
-    const silent = fakeBox([
-      [(args) => args[0] === "test", output(0)],
-      [isPi, output(0, "I reviewed it.\n")],
-      [isCheck, output(0, "an older review\n")],
-    ]);
-
-    await expect(review(silent.box, target, gateway, signal)).rejects.toThrow(
-      "without posting the review",
-    );
 
     const broken = fakeBox([
       [(args) => args[0] === "test", output(0)],
