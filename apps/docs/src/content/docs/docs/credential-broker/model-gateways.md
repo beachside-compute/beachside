@@ -3,7 +3,9 @@ title: Model gateway recipes
 description: Connect sandbox model clients to HTTPS APIs through short-lived credential broker grants.
 ---
 
-With a [connected broker](/docs/credential-broker/cli/#connect-a-broker), start the setup wizard.
+These recipes use the [`beachside` CLI](/docs/credential-broker/cli/) with a [connected broker](/docs/credential-broker/cli/#connect-a-broker). Every `beachside broker` command also runs as `beachside-broker` or, in the broker checkout, `bun run broker`. [The three forms](/docs/credential-broker/quickstart/#4-run-the-same-commands-anywhere).
+
+Start the setup wizard.
 
 ```sh
 beachside broker integration setup

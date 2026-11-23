@@ -5,6 +5,8 @@ description: Let sandboxes clone, push and call the GitHub API through the crede
 
 A GitHub integration holds a GitHub token in the broker. Sandboxes with a grant for it use `git` and `gh` as usual, while the broker adds the real token to each request.
 
+The commands here use the [`beachside` CLI](/docs/credential-broker/cli/) connected to your broker. Without it, run the same `broker` commands as `beachside-broker` or `bun run broker`. See [run the same commands anywhere](/docs/credential-broker/quickstart/#4-run-the-same-commands-anywhere).
+
 ## Add a GitHub integration
 
 Use a token with only the repositories and permissions the sandbox should have, such as a fine-grained personal access token. Read it from a protected file so it never appears in your shell history.
@@ -56,7 +58,7 @@ A workflow can issue grants with its own OIDC token instead of an issuer key, so
 
 2. Allow the same integrations for issuance, if they aren't already: `beachside broker issuer allow github openrouter`.
 3. `beachside broker config show` confirms what the deployed broker trusts.
-4. Give the job `permissions: { id-token: write }` and request grants on the runner:
+4. Give the job `permissions: { id-token: write }`, install the client with `npm install @beachside/credential-client`, and request grants on the runner:
 
    ```ts
    import { createCredentialBroker, githubActionsOidc } from "@beachside/credential-client";

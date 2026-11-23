@@ -33,7 +33,7 @@ On GitHub Actions you don't need the issuer key at all: a workflow can mint gran
 ## Grants
 
 - A grant names one or more integrations, such as `github` and `openrouter`.
-- It lasts from 1 second to 7 days. The CLI defaults to 1 hour, the SDK to 15 minutes.
+- It lasts from 1 second to 7 days. `beachside create --grant` defaults to 1 hour. The SDK, `grant issue` and `grant renew <grant-id>` default to 15 minutes.
 - You can renew it to up to 7 days from now while it is active. An expired grant cannot be renewed.
 - `beachside rm` and `box.destroy()` revoke it. Revoking stops the grant at once, while the upstream key keeps working for everything else.
 

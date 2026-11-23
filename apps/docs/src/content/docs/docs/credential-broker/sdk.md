@@ -3,7 +3,7 @@ title: Use from the SDK
 description: Request a credential-broker grant for a sandbox with the SDK, renew it, and wire model clients and OpenCode to it.
 ---
 
-Install the client next to the SDK on the machine that creates sandboxes.
+Install the client next to the SDK on the machine that creates sandboxes. It only needs the issuer key, `BROKER_ISSUER_KEY` from the broker's `.env.deploy`.
 
 ```sh
 npm install beachside @beachside/credential-client

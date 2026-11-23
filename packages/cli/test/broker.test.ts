@@ -263,6 +263,18 @@ test("broker add checks each key's role and saves references, never the value of
     body: { id: "api", kind: "http" },
   });
 
+  const elsewhere = await cli([
+    "broker",
+    "status",
+    "--broker",
+    "spare",
+    "--url",
+    "https://example.com",
+  ]);
+
+  expect(elsewhere.code).toBe(2);
+  expect(elsewhere.stderr).toContain("--url applies only to `beachside broker add`");
+
   const status = await cli(["broker", "status", "--broker", "spare", "--json"]);
   expect(status.code, status.stderr).toBe(0);
   expect(JSON.parse(status.stdout)).toMatchObject({ ok: true, data: { role: "admin" } });
