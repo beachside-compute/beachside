@@ -5,7 +5,7 @@ description: Let sandboxes clone, push and call the GitHub API through the crede
 
 A GitHub integration holds a GitHub token in the broker. Sandboxes with a grant for it use `git` and `gh` as usual, while the broker adds the real token to each request.
 
-The commands here use the [`beachside` CLI](/docs/credential-broker/cli/) connected to your broker. Without it, run the same `broker` commands as `beachside-broker` or `bun run broker`. See [run the same commands anywhere](/docs/credential-broker/quickstart/#4-run-the-same-commands-anywhere).
+The commands here use the [`beachside` CLI](/docs/credential-broker/cli/) connected to your broker. Without it, use [`beachside-broker`](/docs/credential-broker/quickstart/#use-it-from-somewhere-else) with the same commands.
 
 ## Add a GitHub integration
 

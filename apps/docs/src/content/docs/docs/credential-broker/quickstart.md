@@ -3,7 +3,7 @@ title: Quickstart
 description: Deploy the credential broker, add an OpenRouter key and call OpenRouter with a temporary grant, in about ten minutes.
 ---
 
-This walks through one path end to end: deploy the broker to your Cloudflare account, add an OpenRouter key, and call OpenRouter with a grant instead of the key. Steps 1 to 4 need nothing from Beachside, so they work with any sandbox or orchestrator. Step 5 hands the broker to the `beachside` CLI if you use it.
+This walks through one path end to end: deploy the broker to your Cloudflare account, add an OpenRouter key, and call OpenRouter with a grant instead of the key. It needs nothing from Beachside, so it works with any sandbox or orchestrator.
 
 You need Bun 1.4.4, Node.js 22 or later, a Cloudflare account that can deploy Workers and SQLite Durable Objects, and an OpenRouter API key.
 
@@ -64,52 +64,26 @@ A `200` means the broker swapped the grant for your real key. Put the same two v
 bun run broker grant revoke <grant-id>
 ```
 
-## 4. Run the same commands anywhere
+## Use it from somewhere else
 
-`bun run broker` only works inside the checkout. The same broker commands, such as `status`, `integration setup` and `grant issue`, come in two other forms. Pick the one that fits where you create sandboxes.
+`bun run broker` works inside the checkout. Elsewhere, use one of these. Both take the same commands, such as `grant issue` and `integration setup`.
 
-| Where you run it                    | Command                      | Install                                       | Keys from                                                                              |
-| ----------------------------------- | ---------------------------- | --------------------------------------------- | -------------------------------------------------------------------------------------- |
-| The broker checkout                 | `bun run broker <command>`   | Nothing                                       | `.env.deploy`                                                                          |
-| Any machine, script or orchestrator | `beachside-broker <command>` | `npm install -g @beachside/credential-client` | `BEACHSIDE_BROKER_URL`, `BEACHSIDE_BROKER_ISSUER_KEY` and `BEACHSIDE_BROKER_ADMIN_KEY` |
-| The [`beachside` CLI](/docs/cli/)   | `beachside broker <command>` | `npm install -g @beachside/cli`               | `beachside.json`, after `beachside broker add`                                         |
-
-A machine that only creates sandboxes needs just the issuer key. Copy `BROKER_ISSUER_KEY` from `.env.deploy` into its secrets and point `beachside-broker` at it:
+**Another machine, script or CI job:** install the standalone `beachside-broker` command and give it the URL and a key from `.env.deploy`. A machine that only issues grants needs just the issuer key.
 
 ```sh
 npm install -g @beachside/credential-client
 export BEACHSIDE_BROKER_URL=https://beachside-credential-broker.your-subdomain.workers.dev
 export BEACHSIDE_BROKER_ISSUER_KEY=...   # BROKER_ISSUER_KEY from .env.deploy
-beachside-broker grant issue openrouter --ttl 1h --label ci
+beachside-broker grant issue openrouter --ttl 1h
 ```
 
-The `beachside` form picks a saved broker with `--broker <name>` instead of `--url`, adds `broker add`, `ls`, `use` and `rm` to manage saved brokers, and lets `grant renew` and `grant revoke` take a sandbox name. Add `--json` for the full grant record, or `--token` to print only the token. From TypeScript, the same package exports the client: see [use from the SDK](/docs/credential-broker/sdk/).
-
-## 5. Use it with Beachside
-
-The `beachside` CLI requests the grant, puts it in the sandbox's environment and revokes it when the sandbox goes. Install it, and run `beachside init` once to set up the sandbox provider it creates sandboxes on. [CLI setup](/docs/cli/).
-
-```sh
-npm install -g @beachside/cli
-beachside init
-```
-
-Then connect it to your broker. The CLI checks each key's role with the broker, saves the URL and keys in `beachside.json` and makes `work` the default broker. To keep the keys in a password manager instead, pass references: `--url https://... --issuer-key op://infra/broker/issuer --admin-key op://infra/broker/admin`.
+**Already using the `beachside` CLI:** save the broker once, then create sandboxes with grants. `rm` destroys the sandbox and revokes its grant. See [use from the CLI](/docs/credential-broker/cli/).
 
 ```sh
 beachside broker add work --deployment .env.deploy
-beachside broker status
-```
-
-Create a sandbox with a grant, run the same check inside it, and remove it. The sandbox image needs `curl`.
-
-```sh
 beachside create --name agent --network internet --grant openrouter
-beachside exec agent -- sh -c 'curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer $OPENROUTER_API_KEY" "$OPENROUTER_BASE_URL/key"'
 beachside rm agent
 ```
-
-`--grant openrouter` sets `OPENROUTER_BASE_URL` and `OPENROUTER_API_KEY` in the sandbox. `beachside inspect agent` shows the grant's integrations and expiry, and `rm` destroys the sandbox and revokes the grant.
 
 ## Next steps
 

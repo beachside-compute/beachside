@@ -3,7 +3,7 @@ title: Operate the broker
 description: Check, rotate, disable and upgrade a credential broker, see its grants, and run it locally.
 ---
 
-Every command here runs through `beachside broker` with the admin key of a [connected broker](/docs/credential-broker/cli/#connect-a-broker). Without the `beachside` CLI, run the same commands as `bun run broker` in the broker checkout, or as `beachside-broker` from `npm install -g @beachside/credential-client` with `BEACHSIDE_BROKER_URL` and `BEACHSIDE_BROKER_ADMIN_KEY` set. [The three forms](/docs/credential-broker/quickstart/#4-run-the-same-commands-anywhere). Add `--json` for scripts. Exit codes match the rest of the CLI: 2 for a usage error, 3 not found, 5 a rejected key or permission, 6 when a write may have applied (check before retrying), 7 retryable.
+Every command here runs through `beachside broker` with the admin key of a [connected broker](/docs/credential-broker/cli/#connect-a-broker). Without it, use [`beachside-broker`](/docs/credential-broker/quickstart/#use-it-from-somewhere-else) with the same commands and `BEACHSIDE_BROKER_ADMIN_KEY` set. Add `--json` for scripts. Exit codes match the rest of the CLI: 2 for a usage error, 3 not found, 5 a rejected key or permission, 6 when a write may have applied (check before retrying), 7 retryable.
 
 ## Check the broker
 
