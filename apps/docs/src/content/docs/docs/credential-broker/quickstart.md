@@ -66,7 +66,7 @@ bun run broker grant revoke <grant-id>
 
 ## 4. Run the same commands anywhere
 
-`bun run broker` only works inside the checkout. The same command line comes in two other forms, with the same commands and flags. Pick the one that fits where you create sandboxes.
+`bun run broker` only works inside the checkout. The same broker commands, such as `status`, `integration setup` and `grant issue`, come in two other forms. Pick the one that fits where you create sandboxes.
 
 | Where you run it                    | Command                      | Install                                       | Keys from                                                                              |
 | ----------------------------------- | ---------------------------- | --------------------------------------------- | -------------------------------------------------------------------------------------- |
@@ -83,11 +83,11 @@ export BEACHSIDE_BROKER_ISSUER_KEY=...   # BROKER_ISSUER_KEY from .env.deploy
 beachside-broker grant issue openrouter --ttl 1h --label ci
 ```
 
-Add `--json` for the full grant record, or `--token` to print only the token. From TypeScript, the same package exports the client: see [use from the SDK](/docs/credential-broker/sdk/).
+The `beachside` form picks a saved broker with `--broker <name>` instead of `--url`, adds `broker add`, `ls`, `use` and `rm` to manage saved brokers, and lets `grant renew` and `grant revoke` take a sandbox name. Add `--json` for the full grant record, or `--token` to print only the token. From TypeScript, the same package exports the client: see [use from the SDK](/docs/credential-broker/sdk/).
 
 ## 5. Use it with Beachside
 
-The `beachside` CLI requests the grant, puts it in the sandbox's environment and revokes it when the sandbox goes. Install it and set up a sandbox provider first. [CLI setup](/docs/cli/).
+The `beachside` CLI requests the grant, puts it in the sandbox's environment and revokes it when the sandbox goes. Install it, and run `beachside init` once to set up the sandbox provider it creates sandboxes on. [CLI setup](/docs/cli/).
 
 ```sh
 npm install -g @beachside/cli

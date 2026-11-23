@@ -5,14 +5,7 @@ description: Connect the beachside CLI to a credential broker, give sandboxes gr
 
 The `beachside` CLI talks to the broker for you. Grants it creates go into the sandbox's own environment, so every later `beachside exec`, `sh`, background process and `--with` server sees them, from any terminal.
 
-Install the CLI and set up a sandbox provider, if you haven't. [CLI setup](/docs/cli/).
-
-```sh
-npm install -g @beachside/cli
-beachside init
-```
-
-You also need a deployed broker. The [quickstart](/docs/credential-broker/quickstart/) deploys one in a few minutes.
+Install the CLI with `npm install -g @beachside/cli`. The `beachside broker` commands need nothing else. Creating sandboxes with `--grant` also needs a sandbox provider: run `beachside init` once. [CLI setup](/docs/cli/).
 
 ## Connect a broker
 
