@@ -53,7 +53,7 @@ The admin, issuer and encryption keys live in the deployment's `.env.deploy`. To
 
 ## Limits
 
-The broker allows up to 1,000 active grants, 100 per issuer. Each grant may make 120 requests a minute and 8 at once, including streams. A request over a limit gets HTTP `429`. Set spend limits and scopes at the upstream provider as well. [Grant API limits](https://github.com/beachside-compute/credential-broker/blob/main/services/credential-broker/README.md#grant-api).
+The broker allows up to 1,000 active grants, 100 per issuer. Each grant counts requests per integration, including streams. GitHub allows 800 requests a minute and 32 at once, enough for large clones and fetches. Model and other HTTP integrations allow 600 a minute and 32 at once. A request over a limit gets HTTP `429`. Raise or lower the limits for one integration with `limits` in `BROKER_CONFIG`. Set spend limits and scopes at the upstream provider as well. [Grant API limits](https://github.com/beachside-compute/credential-broker/blob/main/services/credential-broker/README.md#grant-api).
 
 ## Run it locally
 
