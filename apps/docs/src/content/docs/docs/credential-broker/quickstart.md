@@ -70,12 +70,12 @@ bun run broker grant revoke <grant-id>
 
 `bun run broker` works inside the checkout. Elsewhere, use one of these. Both take the same commands, such as `grant issue` and `integration setup`.
 
-**Another machine, script or CI job:** install the standalone `beachside-broker` command and give it the URL and a key. A machine that only issues grants needs just the issuer key.
+**Another machine, script or CI job:** install the standalone `beachside-broker` command and give it the URL and a key, as a value or a reference. A machine that only issues grants needs just the issuer key.
 
 ```sh
 npm install -g @beachside/credential-client
 export BEACHSIDE_BROKER_URL=https://beachside-credential-broker.your-subdomain.workers.dev
-export BEACHSIDE_BROKER_ISSUER_KEY="$(op read op://Private/beachside-broker/issuer)"
+export BEACHSIDE_BROKER_ISSUER_KEY=op://Private/beachside-broker/issuer
 beachside-broker grant issue openrouter --ttl 1h
 ```
 
