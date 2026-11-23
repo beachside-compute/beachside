@@ -3,7 +3,7 @@ title: Credential broker
 description: Give sandboxes short-lived, revocable access to GitHub and model APIs without handing your real keys to the sandbox or its provider.
 ---
 
-Putting an API key in a sandbox hands it to two parties: the code running inside, which you may not fully trust, and the sandbox provider, which now holds your key in its environment, logs or snapshots. The credential broker avoids both. You run the broker in your own Cloudflare account and it stores your GitHub, OpenRouter, Anthropic or other API keys encrypted. Your real keys never reach the sandbox or the provider. Sandboxes get a **grant** instead: a token that only works through your broker, only for the integrations you picked, and only until it expires or you revoke it.
+Putting an API key in a sandbox hands it to two parties: the code running inside, which you may not fully trust, and the sandbox provider, which now holds your key in its systems, snapshots and anywhere else it keeps sandbox data. The credential broker avoids both. You run the broker in your own Cloudflare account and it stores your GitHub, OpenRouter, Anthropic or other API keys encrypted. Your real keys never reach the sandbox or the provider. Sandboxes get a **grant** instead: a token that only works through your broker, only for the integrations you picked, and only until it expires or you revoke it.
 
 ![A sandbox sends its temporary grant to your broker. The broker checks the grant, sends the real key to OpenRouter, and relays the response back to the sandbox.](/images/credential-broker/architecture.png)
 
