@@ -1,5 +1,7 @@
 # Review pull requests with Pi
 
+The docs walk through this example as a recipe: [beachside.run/docs/recipes/pr-review/](https://beachside.run/docs/recipes/pr-review/).
+
 A GitHub Actions workflow that reviews each pull request when it is opened ready for review, or when a draft is marked ready. Pi runs in a Freestyle sandbox, reads the change in a clone of the repository without building or running it, and posts one comment-only review: a brief summary plus an inline comment on each line it has a finding about.
 
 The repository holds no GitHub or model keys. The job asks the [credential broker](https://beachside.run/docs/credential-broker/) for a grant with its own GitHub Actions OIDC token. The grant lets `git` and `gh` in the sandbox reach GitHub, and Pi reach the model gateway, through the broker. The only secret in the repository is the Freestyle API key, which stays on the runner.

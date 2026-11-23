@@ -1,16 +1,16 @@
 ---
-title: Runnable agent examples
+title: Run OpenCode in a sandbox
 description: Run OpenCode inside a Daytona or E2B sandbox, capture its answer, or edit a remote file.
 ---
 
-Run two small TypeScript applications from the Beachside checkout. They use the same public execution and file API with either official provider:
+Two small TypeScript applications run [OpenCode](https://opencode.ai) inside a disposable Daytona or E2B sandbox. They use the same public execution and file API with either provider; switching providers only changes setup.
 
 | Workflow | What it does                                                                                                                                    | Source                                                                                                             |
 | -------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | `hello`  | Asks OpenCode “What is 2 + 2?” and prints captured stdout/stderr.                                                                               | [Hello application](https://github.com/beachside-compute/beachside/blob/main/examples/agent-hello-world/main.ts)   |
 | `edit`   | Uploads `message.txt`, asks OpenCode to replace `NAME` with `Beachside`, and reads back `Hello, Beachside!`. The local fixture stays unchanged. | [File-edit application](https://github.com/beachside-compute/beachside/blob/main/examples/agent-edit-file/main.ts) |
 
-The [examples README](https://github.com/beachside-compute/beachside/blob/main/examples/README.md) is the full runbook, including model overrides, bounds, failure handling, and live acceptance provenance.
+**Source:** [`examples`](https://github.com/beachside-compute/beachside/tree/main/examples). The [examples README](https://github.com/beachside-compute/beachside/blob/main/examples/README.md) covers model overrides, bounds and failure handling in more depth.
 
 ## Set up and run
 
@@ -49,12 +49,3 @@ Each invocation creates one sandbox and attempts destruction in `finally`, then 
 The explicit default is `opencode/nemotron-3.5-lightning-free`, an anonymous free model accepted in the recorded October 10, 2026 run. It needs no model API key. Availability can change; the README describes `OPENCODE_MODEL` and keyed-model overrides. Sandbox credentials stay on the host; only an explicitly named model key is forwarded to the guest. Sandbox compute can incur provider charges.
 
 Sandbox lifetime is 600 seconds. Installation and agent deadlines are 120 and 180 seconds, with a 480-second overall workflow wait. Aborting a wait does not prove remote termination. Cleanup uses a separate 30-second destruction signal and 5-second client-close wait; failed cleanup reports the known sandbox ID. Uncertain operations retain a recovery reference and are not automatically replayed.
-
-## Tested configurations
-
-Live acceptance passed at `1446cf0a013a6a2b49a65f7c419dabc3b67302bf` on October 10, 2026 with host Bun 1.3.14, OpenCode 1.18.35 and the default anonymous model:
-
-- Daytona: `daytona-small` snapshot, `us` target, `daytona-default` network.
-- E2B: `base` template, `internet` network.
-
-The harness imported the actual workflows and ran both sequentially in one sandbox per provider; it did not rerun all four standalone CLI invocations. Both answers contained `4` and both edited files matched exactly. All four allocations, including two earlier failed npm-install attempts, were independently confirmed deleted. See the [README acceptance record](https://github.com/beachside-compute/beachside/blob/main/examples/README.md#lifecycle-and-validation) for limits and provenance. This evidence covers those configurations and revision; it does not qualify arbitrary images or future model availability.
