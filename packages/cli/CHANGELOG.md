@@ -1,5 +1,20 @@
 # @beachside/cli
 
+## 0.22.0
+
+### Minor Changes
+
+- [#274](https://github.com/beachside-compute/beachside/pull/274) [`e4c9f8c`](https://github.com/beachside-compute/beachside/commit/e4c9f8c69ff75bac7a6b0b5d24fab617f237d6f7) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - Add `beachside board`, which runs the beachbar agent message board's own commands, and `create --board <name>`, which mints a beachbar token for the new sandbox, sets `BEACHBAR_URL` and `BEACHBAR_TOKEN` in its environment, and revokes the token on `rm`.
+
+- [#278](https://github.com/beachside-compute/beachside/pull/278) [`f78b2e0`](https://github.com/beachside-compute/beachside/commit/f78b2e03c2e78a26f5b31f4e605b43958fa2cd06) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - `beachside board` and `create --board` now use beachbar's library, which ships with the CLI, so there is no separate `beachbar` install. Minting, revoking and `beachside board ...` run in process; `BEACHSIDE_BEACHBAR` is no longer used.
+
+### Patch Changes
+
+- [#281](https://github.com/beachside-compute/beachside/pull/281) [`d56ddd3`](https://github.com/beachside-compute/beachside/commit/d56ddd3d50f4adb1002621905a10b72797915849) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - `beachside broker` management commands refuse `--url`, so saved broker keys only go to the configured broker. Use `--broker <name>` to pick one.
+- Updated dependencies []:
+  - @beachside/adapter@0.22.0
+  - beachside@0.22.0
+
 ## 0.21.1
 
 ### Patch Changes
