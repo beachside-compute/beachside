@@ -745,7 +745,7 @@ export const commands: readonly CommandSpec[] = [
         type: "string",
         value: "path",
         description:
-          "add: read the URL and both keys from the broker's .env.deploy (BEACHSIDE_BROKER_URL, BROKER_ISSUER_KEY, BROKER_ADMIN_KEY)",
+          "add: read the URL and key references from the broker's .env.deploy (BEACHSIDE_BROKER_URL, BROKER_ISSUER_KEY, BROKER_ADMIN_KEY)",
       },
       default: { type: "boolean", description: "add: make it the default broker" },
       "no-check": {

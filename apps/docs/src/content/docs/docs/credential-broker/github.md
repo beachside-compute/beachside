@@ -35,7 +35,7 @@ For repositories owned by the GitHub account named `gateway`, include the `.git`
 
 A workflow can issue grants with its own OIDC token instead of an issuer key, so there is no long-lived secret in the repository. The broker only accepts workflows you list in its deployment configuration, and only for the integrations listed there.
 
-1. Add the workflow to `BROKER_CONFIG` in the broker's `.env.deploy` and run `bun run deploy` again. Changes take effect only after a deploy. [Workflow policy reference](https://github.com/beachside-compute/credential-broker/blob/main/services/credential-broker/README.md#authenticate-grant-issuance).
+1. Add the workflow to `BROKER_CONFIG` in the broker's `.env.deploy` and run `bun run deploy` again. Deploys update settings like this one and leave the keys alone. Changes take effect only after a deploy. [Workflow policy reference](https://github.com/beachside-compute/credential-broker/blob/main/services/credential-broker/README.md#authenticate-grant-issuance).
 
    ```json
    {

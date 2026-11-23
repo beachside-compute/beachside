@@ -563,17 +563,17 @@ Set up credential brokers for --grant, and manage a broker's integrations, issue
 beachside broker add <name> (--url <origin> [--issuer-key <ref>] [--admin-key <ref>] | --deployment <.env.deploy>) [--default] | ls | use <name> | rm <name> | status | config show | integration <setup|list|show|create|rotate|enable|disable|delete> ... | issuer <show|allow|deny|set> ... | grant <issue|list|renew|revoke> ... [--broker <name>]
 ```
 
-| Flag                      | Description                                                                                                               |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `--broker <name>`         | The broker to manage (default: defaultBroker, BEACHSIDE_BROKER, or BEACHSIDE_BROKER_URL)                                  |
-| `--url <origin>`          | add: the broker's HTTPS origin                                                                                            |
-| `--issuer-key <key\|ref>` | add: the issuer key: env:NAME, an op://, bws://, pass:// or keychain:// reference, - for stdin, or the value              |
-| `--admin-key <key\|ref>`  | add: the admin key, only needed to manage integrations from this machine                                                  |
-| `--deployment <path>`     | add: read the URL and both keys from the broker's .env.deploy (BEACHSIDE_BROKER_URL, BROKER_ISSUER_KEY, BROKER_ADMIN_KEY) |
-| `--default`               | add: make it the default broker                                                                                           |
-| `--no-check`              | add: save without asking the broker about the keys                                                                        |
-| `--ttl <duration>`        | grant issue\|renew: how long the grant lasts, up to 7d                                                                    |
-| `--all`                   | grant list: every grant, with the admin key                                                                               |
+| Flag                      | Description                                                                                                                    |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `--broker <name>`         | The broker to manage (default: defaultBroker, BEACHSIDE_BROKER, or BEACHSIDE_BROKER_URL)                                       |
+| `--url <origin>`          | add: the broker's HTTPS origin                                                                                                 |
+| `--issuer-key <key\|ref>` | add: the issuer key: env:NAME, an op://, bws://, pass:// or keychain:// reference, - for stdin, or the value                   |
+| `--admin-key <key\|ref>`  | add: the admin key, only needed to manage integrations from this machine                                                       |
+| `--deployment <path>`     | add: read the URL and key references from the broker's .env.deploy (BEACHSIDE_BROKER_URL, BROKER_ISSUER_KEY, BROKER_ADMIN_KEY) |
+| `--default`               | add: make it the default broker                                                                                                |
+| `--no-check`              | add: save without asking the broker about the keys                                                                             |
+| `--ttl <duration>`        | grant issue\|renew: how long the grant lasts, up to 7d                                                                         |
+| `--all`                   | grant list: every grant, with the admin key                                                                                    |
 
 Examples:
 

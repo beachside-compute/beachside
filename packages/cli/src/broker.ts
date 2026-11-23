@@ -367,7 +367,7 @@ async function addBroker(session: Session, args: string[]): Promise<number> {
     strict: true,
   });
 
-  // The broker's own `.env.deploy` holds its URL and both keys; explicit flags win over it.
+  // The broker's own `.env.deploy` holds its URL and key references; explicit flags win over it.
   const deployment = values.deployment ? await deploymentFile(session, values.deployment) : {};
   values.url ??= deployment.BEACHSIDE_BROKER_URL;
   values["issuer-key"] ??= deployment.BROKER_ISSUER_KEY;
