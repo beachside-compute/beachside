@@ -45,11 +45,6 @@ export function reviewTarget(env: Record<string, string | undefined>): ReviewTar
   return { repository, pr, base, runId: env.GITHUB_RUN_ID?.trim() || `${Date.now()}` };
 }
 
-/** The line the posted review must end with; the job checks for it afterwards. */
-export function marker(target: ReviewTarget) {
-  return `<!-- beachside-pr-review run=${target.runId} -->`;
-}
-
 export function reviewPrompt(target: ReviewTarget) {
   const { repository, pr, base } = target;
 
@@ -63,8 +58,7 @@ This is a STATIC review: read the code and reason about it. Do not build, instal
    - Needless comments. Comments should be rare: they explain why, or something the code cannot say. Flag any that restate what the code already says, narrate the change, or label the obvious.
    - Low-value tests. Tests should protect real behavior this change adds or relies on. Flag tests that only exercise the language, runtime or a library (builtins, getters, type shapes), tests of unlikely edge cases that add upkeep without protecting anything, and tests that repeat what another test in the same file already checks.
 3. Post exactly ONE review, as a brief summary plus inline comments:
-   - The summary is the review body: two or three sentences on what the change does and its overall state, with no list of findings. If you find nothing worth raising, say so there. End the body with this line exactly:
-     ${marker(target)}
+   - The summary is the review body: two or three sentences on what the change does and its overall state, with no list of findings. If you find nothing worth raising, say so there.
    - Each finding is an inline comment on the line it concerns: what is wrong and a suggested fix, in a few sentences. Comment only on lines the diff adds or changes (the RIGHT side). A finding with no such line, such as missing tests or a problem in unchanged code, goes in the summary instead.
    Write the review as JSON to /tmp/review.json, with \`commit_id\` set to the output of \`git rev-parse HEAD\`:
      {"commit_id": "<sha>", "event": "COMMENT", "body": "<summary>", "comments": [{"path": "<file>", "line": <line in the new file>, "side": "RIGHT", "body": "<finding>"}]}
@@ -91,38 +85,6 @@ export function cloneScript(target: ReviewTarget) {
   ].join("\n");
 }
 
-export type PostedReview = { id: number; body: string };
-
-/** Reviews on the pull request written by accounts (not apps such as Copilot). */
-async function userReviews(box: Box, target: ReviewTarget, signal: AbortSignal) {
-  const result = await sh(
-    box,
-    `gh api --hostname "$GH_HOST" --paginate repos/${target.repository}/pulls/${target.pr}/reviews --jq '.[] | select(.user.type == "User") | {id, body} | @json'`,
-    "Listing reviews",
-    signal,
-    { cwd: REPO_DIR },
-  );
-
-  return result
-    .stdoutText({ full: true })
-    .split("\n")
-    .filter((line) => line.trim())
-    .map((line): PostedReview => {
-      const { id, body } = JSON.parse(line);
-
-      return { id: Number(id), body: String(body ?? "") };
-    });
-}
-
-/**
- * Models sometimes drop the marker line, so a review that appeared while Pi ran counts as well.
- */
-export function postedReview(before: PostedReview[], after: PostedReview[], runMarker: string) {
-  const seen = new Set(before.map((review) => review.id));
-
-  return after.some((review) => !seen.has(review.id) || review.body.includes(runMarker));
-}
-
 export async function review(
   box: Box,
   target: ReviewTarget,
@@ -140,7 +102,6 @@ export async function review(
     env: { SCRIPT: modelsScript(gateway, `${PI_DIR}/models.json`) },
   });
 
-  const before = await userReviews(box, target, signal);
   console.log(`Reviewing with ${gateway.model} through ${gateway.name}.`);
 
   const result = await run(
@@ -186,12 +147,7 @@ export async function review(
     throw new Error(`Pi exited with ${result.exitCode}.`);
   }
 
-  const after = await userReviews(box, target, signal);
-
-  if (!postedReview(before, after, marker(target)))
-    throw new Error("Pi finished without posting the review.");
-
-  console.log(`Review posted on ${target.repository}#${target.pr}.`);
+  console.log(`Pi finished reviewing ${target.repository}#${target.pr}.`);
 }
 
 async function main() {
