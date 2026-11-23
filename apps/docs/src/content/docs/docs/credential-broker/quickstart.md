@@ -7,6 +7,16 @@ This walks through one path end to end: deploy the broker to your Cloudflare acc
 
 You need Bun 1.4.4, Node.js 22 or later, a Cloudflare account that can deploy Workers and SQLite Durable Objects, and an OpenRouter API key.
 
+## Set it up with your coding agent
+
+To have Claude Code, Codex, Pi or another coding agent do this for you, install the broker's skills in the project where you run it:
+
+```sh
+npx skills add beachside-compute/credential-broker --skill broker-setup --skill broker-grants
+```
+
+Ask it to deploy the broker and add your OpenRouter key. `broker-setup` walks the agent through the steps below and hands you the parts that involve secrets: you sign in to Cloudflare, run `bun run deploy:setup` in your own terminal so the admin and issuer keys never reach the agent, and type the OpenRouter key at the broker's masked prompt rather than in the chat. `broker-grants` teaches the agent to issue a short grant for a job, pass it to the sandbox and revoke it afterwards, including from GitHub Actions. If you create sandboxes with the `beachside` CLI, its own [`beachside-cli` skill](/docs/agents/skills/) already covers `create --grant`.
+
 ## 1. Deploy the broker
 
 ```sh
