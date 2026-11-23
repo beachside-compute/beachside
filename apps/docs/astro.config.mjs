@@ -136,6 +136,7 @@ export default defineConfig({
             { slug: "docs/credential-broker/github" },
             { slug: "docs/credential-broker/model-gateways" },
             { slug: "docs/credential-broker/operate" },
+            { slug: "docs/credential-broker/canary-tokens" },
           ],
         },
         {

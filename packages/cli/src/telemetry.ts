@@ -100,6 +100,8 @@ export const CommandEvent = z.strictObject({
       "integration",
       "issuer",
       "grant",
+      "canary",
+      "alert",
     ])
     .optional(),
   provider: provider.optional(),

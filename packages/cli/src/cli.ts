@@ -1277,7 +1277,19 @@ export async function main(argv: readonly string[], io: Io): Promise<number> {
           snapshot: ["create", "ls", "inspect", "rm", "forget"],
           adapter: ["add", "ls", "rm"],
           skill: ["show", "setup", "status", "remove"],
-          broker: ["add", "ls", "use", "rm", "status", "config", "integration", "issuer", "grant"],
+          broker: [
+            "add",
+            "ls",
+            "use",
+            "rm",
+            "status",
+            "config",
+            "integration",
+            "issuer",
+            "grant",
+            "canary",
+            "alert",
+          ],
         } satisfies Record<string, readonly string[]>;
 
         const first = flags.positionals[0];
