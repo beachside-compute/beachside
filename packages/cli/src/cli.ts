@@ -32,7 +32,7 @@ import { snapshotCommand } from "./snapshots";
 import { skillCommand } from "./skill";
 import { adapterCommand } from "./adapters";
 import { profileCommand } from "./profiles";
-import { brokerActions, brokerCommand } from "./broker";
+import { brokerActions, brokerCommand, managedGroups } from "./broker";
 import { boardCommand } from "./board";
 import { initCommand, initFlagSpecs, interactive } from "./init";
 import { gcCommand } from "./gc";
@@ -719,9 +719,9 @@ export const commands: readonly CommandSpec[] = [
   {
     name: "broker",
     summary:
-      "Set up credential brokers for --grant, and manage a broker's integrations, issuer allowlist and grants",
+      "Set up credential brokers for --grant, and manage a broker's integrations, issuer allowlist, grants and canaries",
     usage:
-      "beachside broker add <name> (--url <origin> [--issuer-key <ref>] [--admin-key <ref>] | --deployment <.env.deploy>) [--default] | ls | use <name> | rm <name> | status | config show | integration <setup|list|show|create|rotate|enable|disable|delete> ... | issuer <show|allow|deny|set> ... | grant <issue|list|renew|revoke> ... [--broker <name>]",
+      "beachside broker add <name> (--url <origin> [--issuer-key <ref>] [--admin-key <ref>] | --deployment <.env.deploy>) [--default] | ls | use <name> | rm <name> | status | config show | integration <setup|list|show|create|rotate|enable|disable|delete> ... | issuer <show|allow|deny|set> ... | grant <issue|list|renew|revoke> ... | canary <issue|list|show|revoke> ... | alert <add|list|test|delete> ... [--broker <name>]",
     flags: {
       broker: {
         type: "string",
@@ -771,6 +771,7 @@ export const commands: readonly CommandSpec[] = [
       "beachside create --name agent --network internet --grant github --grant openrouter --grant-ttl 7d",
       "beachside broker grant list",
       "beachside broker grant renew agent --ttl 7d",
+      "beachside broker canary issue openrouter --label 'decoy .env' --env > decoy.env",
       "beachside broker integration --help   # every management command and flag",
     ],
     run: brokerCommand,
@@ -1277,19 +1278,7 @@ export async function main(argv: readonly string[], io: Io): Promise<number> {
           snapshot: ["create", "ls", "inspect", "rm", "forget"],
           adapter: ["add", "ls", "rm"],
           skill: ["show", "setup", "status", "remove"],
-          broker: [
-            "add",
-            "ls",
-            "use",
-            "rm",
-            "status",
-            "config",
-            "integration",
-            "issuer",
-            "grant",
-            "canary",
-            "alert",
-          ],
+          broker: [...brokerActions, ...managedGroups],
         } satisfies Record<string, readonly string[]>;
 
         const first = flags.positionals[0];
@@ -1300,7 +1289,7 @@ export async function main(argv: readonly string[], io: Io): Promise<number> {
             ? interactive(session, flags)
               ? "guided"
               : "flags"
-            : first && allowedActions?.includes(first)
+            : first && allowedActions?.some((name) => name === first)
               ? first
               : command.name === "setup" &&
                   first === "cache" &&

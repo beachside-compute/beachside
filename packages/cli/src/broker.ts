@@ -24,7 +24,7 @@ const prefix = "beachside broker";
 export const brokerActions = ["add", "ls", "use", "rm"] as const;
 
 /** Groups handed to the broker's own command line with this broker's URL and keys. */
-const managedGroups = [
+export const managedGroups = [
   "status",
   "config",
   "integration",
