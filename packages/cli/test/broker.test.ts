@@ -234,6 +234,21 @@ test("broker add checks each key's role and saves references, never the value of
   expect(fromFile.code, fromFile.stderr).toBe(0);
   expect(fromFile.stdout).toContain("issuer key ok, admin key ok");
 
+  // A deployment file of references is saved as references, never as the keys they name.
+  const keys = { FIXTURE_ADMIN: adminKey, FIXTURE_ISSUER: issuerKey };
+  await writeFile(
+    deployment,
+    `BEACHSIDE_BROKER_URL=${origin}\nBROKER_ADMIN_KEY=env:FIXTURE_ADMIN\nBROKER_ISSUER_KEY=env:FIXTURE_ISSUER\n`,
+  );
+  const referenced = await cli(["broker", "add", "refs", "--deployment", deployment], keys);
+  expect(referenced.code, referenced.stderr).toBe(0);
+  expect(referenced.stdout).toContain("issuer key ok, admin key ok");
+  const saved = JSON.parse(await readFile(join(dir, "beachside.json"), "utf8"));
+  expect(saved.brokers.refs).toMatchObject({
+    adminKey: "env:FIXTURE_ADMIN",
+    issuerKey: "env:FIXTURE_ISSUER",
+  });
+
   const endpoint = JSON.stringify({
     endpoint: { baseURL: "https://api.example.com", headers: [] },
     credential: { source: "encrypted-store", values: {} },
@@ -360,9 +375,11 @@ test("create --grant puts the grant in the sandbox env, records it, renews it by
 });
 
 test("a refused grant names the fix and leaves nothing behind", async () => {
+  // The environment's key may be a reference too.
   const env = {
     BEACHSIDE_BROKER_URL: broker.url.origin,
-    BEACHSIDE_BROKER_ISSUER_KEY: issuerKey,
+    BEACHSIDE_BROKER_ISSUER_KEY: "env:FIXTURE_ISSUER",
+    FIXTURE_ISSUER: issuerKey,
   };
 
   const refused = await cli(["create", "--name", "agent", "--grant", "blocked"], env);

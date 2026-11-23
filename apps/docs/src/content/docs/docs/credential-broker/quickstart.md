@@ -18,24 +18,26 @@ bun run --cwd services/credential-broker wrangler login
 
 On a remote machine without a browser, add `--device --browser=false` to the login and open the printed URL. [Wrangler sign-in options](https://developers.cloudflare.com/workers/wrangler/commands/general/#wrangler-login).
 
-Generate the admin, issuer and encryption keys into a private `.env.deploy`, then deploy. Back the file up somewhere safe: it holds the only copy of the keys.
+`deploy:setup` deploys the broker for the first time. It generates the admin, issuer and encryption keys, uploads them with the Worker, and saves the broker's URL to `.env.deploy`.
 
 ```sh
 bun run deploy:setup
-bun run deploy
 ```
 
-Wrangler prints the broker's HTTPS origin. Add it to `.env.deploy`, so every later command finds the URL and keys in one file.
+Setup prints the admin and issuer keys once. Save both in your password manager, then point `.env.deploy` at them so later commands can read them. This example uses 1Password; `bws://<secret-id>`, `pass://<path>` and `env:NAME` work too.
 
 ```sh
-echo 'BEACHSIDE_BROKER_URL=https://beachside-credential-broker.your-subdomain.workers.dev' >> .env.deploy
+echo 'BROKER_ADMIN_KEY=op://Private/beachside-broker/admin' >> .env.deploy
+echo 'BROKER_ISSUER_KEY=op://Private/beachside-broker/issuer' >> .env.deploy
 ```
+
+The encryption key never leaves the Worker. Later updates run `bun run deploy`, which never touches the keys.
 
 The default `workers.dev` hostname works. To use your own domain, see [custom hostnames](https://github.com/beachside-compute/credential-broker/blob/main/services/credential-broker/README.md#use-a-custom-hostname).
 
 ## 2. Add OpenRouter
 
-The checkout runs the broker's command line as `bun run broker`, with the URL and keys from `.env.deploy`.
+The checkout runs the broker's command line as `bun run broker`, with the URL from `.env.deploy` and the keys it references. Without a reference, it asks for the key at the prompt.
 
 ```sh
 bun run broker status
@@ -68,12 +70,12 @@ bun run broker grant revoke <grant-id>
 
 `bun run broker` works inside the checkout. Elsewhere, use one of these. Both take the same commands, such as `grant issue` and `integration setup`.
 
-**Another machine, script or CI job:** install the standalone `beachside-broker` command and give it the URL and a key from `.env.deploy`. A machine that only issues grants needs just the issuer key.
+**Another machine, script or CI job:** install the standalone `beachside-broker` command and give it the URL and a key, as a value or a reference. A machine that only issues grants needs just the issuer key.
 
 ```sh
 npm install -g @beachside/credential-client
 export BEACHSIDE_BROKER_URL=https://beachside-credential-broker.your-subdomain.workers.dev
-export BEACHSIDE_BROKER_ISSUER_KEY=...   # BROKER_ISSUER_KEY from .env.deploy
+export BEACHSIDE_BROKER_ISSUER_KEY=op://Private/beachside-broker/issuer
 beachside-broker grant issue openrouter --ttl 1h
 ```
 

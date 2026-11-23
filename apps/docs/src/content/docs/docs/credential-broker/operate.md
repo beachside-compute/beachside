@@ -49,7 +49,15 @@ Disabling revokes the integration's grants. Deleting also removes it from the is
 
 ## Rotate the broker's own keys
 
-The admin, issuer and encryption keys live in the deployment's `.env.deploy`. To replace the issuer or admin key, change it there and run `bun run deploy`, then update each machine: `beachside broker add <name> --issuer-key ...` for the `beachside` CLI, or the `BEACHSIDE_BROKER_*` variables for `beachside-broker`. Rotating the encryption key takes two deploys and a rotation of every integration. Follow the [encryption key steps](https://github.com/beachside-compute/credential-broker/blob/main/services/credential-broker/README.md#rotate-an-encryption-key) exactly, because losing an old key makes the integrations encrypted with it unreadable.
+The keys live only in the Worker and, for the admin and issuer keys, your password manager. `bun run deploy` never changes them. To replace the issuer or admin key, set a new value on the Worker, update it in your password manager, then on each machine that holds it as a value rather than a reference: `beachside broker add <name> --issuer-key ...` for the `beachside` CLI, or the `BEACHSIDE_BROKER_*` variables for `beachside-broker`.
+
+```sh
+bun run --cwd services/credential-broker wrangler secret put BROKER_ISSUER_KEY
+```
+
+The encryption key has no copy outside the Worker, so replacing it means re-entering every integration's upstream key. Follow the [key rotation steps](https://github.com/beachside-compute/credential-broker/blob/main/services/credential-broker/README.md#rotate-keys).
+
+An `.env.deploy` from an older setup holds the keys as values. It keeps working, and `bun run broker` and `bun run deploy` in the broker checkout warn until you move the keys out. Every older deploy uploaded the file's keyring, so once your last deploy has succeeded the Worker holds the same keys and the file's copy can go. If you changed the keyring in the file without deploying it, deploy it with the older version of the broker first, because the file would then hold the only copy. Then save the admin and issuer keys in your password manager, replace them with references, and delete `BROKER_ENCRYPTION_KEYS` and `BROKER_ENCRYPTION_KEY_VERSION` from the file.
 
 ## Limits
 

@@ -9,7 +9,7 @@ Install the CLI with `npm install -g @beachside/cli`. The `beachside broker` com
 
 ## Connect a broker
 
-Add the broker once per machine. Pass references so the keys stay in your password manager or environment, or read them from the broker's `.env.deploy`.
+Add the broker once per machine. Pass references so the keys stay in your password manager or environment, or read the URL and key references from the broker's `.env.deploy`.
 
 ```sh
 beachside broker add work --url https://broker.example.com \
