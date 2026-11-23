@@ -18,7 +18,7 @@ bun run --cwd services/credential-broker wrangler login
 
 On a remote machine without a browser, add `--device --browser=false` to the login and open the printed URL. [Wrangler sign-in options](https://developers.cloudflare.com/workers/wrangler/commands/general/#wrangler-login).
 
-Deploy the broker. Setup generates its admin, issuer and encryption keys, uploads them to the Worker, and saves the broker's URL to `.env.deploy`.
+`deploy:setup` deploys the broker for the first time. It generates the admin, issuer and encryption keys, uploads them with the Worker, and saves the broker's URL to `.env.deploy`.
 
 ```sh
 bun run deploy:setup
@@ -75,7 +75,7 @@ bun run broker grant revoke <grant-id>
 ```sh
 npm install -g @beachside/credential-client
 export BEACHSIDE_BROKER_URL=https://beachside-credential-broker.your-subdomain.workers.dev
-export BEACHSIDE_BROKER_ISSUER_KEY=op://Private/beachside-broker/issuer
+export BEACHSIDE_BROKER_ISSUER_KEY="$(op read op://Private/beachside-broker/issuer)"
 beachside-broker grant issue openrouter --ttl 1h
 ```
 

@@ -53,6 +53,11 @@ async function readKey(
   return key;
 }
 
+/** A broker key from the environment, which may itself be a reference such as op://... */
+function envKey(session: Session, name: string): Promise<string | undefined> {
+  return readKey(session, session.ctx.env[name] || undefined, name);
+}
+
 /**
  * The broker a command uses: --broker, then BEACHSIDE_BROKER, then `defaultBroker`, then the only
  * configured broker, then BEACHSIDE_BROKER_URL. A configured broker without a key falls back to
@@ -84,8 +89,8 @@ export async function resolveBroker(session: Session, chosen?: string): Promise<
 
     return {
       url,
-      issuerKey: async () => env.BEACHSIDE_BROKER_ISSUER_KEY || undefined,
-      adminKey: async () => env.BEACHSIDE_BROKER_ADMIN_KEY || undefined,
+      issuerKey: () => envKey(session, "BEACHSIDE_BROKER_ISSUER_KEY"),
+      adminKey: () => envKey(session, "BEACHSIDE_BROKER_ADMIN_KEY"),
     };
   }
 
@@ -103,10 +108,10 @@ export async function resolveBroker(session: Session, chosen?: string): Promise<
     url: config.url,
     issuerKey: async () =>
       (await readKey(session, config.issuerKey, `brokers.${name}.issuerKey`)) ??
-      (env.BEACHSIDE_BROKER_ISSUER_KEY || undefined),
+      envKey(session, "BEACHSIDE_BROKER_ISSUER_KEY"),
     adminKey: async () =>
       (await readKey(session, config.adminKey, `brokers.${name}.adminKey`)) ??
-      (env.BEACHSIDE_BROKER_ADMIN_KEY || undefined),
+      envKey(session, "BEACHSIDE_BROKER_ADMIN_KEY"),
   };
 }
 
@@ -123,7 +128,7 @@ async function issuerClient(session: Session, broker: ResolvedBroker) {
       `Broker ${brokerLabel(broker)} has no issuer key`,
       broker.name
         ? `set brokers.${broker.name}.issuerKey in beachside.json (env:NAME or a password-manager reference works), or BEACHSIDE_BROKER_ISSUER_KEY`
-        : "set BEACHSIDE_BROKER_ISSUER_KEY to BROKER_ISSUER_KEY from the deployment",
+        : "set BEACHSIDE_BROKER_ISSUER_KEY to the issuer key or a reference such as op://Private/beachside-broker/issuer",
     );
 
   try {

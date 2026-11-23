@@ -57,7 +57,7 @@ bun run --cwd services/credential-broker wrangler secret put BROKER_ISSUER_KEY
 
 The encryption key has no copy outside the Worker, so replacing it means re-entering every integration's upstream key. Follow the [key rotation steps](https://github.com/beachside-compute/credential-broker/blob/main/services/credential-broker/README.md#rotate-keys).
 
-An `.env.deploy` from an older setup that holds the keys as values keeps working, but the broker commands warn until you move the admin and issuer keys into your password manager, replace them with references, and delete `BROKER_ENCRYPTION_KEYS` and `BROKER_ENCRYPTION_KEY_VERSION`.
+An `.env.deploy` from an older setup holds the keys as values. It keeps working, and `bun run broker` and `bun run deploy` in the broker checkout warn until you move the keys out. Every older deploy uploaded the file's keyring, so once your last deploy has succeeded the Worker holds the same keys and the file's copy can go. If you changed the keyring in the file without deploying it, deploy it with the older version of the broker first, because the file would then hold the only copy. Then save the admin and issuer keys in your password manager, replace them with references, and delete `BROKER_ENCRYPTION_KEYS` and `BROKER_ENCRYPTION_KEY_VERSION` from the file.
 
 ## Limits
 
