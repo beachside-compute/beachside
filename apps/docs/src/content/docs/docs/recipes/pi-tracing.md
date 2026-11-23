@@ -22,7 +22,7 @@ Spans carry provider, model, token counts and status. They never carry prompts, 
 
 ## What you need
 
-- A checkout of the repository with dependencies installed (see [Recipes](/docs/recipes/)).
+- A checkout of the repository with [Bun](https://bun.sh) and its dependencies installed (see [Recipes](/docs/recipes/)). Run the commands below from the repository root.
 - Nothing else for the offline run.
 - For a live run, a model gateway key: OpenRouter, Kilo AI Gateway, or any model Pi already has credentials for.
 - For the sandbox run, a [boxd](/docs/providers/boxd/) API key and organization, plus an HTTPS OTLP endpoint the sandbox can reach.
@@ -49,7 +49,7 @@ For OpenRouter, put `OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL` and `DEFAULT_MOD
 bun --env-file="$HOME/.config/openrouter.env" examples/pi-tracing/main.ts --openrouter
 ```
 
-To keep model keys out of the run, point the base URL at a [credential broker](/docs/credential-broker/model-gateways/) gateway, such as `https://broker.example/gateway/openrouter`.
+To keep the OpenRouter key out of the run, use a [credential broker](/docs/credential-broker/model-gateways/) grant instead: set `OPENROUTER_BASE_URL` to the broker's gateway URL, such as `https://broker.example/gateway/openrouter`, and `OPENROUTER_API_KEY` to the grant token. The boxd run forwards both to the guest and allows the broker's hostname.
 
 ## Run Pi in a boxd sandbox
 
@@ -73,9 +73,17 @@ OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:4318/v1/traces \
   bun run --cwd examples pi:trace --offline
 ```
 
-**On your desktop.** Run [OpenTelemetry Desktop Viewer](https://github.com/CtrlSpice/otel-desktop-viewer) with `otel-desktop-viewer --host 127.0.0.1`. For the boxd run, expose its OTLP port with a temporary tunnel such as `cloudflared tunnel --url http://127.0.0.1:4318`, set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` to the tunnel's URL plus `/v1/traces`, and stop the tunnel when the run finishes.
+**On your desktop.** Run [OpenTelemetry Desktop Viewer](https://github.com/CtrlSpice/otel-desktop-viewer) with `otel-desktop-viewer --host 127.0.0.1`. For the boxd run, expose only its OTLP port with a temporary tunnel such as `cloudflared tunnel --url http://127.0.0.1:4318`. Anyone with the tunnel URL can submit traces to your viewer until you stop the tunnel, so stop it when the run finishes. Clear any inherited OTLP endpoint and header variables so the tunnel wins:
 
-**In Grafana Cloud.** Set the stack's `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_HEADERS` from its OpenTelemetry configuration page. Export uses OTLP/HTTP protobuf by default; set `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/json` for a receiver that expects JSON.
+```sh
+BOXD_ORG=your-org \
+OTEL_EXPORTER_OTLP_ENDPOINT= OTEL_EXPORTER_OTLP_HEADERS= OTEL_EXPORTER_OTLP_TRACES_HEADERS= \
+OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://your-tunnel.trycloudflare.com/v1/traces \
+  bun --env-file="$HOME/.config/boxd.env" --env-file="$HOME/.config/openrouter.env" \
+  examples/pi-tracing/boxd.ts --openrouter
+```
+
+**In Grafana Cloud.** Set the stack's `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_HEADERS` from its OpenTelemetry configuration page. That base endpoint usually ends in `/otlp`, and the exporter appends `/v1/traces`; don't put `/v1/traces` on `OTEL_EXPORTER_OTLP_ENDPOINT` yourself. If you set `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` instead, use the full path ending in `/otlp/v1/traces`. Export uses OTLP/HTTP protobuf by default; set `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/json` for a receiver that expects JSON.
 
 Find the trace by the trace ID the run prints. For tracing Beachside in your own application, see [Tracing, metrics and safe diagnostics](/docs/observability/).
 

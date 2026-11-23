@@ -78,7 +78,18 @@ Run `beachside broker issuer allow github-review kilo openrouter` if the issuer 
 
 ### 3. Add the workflows and scripts
 
-Copy [`.github/workflows/pr-review.yml`](https://github.com/beachside-compute/beachside/blob/main/.github/workflows/pr-review.yml), [`.github/workflows/pr-review-maintenance.yml`](https://github.com/beachside-compute/beachside/blob/main/.github/workflows/pr-review-maintenance.yml) and the [`examples/pr-review`](https://github.com/beachside-compute/beachside/tree/main/examples/pr-review) scripts into your repository. The scripts use `beachside`, `@beachside/freestyle` and `@beachside/credential-client`; install them from npm and drop the workflows' `build:packages` step, which only applies inside the Beachside repository.
+Copy into your repository:
+
+- the two workflows, [`pr-review.yml`](https://github.com/beachside-compute/beachside/blob/main/.github/workflows/pr-review.yml) and [`pr-review-maintenance.yml`](https://github.com/beachside-compute/beachside/blob/main/.github/workflows/pr-review-maintenance.yml), into `.github/workflows/`;
+- `review.ts`, `shared.ts`, `gateway.ts`, `image.ts` and `sweep.ts` from [`examples/pr-review`](https://github.com/beachside-compute/beachside/tree/main/examples/pr-review), keeping the `examples/pr-review/` path the workflows run them from, or updating the paths in both workflows.
+
+Add the packages the scripts import to your `package.json`:
+
+```sh
+bun add beachside @beachside/freestyle @beachside/credential-client
+```
+
+In both workflows, keep `bun install --frozen-lockfile`, which now installs those packages from npm, and delete the `bun run build:packages` steps, which build them from source inside the Beachside repository.
 
 ### 4. Set repository secrets and variables
 
@@ -106,12 +117,12 @@ The grant itself is the real boundary: it can only read code, post reviews and c
 
 Every resource expires on its own, so the cleanup steps are a backup:
 
-| Resource            | Expiry                     | Active cleanup                                                                                                        |
-| ------------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Review sandbox      | 30 minutes after creation. | Destroyed when the review ends, even after a failure. An hourly sweep destroys any review sandbox older than an hour. |
-| Grant               | 30 minutes.                | Revoked when the sandbox is destroyed.                                                                                |
-| Image snapshot      | 14 days after capture.     | Replaced weekly.                                                                                                      |
-| Image build sandbox | 30 minutes after creation. | Destroyed after capture, and covered by the sweep.                                                                    |
+| Resource            | Expiry                     | Active cleanup                                                                                                                                        |
+| ------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Review sandbox      | 30 minutes after creation. | Destroyed when the review ends, even after a failure. An hourly sweep destroys any sandbox labelled `beachside.pr-review` that is older than an hour. |
+| Grant               | 30 minutes.                | Revoked when the sandbox is destroyed.                                                                                                                |
+| Image snapshot      | 14 days after capture.     | Replaced weekly.                                                                                                                                      |
+| Image build sandbox | 30 minutes after creation. | Destroyed after capture, and covered by the sweep.                                                                                                    |
 
 The review job has a 30-minute timeout, so a runner that disappears mid-job leaves only resources that expire within 30 minutes.
 

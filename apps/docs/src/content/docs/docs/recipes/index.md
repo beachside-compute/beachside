@@ -11,7 +11,7 @@ Each recipe is a working application in the [`examples`](https://github.com/beac
 | [Trace a Pi run](/docs/recipes/pi-tracing/)              | Runs the Pi agent locally or in a sandbox and exports one OpenTelemetry trace covering the host, the Beachside SDK calls and Pi's model and tool calls.                                                    | Your machine, boxd |
 | [Run OpenCode in a sandbox](/docs/recipes/opencode/)     | Asks OpenCode a question and captures its answer, or has it edit an uploaded file and reads the result back.                                                                                               | Daytona, E2B       |
 
-All recipes run from a checkout of the repository:
+All recipes run from a checkout of the repository with [Bun](https://bun.sh) installed:
 
 ```sh
 git clone https://github.com/beachside-compute/beachside.git
@@ -19,3 +19,5 @@ cd beachside
 bun install --frozen-lockfile
 bun run build:packages
 ```
+
+Each recipe page lists anything else it needs, such as an env file or provider keys.
