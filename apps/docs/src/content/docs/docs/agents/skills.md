@@ -58,8 +58,10 @@ npx skills add beachside-compute/credential-broker --skill broker-setup --skill 
 
 With the `beachside` CLI, `beachside-cli` already covers sandboxes with grants (`create --grant`), so only `broker-setup` is needed.
 
+`broker-setup` leaves deployment keys and upstream credentials to you: the agent never runs `deploy:setup`, prints `.env.deploy` or pipes a key itself. `broker-grants` keeps grant tokens in variables and out of the agent's output. The next section covers the Beachside skills only.
+
 ## What the skills do not do
 
-The skills never hold credentials. The SDK skill reads keys from environment variables; the CLI skill uses your existing `beachside.json` profiles and tells the agent to leave configuration to you. Both tell the agent that live sandboxes cost money, to clean up what it creates, and never to retry an operation whose outcome is unknown.
+The Beachside skills never hold credentials. The SDK skill reads keys from environment variables; the CLI skill uses your existing `beachside.json` profiles and tells the agent to leave configuration to you. Both tell the agent that live sandboxes cost money, to clean up what it creates, and never to retry an operation whose outcome is unknown.
 
 For one-off tasks you can still paste the [SDK prompt](/docs/agents/build-with-sdk/) or the [provider integration prompt](/docs/agents/build-a-provider/) instead.
