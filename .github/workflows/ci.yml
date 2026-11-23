@@ -236,8 +236,8 @@ jobs:
         if: needs.scope.outputs.full == 'false'
         run: bun run --cwd apps/docs site:check
   verify:
-    # On pull requests a skipped required check counts as passing, so only pushes skip when cancelled.
-    if: ${{ always() && !(cancelled() && github.event_name == 'push') }}
+    # On pull requests a skipped required check counts as passing, so only they still fail when cancelled.
+    if: ${{ always() && !(cancelled() && github.event_name != 'pull_request') }}
     needs: [scope, quality, build, typecheck, offline, packed, release, docs]
     runs-on: ubuntu-latest
     timeout-minutes: 1
