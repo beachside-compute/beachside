@@ -40,6 +40,7 @@ On GitHub Actions you don't need the issuer key at all: a workflow can mint gran
 ## Next steps
 
 - [Quickstart](/docs/credential-broker/quickstart/): deploy the broker, add OpenRouter and call it from a sandbox.
+- [Set it up with your coding agent](/docs/credential-broker/quickstart/#set-it-up-with-your-coding-agent) using the broker's agent skills.
 - [Use from the CLI](/docs/credential-broker/cli/) and [use from the SDK](/docs/credential-broker/sdk/).
 - [GitHub access](/docs/credential-broker/github/), including GitHub Actions.
 - [Model gateway recipes](/docs/credential-broker/model-gateways/) for Kilo, Cloudflare, Vercel, OpenAI, Anthropic and custom APIs.

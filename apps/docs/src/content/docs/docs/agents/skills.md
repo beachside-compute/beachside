@@ -43,8 +43,25 @@ For an agent without a skill system, copy the `SKILL.md` contents into its proje
 
 Agents can also read these docs as Markdown. [`/llms.txt`](https://beachside.run/llms.txt) lists every page, and each page is at its address with `.md` in place of the trailing slash, such as `https://beachside.run/docs/agents/skills.md`.
 
+## Credential broker skills
+
+The [credential broker](/docs/credential-broker/) repository ships two more skills, for the trusted machine that runs the broker and launches sandboxes. Sandboxes never need them.
+
+| Skill           | Teaches an agent to                                                                                                                                     |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `broker-setup`  | Deploy or update the broker on Cloudflare, add upstream integrations and set the issuance policy, leaving every key-handling step to you.               |
+| `broker-grants` | Issue a short-lived grant for a sandbox job, pass it to the sandbox's tools and revoke it when the job ends, with an issuer key or GitHub Actions OIDC. |
+
+```sh
+npx skills add beachside-compute/credential-broker --skill broker-setup --skill broker-grants
+```
+
+With the `beachside` CLI, `beachside-cli` already covers sandboxes with grants (`create --grant`), so only `broker-setup` is needed.
+
+`broker-setup` leaves deployment keys and upstream credentials to you: the agent never runs `deploy:setup`, prints `.env.deploy` or pipes a key itself. `broker-grants` keeps grant tokens in variables and out of the agent's output.
+
 ## What the skills do not do
 
-The skills never hold credentials. The SDK skill reads keys from environment variables; the CLI skill uses your existing `beachside.json` profiles and tells the agent to leave configuration to you. Both tell the agent that live sandboxes cost money, to clean up what it creates, and never to retry an operation whose outcome is unknown.
+The Beachside skills never hold credentials. The SDK skill reads keys from environment variables; the CLI skill uses your existing `beachside.json` profiles and tells the agent to leave configuration to you. Both tell the agent that live sandboxes cost money, to clean up what it creates, and never to retry an operation whose outcome is unknown.
 
 For one-off tasks you can still paste the [SDK prompt](/docs/agents/build-with-sdk/) or the [provider integration prompt](/docs/agents/build-a-provider/) instead.
