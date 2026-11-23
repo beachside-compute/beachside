@@ -9,7 +9,7 @@ You need Bun 1.4.4, Node.js 22 or later, a Cloudflare account that can deploy Wo
 
 ## Set it up with your coding agent
 
-To have Claude Code, Codex, Pi or another coding agent do this for you, install the broker's skills in the project where you run it:
+To have Claude Code, Codex, Pi or another coding agent do this for you, install the broker's skills:
 
 ```sh
 npx skills add beachside-compute/credential-broker --skill broker-setup --skill broker-grants
