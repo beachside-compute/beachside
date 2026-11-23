@@ -61,7 +61,7 @@ An `.env.deploy` from an older setup holds the keys as values. It keeps working,
 
 ## Limits
 
-The broker allows up to 1,000 active grants, 100 per issuer. Each grant may make 120 requests a minute and 8 at once, including streams. A request over a limit gets HTTP `429`. Set spend limits and scopes at the upstream provider as well. [Grant API limits](https://github.com/beachside-compute/credential-broker/blob/main/services/credential-broker/README.md#grant-api).
+The broker allows up to 1,000 active grants, 100 per issuer. Each grant has its own budget for each of its integrations, including streams: 800 requests a minute and 32 at once on GitHub, enough for large clones and fetches; 600 a minute and 32 at once on the Anthropic, OpenAI and OpenRouter gateways; and 300 a minute and 8 at once on custom `http` endpoints. A request over a limit gets HTTP `429`. To change one integration's limits, add `limits` to `BROKER_CONFIG` in `.env.deploy` and run `bun run deploy`. Set spend limits and scopes at the upstream provider as well. [Grant API limits](https://github.com/beachside-compute/credential-broker/blob/main/services/credential-broker/README.md#grant-api).
 
 ## Run it locally
 
