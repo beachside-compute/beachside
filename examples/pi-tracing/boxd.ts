@@ -3,13 +3,20 @@ import { boxd } from "@beachside/boxd";
 import { context, defaultTextMapSetter, ROOT_CONTEXT, trace } from "@opentelemetry/api";
 import type { Context } from "@opentelemetry/api";
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
+import { ExportResultCode } from "@opentelemetry/core";
+import { OTLPMetricExporter as JsonMetricExporter } from "@opentelemetry/exporter-metrics-otlp-http";
+import { OTLPMetricExporter as ProtobufMetricExporter } from "@opentelemetry/exporter-metrics-otlp-proto";
+import { resourceFromAttributes } from "@opentelemetry/resources";
+import { MeterProvider, PeriodicExportingMetricReader } from "@opentelemetry/sdk-metrics";
+import type { PushMetricExporter } from "@opentelemetry/sdk-metrics";
 import { Beachside, BeachsideError, SandboxCleanupError } from "beachside";
 import type { SandboxHandle } from "beachside";
 import { gatewayConfig, selectedGateway } from "./gateway";
 import type { Gateway } from "./gateway";
-import { answer, answerName, endSpan, traceContext, tracing } from "./telemetry";
+import { answer, answerName, endSpan, OtlpExportError, traceContext, tracing } from "./telemetry";
 
 const workdir = "/tmp/beachside-pi";
+const sandboxProvider = "boxd";
 
 const image = "docker.io/oven/bun:1.3.14-debian";
 
@@ -56,6 +63,7 @@ export function guestEnvironment(
     TRACESTATE: carrier.tracestate,
     PI_TRACING_RUN_ID: runId,
     PI_TRACING_SANDBOX_ID: sandboxId,
+    PI_TRACING_SANDBOX_PROVIDER: sandboxProvider,
     PI_TELEMETRY: "0",
   };
 
@@ -173,6 +181,69 @@ export function otlpEndpoint(env: Record<string, string | undefined> = process.e
   return endpoint;
 }
 
+export function boxdTelemetry(runId: string, offline: boolean) {
+  const service = "beachside-pi-demo";
+
+  const protocol =
+    process.env.OTEL_EXPORTER_OTLP_METRICS_PROTOCOL ??
+    process.env.OTEL_EXPORTER_OTLP_PROTOCOL ??
+    "http/protobuf";
+
+  if (protocol !== "http/json" && protocol !== "http/protobuf") {
+    throw new Error("Use http/protobuf or http/json for the OTLP metrics protocol.");
+  }
+
+  const spans = tracing(service, runId, offline, { sandboxProvider });
+  const Exporter = protocol === "http/json" ? JsonMetricExporter : ProtobufMetricExporter;
+  const exporter = new Exporter({ timeoutMillis: 5_000 });
+  let exportFailed = false;
+
+  const trackedExporter: PushMetricExporter = {
+    export(metrics, callback) {
+      exporter.export(metrics, (result) => {
+        if (result.code !== ExportResultCode.SUCCESS) exportFailed = true;
+
+        callback({ code: result.code });
+      });
+    },
+    selectAggregation: (type) => exporter.selectAggregation(type),
+    selectAggregationTemporality: (type) => exporter.selectAggregationTemporality(type),
+    forceFlush: () => exporter.forceFlush(),
+    shutdown: () => exporter.shutdown(),
+  };
+
+  const meterProvider = new MeterProvider({
+    resource: resourceFromAttributes({ "service.name": service }),
+    readers: [
+      new PeriodicExportingMetricReader({ exporter: trackedExporter, exportTimeoutMillis: 6_000 }),
+    ],
+  });
+
+  return {
+    start: spans.start,
+    options: {
+      tracing: { tracerProvider: spans.provider },
+      metrics: { meterProvider },
+    },
+    async shutdown() {
+      const [traces, metrics] = await Promise.allSettled([
+        spans.shutdown(),
+        meterProvider.shutdown(),
+      ]);
+
+      const failures = [];
+
+      if (traces.status === "rejected") failures.push(new OtlpExportError(service).message);
+
+      if (metrics.status === "rejected" || exportFailed) {
+        failures.push(new OtlpExportError(`${service} metrics`).message);
+      }
+
+      if (failures.length > 0) throw new Error(failures.join(" "));
+    },
+  };
+}
+
 async function main() {
   const apiKey = required("BOXD_API_KEY");
   const org = required("BOXD_ORG");
@@ -185,9 +256,9 @@ async function main() {
   const endpoint = otlpEndpoint();
 
   const runId = randomUUID();
+  const telemetry = boxdTelemetry(runId, false);
   const closeContext = openTraceContext();
 
-  const telemetry = tracing("beachside-pi-demo", runId, false);
   const run = telemetry.start("sandbox.run", ROOT_CONTEXT);
   const parent = trace.setSpan(ROOT_CONTEXT, run);
   let failed = true;
@@ -212,7 +283,7 @@ async function main() {
           preview: { access: "protected" },
           network: { allow: ["registry.npmjs.org", config.hostname, endpoint.hostname] },
         }),
-        { tracing: { tracerProvider: telemetry.provider }, signal },
+        { ...telemetry.options, signal },
       );
 
       try {

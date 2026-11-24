@@ -23,8 +23,11 @@ export function tracing(
   service: string,
   runId: string,
   offline: boolean,
-  url?: string,
-  sandboxId?: string,
+  {
+    url,
+    sandboxId,
+    sandboxProvider,
+  }: { url?: string; sandboxId?: string; sandboxProvider?: string } = {},
 ) {
   const protocol = url
     ? "http/json"
@@ -67,20 +70,18 @@ export function tracing(
   return {
     provider,
     start(name: string, parent: Context) {
-      const span = tracer.startSpan(
+      return tracer.startSpan(
         name,
         {
           attributes: {
             "demo.run.id": runId,
             "demo.mode": offline ? "scripted" : "live",
+            "demo.sandbox.id": sandboxId,
+            "beachside.provider": sandboxProvider,
           },
         },
         parent,
       );
-
-      if (sandboxId) span.setAttribute("demo.sandbox.id", sandboxId);
-
-      return span;
     },
     async shutdown() {
       try {
