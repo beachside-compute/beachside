@@ -9,6 +9,23 @@ description: Run a Rex server inside a sandbox and open it from Rex on your Mac 
 Rex is in beta. This recipe has been verified end to end on boxd, Freestyle, E2B (with the extra step below) and plain Linux hosts. Daytona's lower tiers block the Rex download, because their sandboxes only reach an allowlist of hosts.
 :::
 
+## Watch the demo
+
+Watch an agent use Beachside to provision a boxd sandbox, configure Rex and Tailscale, and launch OpenCode with a named setup.
+
+<iframe
+  src="https://www.youtube-nocookie.com/embed/dW15Cg9LwPo"
+  title="Create a remote Rex workspace with Beachside"
+  width="560"
+  height="315"
+  style="width: 100%; height: auto; aspect-ratio: 16 / 9; border: 0;"
+  loading="lazy"
+  allow="encrypted-media; picture-in-picture; fullscreen"
+  allowfullscreen
+></iframe>
+
+[Watch the demo on YouTube](https://youtu.be/dW15Cg9LwPo).
+
 ## What you need
 
 - Rex beta on your Mac.
