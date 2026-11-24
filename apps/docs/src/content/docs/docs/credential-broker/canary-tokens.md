@@ -40,7 +40,7 @@ Email goes out through [Cloudflare Email Sending](https://developers.cloudflare.
    beachside broker alert test inbox
    ```
 
-The subject is the alert's title, and the body lists every field of the event.
+The subject is the alert's title, and the body lists every field of the event. `alert test` reports a test email as accepted rather than delivered, because it can still bounce; check the inbox, and look for bounces in Cloudflare's Email Service logs.
 
 ### incident.io and PagerDuty
 
