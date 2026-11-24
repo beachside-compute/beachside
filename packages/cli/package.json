@@ -38,7 +38,7 @@
     "@beachside/vercel": "workspace:*",
     "@beachside-internal/provider-fake": "workspace:*",
     "@clack/prompts": "1.9.0",
-    "@beachside/credential-client": "0.4.0"
+    "@beachside/credential-client": "0.5.0"
   },
   "license": "Apache-2.0",
   "repository": {
