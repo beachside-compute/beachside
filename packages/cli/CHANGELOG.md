@@ -1,5 +1,14 @@
 # @beachside/cli
 
+## 0.22.1
+
+### Patch Changes
+
+- [#292](https://github.com/beachside-compute/beachside/pull/292) [`9557cdc`](https://github.com/beachside-compute/beachside/commit/9557cdc95a4be7b59a596bcf44210f4eaa8304ba) Thanks [@pandemicsyn](https://github.com/pandemicsyn)! - `beachside broker` gains canary tokens and alert destinations, including email alerts: `beachside broker canary issue|list|show|revoke` and `beachside broker alert add slack|webhook|email`. Email alerts need a broker deployed with `BROKER_EMAIL_FROM` on a domain onboarded to Cloudflare Email Sending.
+- Updated dependencies []:
+  - @beachside/adapter@0.22.1
+  - beachside@0.22.1
+
 ## 0.22.0
 
 ### Minor Changes
