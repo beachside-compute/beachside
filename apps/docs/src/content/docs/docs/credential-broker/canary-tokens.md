@@ -25,7 +25,7 @@ beachside broker alert list
 - **Webhook** posts a flat JSON object of strings to any HTTPS URL. It's signed per [Standard Webhooks](https://www.standardwebhooks.com/), and the signing secret is printed once, when you add the destination. Add headers with `--header Name=value`, for a receiver that authenticates by header.
 - **Email** sends a plain-text message to one address through Cloudflare Email Service. It needs one-time setup on the broker; see [Email alerts](#email-alerts).
 
-`--to` and `--header` values can be `op://`, `bws://` or `pass://` references. The broker seals the URL, headers and signing secret with its encryption key, and listings show only the host and header names.
+`--to` and `--header` values can be `op://`, `bws://` or `pass://` references. The broker seals each destination, including an email address, with its encryption key. Listings show only the host and header names, or the address for an email destination.
 
 ### Email alerts
 
