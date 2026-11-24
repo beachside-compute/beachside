@@ -59,6 +59,11 @@ describe("cross-process Pi tracing", () => {
       for (const span of spans) {
         expect(span.traceId).toBe(root.traceId);
         expect(span.status.code).toBe(1);
+        expect(
+          span.attributes.some(
+            ({ key }) => key === "beachside.provider" || key === "demo.sandbox.id",
+          ),
+        ).toBe(false);
         expect(span.attributes.find(({ key }) => key === "demo.run.id")?.value.stringValue).toBe(
           runId,
         );
@@ -339,7 +344,7 @@ test.each(["base endpoint", "metrics override"] as const)(
         expect(span).toMatchObject({ traceId: root.traceId, parentSpanId: root.spanId });
         expect(span?.attributes).toContainEqual({
           key: "beachside.provider",
-          value: { stringValue: "custom" },
+          value: { stringValue: "boxd" },
         });
       }
 
@@ -373,6 +378,47 @@ test.each(["base endpoint", "metrics override"] as const)(
     }
   },
 );
+
+test("Boxd reports the HTTP status of each failed telemetry export without receiver details", async () => {
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      if (new URL(request.url).pathname === "/v1/metrics") {
+        return new Response("private metrics receiver detail", { status: 403 });
+      }
+
+      if ((await request.text()).includes("beachside-pi-agent")) return Response.json({});
+
+      return new Response("private traces receiver detail", { status: 401 });
+    },
+  });
+
+  try {
+    const fixture = Bun.spawn([process.execPath, entrypoint("boxd-fixture.test-support.ts")], {
+      env: {
+        OTEL_EXPORTER_OTLP_ENDPOINT: server.url.href,
+        OTEL_EXPORTER_OTLP_TRACES_PROTOCOL: "http/json",
+      },
+      stdout: "ignore",
+      stderr: "pipe",
+      timeout: 10_000,
+    });
+
+    const stderr = await new Response(fixture.stderr).text();
+
+    expect(await fixture.exited).toBe(1);
+    expect(stderr).toContain(
+      "OTLP export failed for beachside-pi-demo. Receiver returned HTTP 401.",
+    );
+    expect(stderr).toContain(
+      "OTLP export failed for beachside-pi-demo metrics. Receiver returned HTTP 403.",
+    );
+    expect(stderr).not.toContain("receiver detail");
+  } finally {
+    await server.stop(true);
+  }
+});
 
 test("OpenRouter preserves the broker base path and accepts a model fallback", () => {
   const config = gatewayConfig("openrouter", {

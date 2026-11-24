@@ -63,7 +63,7 @@ BOXD_ORG=your-org bun --env-file="$HOME/.config/boxd.env" \
 
 Pass `--kilo` to use Kilo instead; it is also the default when no gateway flag is given. The host creates a boxd microVM with a ten-minute expiry, uploads the Pi entrypoint and a pinned dependency manifest, installs them, and runs Pi. Only the Pi command receives the gateway key, model, OTLP configuration and trace context; the boxd key stays on the host. The host reads `answer.txt` through Beachside, then destroys the sandbox and prints the trace and sandbox IDs.
 
-Boxd spans include `beachside.provider=boxd`. The host exports Beachside SDK operation and phase durations, in-flight calls, and file bytes. Pi model and tool activity in the guest is exported as spans. The host sends metrics to `/v1/metrics` under `OTEL_EXPORTER_OTLP_ENDPOINT` and flushes them at shutdown. To use a separate receiver, set `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` to its full metrics URL. [OTLP endpoint rules](https://opentelemetry.io/docs/specs/otel/protocol/exporter/#endpoint-urls-for-otlphttp)
+The demo adds `beachside.provider=boxd` to `sandbox.run`, `demo.verify`, and the guest's `pi.*` spans using the Boxd adapter name. Beachside SDK spans derive the label from the connected adapter. The host exports Beachside SDK operation and phase durations, in-flight calls, and file bytes. Pi model and tool activity in the guest is exported as spans. The host sends metrics to `/v1/metrics` under `OTEL_EXPORTER_OTLP_ENDPOINT` and flushes them at shutdown. To use a separate receiver, set `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` to its full metrics URL. [OTLP endpoint rules](https://opentelemetry.io/docs/specs/otel/protocol/exporter/#endpoint-urls-for-otlphttp)
 
 ## View the trace
 

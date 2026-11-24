@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { boxd } from "@beachside/boxd";
+import { boxd, boxdAdapter } from "@beachside/boxd";
 import { context, defaultTextMapSetter, ROOT_CONTEXT, trace } from "@opentelemetry/api";
 import type { Context } from "@opentelemetry/api";
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
@@ -16,7 +16,7 @@ import type { Gateway } from "./gateway";
 import { answer, answerName, endSpan, OtlpExportError, traceContext, tracing } from "./telemetry";
 
 const workdir = "/tmp/beachside-pi";
-const sandboxProvider = "boxd";
+const sandboxProvider = boxdAdapter.name;
 
 const image = "docker.io/oven/bun:1.3.14-debian";
 
@@ -196,12 +196,15 @@ export function boxdTelemetry(runId: string, offline: boolean) {
   const spans = tracing(service, runId, offline, { sandboxProvider });
   const Exporter = protocol === "http/json" ? JsonMetricExporter : ProtobufMetricExporter;
   const exporter = new Exporter({ timeoutMillis: 5_000 });
-  let exportFailed = false;
+  const metricsService = `${service} metrics`;
+  let metricsFailure: OtlpExportError | undefined;
 
   const trackedExporter: PushMetricExporter = {
     export(metrics, callback) {
       exporter.export(metrics, (result) => {
-        if (result.code !== ExportResultCode.SUCCESS) exportFailed = true;
+        if (result.code !== ExportResultCode.SUCCESS) {
+          metricsFailure = new OtlpExportError(metricsService, result.error);
+        }
 
         callback({ code: result.code });
       });
@@ -231,15 +234,21 @@ export function boxdTelemetry(runId: string, offline: boolean) {
         meterProvider.shutdown(),
       ]);
 
-      const failures = [];
+      const failures: OtlpExportError[] = [];
 
-      if (traces.status === "rejected") failures.push(new OtlpExportError(service).message);
+      if (traces.status === "rejected") failures.push(traces.reason);
 
-      if (metrics.status === "rejected" || exportFailed) {
-        failures.push(new OtlpExportError(`${service} metrics`).message);
+      if (metrics.status === "rejected") {
+        failures.push(new OtlpExportError(metricsService, metrics.reason));
+      } else if (metricsFailure) {
+        failures.push(metricsFailure);
       }
 
-      if (failures.length > 0) throw new Error(failures.join(" "));
+      if (failures.length === 1) throw failures[0];
+
+      if (failures.length > 1) {
+        throw new AggregateError(failures, failures.map((failure) => failure.message).join("\n"));
+      }
     },
   };
 }

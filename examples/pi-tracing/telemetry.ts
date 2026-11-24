@@ -1,5 +1,5 @@
 import { SpanStatusCode } from "@opentelemetry/api";
-import type { Context, Span } from "@opentelemetry/api";
+import type { Attributes, Context, Span } from "@opentelemetry/api";
 import { ExportResultCode, W3CTraceContextPropagator } from "@opentelemetry/core";
 import { OTLPTraceExporter as JsonTraceExporter } from "@opentelemetry/exporter-trace-otlp-http";
 import { OTLPTraceExporter as ProtobufTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
@@ -14,8 +14,15 @@ export const answer = "4\n";
 export const answerName = "answer.txt";
 
 export class OtlpExportError extends Error {
-  constructor(service: string) {
-    super(`OTLP export failed for ${service}. Check the endpoint and authentication.`);
+  constructor(service: string, cause: unknown) {
+    const code = cause instanceof Error && "code" in cause ? cause.code : undefined;
+    const status = Number.isInteger(code) ? Number(code) : 0;
+
+    const detail = status >= 300 && status <= 599 ? ` Receiver returned HTTP ${status}.` : "";
+
+    super(`OTLP export failed for ${service}.${detail} Check the endpoint and authentication.`, {
+      cause,
+    });
   }
 }
 
@@ -42,12 +49,14 @@ export function tracing(
   const Exporter = protocol === "http/json" ? JsonTraceExporter : ProtobufTraceExporter;
 
   const exporter = new Exporter({ timeoutMillis: 5_000, url });
-  let exportFailed = false;
+  let exportFailure: OtlpExportError | undefined;
 
   const trackedExporter: SpanExporter = {
     export(spans, callback) {
       exporter.export(spans, (result) => {
-        if (result.code !== ExportResultCode.SUCCESS) exportFailed = true;
+        if (result.code !== ExportResultCode.SUCCESS) {
+          exportFailure = new OtlpExportError(service, result.error);
+        }
 
         callback({ code: result.code });
       });
@@ -70,27 +79,25 @@ export function tracing(
   return {
     provider,
     start(name: string, parent: Context) {
-      return tracer.startSpan(
-        name,
-        {
-          attributes: {
-            "demo.run.id": runId,
-            "demo.mode": offline ? "scripted" : "live",
-            "demo.sandbox.id": sandboxId,
-            "beachside.provider": sandboxProvider,
-          },
-        },
-        parent,
-      );
+      const attributes: Attributes = {
+        "demo.run.id": runId,
+        "demo.mode": offline ? "scripted" : "live",
+      };
+
+      if (sandboxId) attributes["demo.sandbox.id"] = sandboxId;
+
+      if (sandboxProvider) attributes["beachside.provider"] = sandboxProvider;
+
+      return tracer.startSpan(name, { attributes }, parent);
     },
     async shutdown() {
       try {
         await provider.shutdown();
-      } catch {
-        throw new OtlpExportError(service);
+      } catch (error) {
+        throw exportFailure ?? new OtlpExportError(service, error);
       }
 
-      if (exportFailed) throw new OtlpExportError(service);
+      if (exportFailure) throw exportFailure;
     },
   };
 }
