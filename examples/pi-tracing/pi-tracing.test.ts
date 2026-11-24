@@ -59,6 +59,11 @@ describe("cross-process Pi tracing", () => {
       for (const span of spans) {
         expect(span.traceId).toBe(root.traceId);
         expect(span.status.code).toBe(1);
+        expect(
+          span.attributes.some(
+            ({ key }) => key === "beachside.provider" || key === "demo.sandbox.id",
+          ),
+        ).toBe(false);
         expect(span.attributes.find(({ key }) => key === "demo.run.id")?.value.stringValue).toBe(
           runId,
         );
@@ -230,6 +235,9 @@ test("the Boxd Pi command receives only its explicit trace, selected gateway and
     OTEL_EXPORTER_OTLP_ENDPOINT: "https://fixture.example/otlp",
     OTEL_EXPORTER_OTLP_HEADERS: "Authorization=fixture",
     OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf",
+    OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: "http://127.0.0.1:4318/v1/metrics",
+    OTEL_EXPORTER_OTLP_METRICS_HEADERS: "Authorization=host-metrics",
+    OTEL_EXPORTER_OTLP_METRICS_PROTOCOL: "http/json",
     BOXD_API_KEY: "must-stay-on-host",
     unrelated: "must-stay-on-host",
     TRACEPARENT: "ignored",
@@ -242,6 +250,7 @@ test("the Boxd Pi command receives only its explicit trace, selected gateway and
     TRACESTATE: "demo=value",
     PI_TRACING_RUN_ID: "owned-run",
     PI_TRACING_SANDBOX_ID: "owned-sandbox",
+    PI_TRACING_SANDBOX_PROVIDER: "boxd",
     PI_TELEMETRY: "0",
     DEFAULT_MODEL: "openai/gpt-4.1-mini",
     OPENROUTER_API_KEY: "fixture-openrouter",
@@ -257,61 +266,157 @@ test("the Boxd Pi command receives only its explicit trace, selected gateway and
   expect(kilo).not.toHaveProperty("OPENROUTER_BASE_URL");
 });
 
-test("Beachside SDK operations and Pi's subprocess export share the sandbox root trace", async () => {
-  const receiver = collectTraces();
+test.each(["base endpoint", "metrics override"] as const)(
+  "Boxd telemetry exports a shared sandbox trace and host metrics with the %s",
+  async (endpointMode) => {
+    const receiver = collectTraces();
+    const requests: { path: string; contentType: string | null; body: string }[] = [];
+
+    const metricsReceiver = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      async fetch(request) {
+        const contentType = request.headers.get("content-type");
+        requests.push({
+          path: new URL(request.url).pathname,
+          contentType,
+          body: await request.text(),
+        });
+
+        return new Response(null, { headers: { "content-type": contentType ?? "" } });
+      },
+    });
+
+    const override = endpointMode === "metrics override";
+
+    const env = {
+      OTEL_EXPORTER_OTLP_ENDPOINT: new URL("/otlp", metricsReceiver.url).href,
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: receiver.endpoint,
+      OTEL_EXPORTER_OTLP_TRACES_PROTOCOL: "http/json",
+    };
+
+    if (override) {
+      Object.assign(env, {
+        OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: new URL("/v1/metrics", metricsReceiver.url).href,
+        OTEL_EXPORTER_OTLP_METRICS_PROTOCOL: "http/json",
+      });
+    }
+
+    try {
+      const fixture = Bun.spawn([process.execPath, entrypoint("boxd-fixture.test-support.ts")], {
+        env,
+        stdout: "ignore",
+        stderr: "inherit",
+        timeout: 10_000,
+      });
+
+      expect(await fixture.exited).toBe(0);
+      expect(requests).toHaveLength(1);
+      expect(requests[0]).toMatchObject({
+        path: override ? "/v1/metrics" : "/otlp/v1/metrics",
+        contentType: override ? "application/json" : "application/x-protobuf",
+      });
+
+      for (const name of [
+        "beachside.operation.duration",
+        "beachside.phase.duration",
+        "beachside.operation.active",
+        "beachside.file.bytes",
+      ]) {
+        expect(requests[0]?.body).toContain(name);
+      }
+
+      const root = receiver.spans.find((span) => span.name === "sandbox.run");
+      const pi = receiver.spans.find((span) => span.name === "pi.run");
+
+      if (!root || !pi) throw new Error("Missing the sandbox or Pi run span.");
+
+      expect(pi.parentSpanId).toBe(root.spanId);
+
+      for (const name of [
+        "beachside.sandbox.create",
+        "beachside.file.write",
+        "beachside.exec",
+        "beachside.file.read",
+      ]) {
+        const span = receiver.spans.find((candidate) => candidate.name === name);
+
+        expect(span).toMatchObject({ traceId: root.traceId, parentSpanId: root.spanId });
+        expect(span?.attributes).toContainEqual({
+          key: "beachside.provider",
+          value: { stringValue: "boxd" },
+        });
+      }
+
+      const destroy = receiver.spans.find(
+        (span) =>
+          span.name === "beachside.operation.wait" &&
+          span.attributes.some(
+            ({ key, value }) =>
+              key === "beachside.operation.type" && value.stringValue === "destroy",
+          ),
+      );
+
+      expect(destroy).toMatchObject({ traceId: root.traceId, parentSpanId: root.spanId });
+
+      for (const span of receiver.spans) {
+        expect(span.traceId).toBe(root.traceId);
+
+        if (span.name.startsWith("pi.") || span === root) {
+          expect(span.attributes).toContainEqual({
+            key: "beachside.provider",
+            value: { stringValue: "boxd" },
+          });
+          expect(
+            span.attributes.find(({ key }) => key === "demo.sandbox.id")?.value.stringValue,
+          ).toBe("CANARY_NATIVE_ID");
+        }
+      }
+    } finally {
+      await receiver.stop();
+      await metricsReceiver.stop(true);
+    }
+  },
+);
+
+test("Boxd reports the HTTP status of each failed telemetry export without receiver details", async () => {
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      if (new URL(request.url).pathname === "/v1/metrics") {
+        return new Response("private metrics receiver detail", { status: 403 });
+      }
+
+      if ((await request.text()).includes("beachside-pi-agent")) return Response.json({});
+
+      return new Response("private traces receiver detail", { status: 401 });
+    },
+  });
 
   try {
     const fixture = Bun.spawn([process.execPath, entrypoint("boxd-fixture.test-support.ts")], {
       env: {
-        OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: receiver.endpoint,
+        OTEL_EXPORTER_OTLP_ENDPOINT: server.url.href,
         OTEL_EXPORTER_OTLP_TRACES_PROTOCOL: "http/json",
       },
       stdout: "ignore",
-      stderr: "inherit",
+      stderr: "pipe",
       timeout: 10_000,
     });
 
-    expect(await fixture.exited).toBe(0);
+    const stderr = await new Response(fixture.stderr).text();
 
-    const root = receiver.spans.find((span) => span.name === "sandbox.run");
-    const pi = receiver.spans.find((span) => span.name === "pi.run");
-
-    if (!root || !pi) throw new Error("Missing the sandbox or Pi run span.");
-
-    expect(pi.parentSpanId).toBe(root.spanId);
-
-    for (const name of [
-      "beachside.sandbox.create",
-      "beachside.file.write",
-      "beachside.exec",
-      "beachside.file.read",
-    ]) {
-      const span = receiver.spans.find((candidate) => candidate.name === name);
-
-      expect(span).toMatchObject({ traceId: root.traceId, parentSpanId: root.spanId });
-    }
-
-    const destroy = receiver.spans.find(
-      (span) =>
-        span.name === "beachside.operation.wait" &&
-        span.attributes.some(
-          ({ key, value }) => key === "beachside.operation.type" && value.stringValue === "destroy",
-        ),
+    expect(await fixture.exited).toBe(1);
+    expect(stderr).toContain(
+      "OTLP export failed for beachside-pi-demo. Receiver returned HTTP 401.",
     );
-
-    expect(destroy).toMatchObject({ traceId: root.traceId, parentSpanId: root.spanId });
-
-    for (const span of receiver.spans) {
-      expect(span.traceId).toBe(root.traceId);
-
-      if (span.name.startsWith("pi.") || span === root) {
-        expect(
-          span.attributes.find(({ key }) => key === "demo.sandbox.id")?.value.stringValue,
-        ).toBe("CANARY_NATIVE_ID");
-      }
-    }
+    expect(stderr).toContain(
+      "OTLP export failed for beachside-pi-demo metrics. Receiver returned HTTP 403.",
+    );
+    expect(stderr).not.toContain("receiver detail");
   } finally {
-    await receiver.stop();
+    await server.stop(true);
   }
 });
 

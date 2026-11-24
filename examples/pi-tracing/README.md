@@ -67,7 +67,11 @@ To use Kilo instead, load its env file and pass `--kilo`. Boxd also defaults to 
 
 The parent creates a Boxd microVM from the pinned Bun Debian image using Beachside's scoped sandbox API. It uploads the Pi entrypoint, its helpers and a manifest with exact direct dependency versions, then installs those dependencies. Only the Pi command receives the selected gateway's key, model, OTLP configuration, and W3C trace context. The Boxd key stays with the host. The sandbox can reach the npm registry, the selected gateway hostname, and the configured HTTPS OTLP endpoint.
 
-The active `sandbox.run` span parents the Beachside SDK lifecycle, exec and file spans as well as the guest's `pi.run`. The guest Pi spans and the host's run and verification spans include `demo.run.id` and `demo.sandbox.id`. The parent reads `answer.txt` through Beachside before scoped destruction. The sandbox has a ten-minute provider expiry and uses its temporary machine filesystem without persistent volumes. The example prints the trace ID and sandbox ID for inspection.
+The active `sandbox.run` span parents the Beachside SDK lifecycle, exec and file spans as well as the guest's `pi.run`. The demo sets `beachside.provider=boxd` on `sandbox.run`, `demo.verify`, and the guest's `pi.*` spans using the Boxd adapter name. Beachside SDK spans derive the label from the connected adapter. The demo spans also include `demo.run.id` and `demo.sandbox.id`. The parent reads `answer.txt` through Beachside before scoped destruction. The sandbox has a ten-minute provider expiry and uses its temporary machine filesystem without persistent volumes. The example prints the trace ID and sandbox ID for inspection.
+
+The host exports Beachside SDK operation and phase durations, in-flight call counts, and file bytes over OTLP/HTTP. It flushes a final metrics batch at shutdown. Pi model and tool activity in the guest is exported as spans.
+
+Set `OTEL_EXPORTER_OTLP_ENDPOINT` to a base URL to send both signals to the same receiver. For example, `https://localotel.beachside.sh` sends traces to `/v1/traces` and metrics to `/v1/metrics` on that host. `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` takes a full URL and overrides the base for host metrics. Metrics use HTTP protobuf by default. Set `OTEL_EXPORTER_OTLP_METRICS_PROTOCOL=http/json` for a JSON receiver. [OTLP endpoint rules](https://opentelemetry.io/docs/specs/otel/protocol/exporter/#endpoint-urls-for-otlphttp)
 
 On November 20, 2026, a live Boxd run through OpenRouter used `openai/gpt-6-luna` at reasoning effort `none`. The host verified that `answer.txt` contained exactly `4\n`. OpenTelemetry Desktop Viewer showed 46 spans in one trace, including successful Pi model spans. A separate Boxd lookup confirmed the sandbox had been destroyed. Grafana Cloud accepted both OTLP export requests in an earlier Kilo run.
 
@@ -89,7 +93,7 @@ OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:4318/v1/traces \
 
 With an external receiver, the command prints the run ID and trace ID. Use the trace ID to find the tree in the viewer.
 
-## View Boxd traces on your desktop
+## View Boxd traces and metrics on your desktop
 
 Start [OpenTelemetry Desktop Viewer](https://github.com/CtrlSpice/otel-desktop-viewer). The browser UI opens on port 8000, and `--db` keeps traces between sessions.
 
@@ -103,13 +107,14 @@ Boxd needs an HTTPS endpoint it can reach. In a second terminal, expose only the
 cloudflared tunnel --url http://127.0.0.1:4318
 ```
 
-Replace the placeholder with the HTTPS URL from the tunnel. Load only the Boxd and OpenRouter env files. The invocation clears inherited Grafana headers and uses the full trace-specific endpoint.
+Replace the placeholder with the HTTPS URL from the tunnel. Load only the Boxd and OpenRouter env files. The invocation clears inherited Grafana headers, sends traces through the tunnel, and sends host metrics directly to the viewer.
 
 ```sh
 BOXD_ORG=your-org \
 OTEL_EXPORTER_OTLP_ENDPOINT= \
 OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://your-tunnel.trycloudflare.com/v1/traces \
-OTEL_EXPORTER_OTLP_HEADERS= OTEL_EXPORTER_OTLP_TRACES_HEADERS= \
+OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://127.0.0.1:4318/v1/metrics \
+OTEL_EXPORTER_OTLP_HEADERS= OTEL_EXPORTER_OTLP_TRACES_HEADERS= OTEL_EXPORTER_OTLP_METRICS_HEADERS= \
 OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf \
   bun --env-file="$HOME/.config/sandbar.env" --env-file="$HOME/.config/openrouter.env" \
   examples/pi-tracing/boxd.ts --openrouter
@@ -133,4 +138,4 @@ External export defaults to OTLP/HTTP protobuf, which Grafana Cloud accepts. Set
 bun test examples/pi-tracing/pi-tracing.test.ts
 ```
 
-The tests receive real exported OTLP batches and check the trace IDs, child parent IDs, run UUID, service names, success and error statuses, and remote `tracestate`. They also check that exports reach the receiver before each process exits, including a child that fails during model setup. A rejected export gives a nonzero command exit without printing the receiver response. A deterministic adapter and real Pi subprocess prove that Beachside SDK operations and Pi share the same sandbox root trace. The tests use loopback sockets and skip live model calls.
+The tests receive real exported OTLP batches and check the trace IDs, child parent IDs, run UUID, service names, success and error statuses, and remote `tracestate`. They also check that exports reach the receiver before each process exits, including a child that fails during model setup. A rejected export gives a nonzero command exit without printing the receiver response. A deterministic adapter and real Pi subprocess verify that Beachside SDK operations and Pi share the same sandbox root trace, that spans identify the provider, and that the host flushes SDK metrics to the configured endpoint. The tests use loopback sockets and skip live model calls.

@@ -28,7 +28,7 @@ async function main() {
       ? undefined
       : collectTraces();
 
-  const telemetry = tracing("beachside-pi-demo", runId, offline, collector?.endpoint);
+  const telemetry = tracing("beachside-pi-demo", runId, offline, { url: collector?.endpoint });
   const run = telemetry.start("demo.run", ROOT_CONTEXT);
   const parent = trace.setSpan(ROOT_CONTEXT, run);
   let cwd: string | undefined;

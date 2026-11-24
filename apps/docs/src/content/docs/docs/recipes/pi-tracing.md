@@ -1,6 +1,6 @@
 ---
 title: Trace a Pi run
-description: Run the Pi agent locally or in a boxd sandbox and export one OpenTelemetry trace covering the host, the Beachside SDK and Pi's model and tool calls.
+description: Run the Pi agent locally or in a boxd sandbox, trace its model and tool calls, and export Beachside SDK metrics from the sandbox host process.
 ---
 
 This recipe runs the [Pi](https://github.com/earendil-works/pi) coding agent in a separate process, asks it to write `4` to `answer.txt` and read it back, then checks the file independently. The host and Pi share one OpenTelemetry trace: the parent passes W3C trace context to Pi, and Pi's model and tool calls appear as children of the host's run span. In the sandbox variant, the Beachside SDK's create, exec and file spans join the same trace.
@@ -63,6 +63,8 @@ BOXD_ORG=your-org bun --env-file="$HOME/.config/boxd.env" \
 
 Pass `--kilo` to use Kilo instead; it is also the default when no gateway flag is given. The host creates a boxd microVM with a ten-minute expiry, uploads the Pi entrypoint and a pinned dependency manifest, installs them, and runs Pi. Only the Pi command receives the gateway key, model, OTLP configuration and trace context; the boxd key stays on the host. The host reads `answer.txt` through Beachside, then destroys the sandbox and prints the trace and sandbox IDs.
 
+The demo adds `beachside.provider=boxd` to `sandbox.run`, `demo.verify`, and the guest's `pi.*` spans using the Boxd adapter name. Beachside SDK spans derive the label from the connected adapter. The host exports Beachside SDK operation and phase durations, in-flight calls, and file bytes. Pi model and tool activity in the guest is exported as spans. The host sends metrics to `/v1/metrics` under `OTEL_EXPORTER_OTLP_ENDPOINT` and flushes them at shutdown. To use a separate receiver, set `OTEL_EXPORTER_OTLP_METRICS_ENDPOINT` to its full metrics URL. [OTLP endpoint rules](https://opentelemetry.io/docs/specs/otel/protocol/exporter/#endpoint-urls-for-otlphttp)
+
 ## View the trace
 
 **In a terminal.** Run [otel-tui](https://github.com/ymtdzzz/otel-tui) and point the example at it:
@@ -73,12 +75,14 @@ OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:4318/v1/traces \
   bun run --cwd examples pi:trace --offline
 ```
 
-**On your desktop.** Run [OpenTelemetry Desktop Viewer](https://github.com/CtrlSpice/otel-desktop-viewer) with `otel-desktop-viewer --host 127.0.0.1`. For the boxd run, expose only its OTLP port with a temporary tunnel such as `cloudflared tunnel --url http://127.0.0.1:4318`. Anyone with the tunnel URL can submit traces to your viewer until you stop the tunnel, so stop it when the run finishes. Clear any inherited OTLP endpoint and header variables so the tunnel wins:
+**On your desktop.** Run [OpenTelemetry Desktop Viewer](https://github.com/CtrlSpice/otel-desktop-viewer) with `otel-desktop-viewer --host 127.0.0.1`. For the boxd run, expose only its OTLP port with a temporary tunnel such as `cloudflared tunnel --url http://127.0.0.1:4318`. Anyone with the tunnel URL can submit telemetry to your viewer until you stop the tunnel, so stop it when the run finishes. Use the tunnel for traces and send metrics directly from the host to the viewer.
 
 ```sh
 BOXD_ORG=your-org \
-OTEL_EXPORTER_OTLP_ENDPOINT= OTEL_EXPORTER_OTLP_HEADERS= OTEL_EXPORTER_OTLP_TRACES_HEADERS= \
+OTEL_EXPORTER_OTLP_ENDPOINT= OTEL_EXPORTER_OTLP_HEADERS= \
+OTEL_EXPORTER_OTLP_TRACES_HEADERS= OTEL_EXPORTER_OTLP_METRICS_HEADERS= \
 OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=https://your-tunnel.trycloudflare.com/v1/traces \
+OTEL_EXPORTER_OTLP_METRICS_ENDPOINT=http://127.0.0.1:4318/v1/metrics \
   bun --env-file="$HOME/.config/boxd.env" --env-file="$HOME/.config/openrouter.env" \
   examples/pi-tracing/boxd.ts --openrouter
 ```

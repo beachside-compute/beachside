@@ -2,11 +2,12 @@ import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { boxdAdapter } from "@beachside/boxd";
 import { context, ROOT_CONTEXT, trace } from "@opentelemetry/api";
 import { Beachside, Image } from "beachside";
 import { fixtureAdapter } from "../../packages/sdk-qualification/observability/adapter";
-import { guestEnvironment, openTraceContext } from "./boxd";
-import { answer, endSpan, tracing } from "./telemetry";
+import { boxdTelemetry, guestEnvironment, openTraceContext } from "./boxd";
+import { answer, endSpan } from "./telemetry";
 
 const fix = fixtureAdapter({ exitCode: 0, read: async () => new TextEncoder().encode(answer) });
 
@@ -14,7 +15,7 @@ const closeContext = openTraceContext();
 
 const runId = "boxd-trace-fixture";
 
-const telemetry = tracing("beachside-pi-demo", runId, true);
+const telemetry = boxdTelemetry(runId, true);
 
 const run = telemetry.start("sandbox.run", ROOT_CONTEXT);
 
@@ -27,10 +28,10 @@ let failed = true;
 try {
   await context.with(parent, async () => {
     const client = await Beachside.connect({
-      adapter: fix.adapter,
+      adapter: { ...fix.adapter, name: boxdAdapter.name },
       credentials: {},
       config: {},
-      tracing: { tracerProvider: telemetry.provider },
+      ...telemetry.options,
     });
 
     try {
@@ -70,6 +71,9 @@ try {
 
   try {
     await telemetry.shutdown();
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : "OTLP export failed.");
+    process.exitCode = 1;
   } finally {
     closeContext();
     await rm(cwd, { recursive: true, force: true });

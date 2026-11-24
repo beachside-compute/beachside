@@ -201,13 +201,10 @@ async function main() {
 
   const offline = process.argv.includes("--offline");
 
-  const telemetry = tracing(
-    "beachside-pi-agent",
-    PI_TRACING_RUN_ID,
-    offline,
-    undefined,
-    process.env.PI_TRACING_SANDBOX_ID,
-  );
+  const telemetry = tracing("beachside-pi-agent", PI_TRACING_RUN_ID, offline, {
+    sandboxId: process.env.PI_TRACING_SANDBOX_ID,
+    sandboxProvider: process.env.PI_TRACING_SANDBOX_PROVIDER,
+  });
 
   const run = telemetry.start("pi.run", parent);
   let failed = true;
