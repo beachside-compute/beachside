@@ -20,6 +20,23 @@ demo.run (beachside-pi-demo)
 
 Spans carry provider, model, token counts and status. They never carry prompts, model output, tool arguments, file contents or credentials.
 
+## Watch the demo
+
+Follow one trace from Beachside provisioning a boxd sandbox through Pi's model and tool calls to client cleanup. 
+
+<iframe
+  src="https://www.youtube-nocookie.com/embed/pJoT2hYDhPE"
+  title="Trace sandbox provisioning and Pi agent calls with Beachside"
+  width="560"
+  height="315"
+  style="width: 100%; height: auto; aspect-ratio: 16 / 9; border: 0;"
+  loading="lazy"
+  allow="encrypted-media; picture-in-picture; fullscreen"
+  allowfullscreen
+></iframe>
+
+[Watch the demo on YouTube](https://youtu.be/pJoT2hYDhPE).
+
 ## What you need
 
 - A checkout of the repository with [Bun](https://bun.sh) and its dependencies installed (see [Recipes](/docs/recipes/)). Run the commands below from the repository root.
