@@ -99,7 +99,7 @@
         "@beachside/archil": "workspace:*",
         "@beachside/boat": "workspace:*",
         "@beachside/boxd": "workspace:*",
-        "@beachside/credential-client": "0.4.0",
+        "@beachside/credential-client": "0.5.0",
         "@beachside/daytona": "workspace:*",
         "@beachside/e2b": "workspace:*",
         "@beachside/exe-dev": "workspace:*",
@@ -1960,7 +1960,7 @@
 
     "@aws-sdk/nested-clients/@smithy/node-http-handler": ["@smithy/node-http-handler@4.14.2", "", { "dependencies": { "@smithy/core": "^3.39.0", "@smithy/types": "^4.20.0", "tslib": "^2.6.2" } }, "sha512-i1uORV1v3qBqP43ayRKzIdm1q5x14tf8N4Dd06/QUX1Szm6VxHMrTsu20X5E63UFsaNZCRjI4SXG0jDmqYa+3w=="],
 
-    "@beachside/cli/@beachside/credential-client": ["@beachside/credential-client@0.4.0", "", { "dependencies": { "@clack/prompts": "1.9.0" }, "bin": { "beachside-broker": "dist/cli.js" } }, "sha512-ay1RFjTvFlttpXJVBqMn6XwI5IbA7+j9NRo3U/9KdG8daijz62AY288r1qLzS7jRgac+rUByY6ajdkRtzCzXcA=="],
+    "@beachside/cli/@beachside/credential-client": ["@beachside/credential-client@0.5.0", "", { "dependencies": { "@clack/prompts": "1.9.0" }, "bin": { "beachside-broker": "dist/cli.js" } }, "sha512-rcwT3Bqcxi2qdliYntO+nGUiIFBQpYLGlTR+BsXQLpN1ukFAatuC2ncJMPzyW5qiC/AexpXj8D2GjFn3CaOdag=="],
 
     "@boxd-sh/sdk/@bufbuild/protobuf": ["@bufbuild/protobuf@2.15.0", "", {}, "sha512-DAheWUkVr/SJTWCc+lg9dhY0eN4SaWlf4+bG1KzHeXbnqt0AfB/NX0Z+VunGlM1ki1B4zVvye27MpKh/svySUA=="],
 
