@@ -9,6 +9,12 @@ The repository holds no GitHub or model keys. The job mints a [credential broker
 
 **Source:** [`examples/pr-review`](https://github.com/beachside-compute/beachside/tree/main/examples/pr-review), with the [review workflow](https://github.com/beachside-compute/beachside/blob/main/.github/workflows/pr-review.yml) and the [maintenance workflow](https://github.com/beachside-compute/beachside/blob/main/.github/workflows/pr-review-maintenance.yml).
 
+## A sample review
+
+This is a review the recipe posted on a Beachside pull request. [See it on GitHub](https://github.com/beachside-compute/beachside/pull/295#pullrequestreview-6045037268).
+
+![The review opens with a summary of the change and its main issues, followed by an inline comment on examples/pi-tracing/boxd.ts lines 229 to 240 explaining that the shutdown error summary drops the underlying failure reasons and suggesting how to keep them.](/images/recipes/pr-review-sample.webp)
+
 ## What you need
 
 - A Freestyle API key.
