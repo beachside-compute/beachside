@@ -22,7 +22,7 @@ Spans carry provider, model, token counts and status. They never carry prompts, 
 
 ## Watch the demo
 
-Follow one trace from Beachside provisioning a boxd sandbox through Pi's model and tool calls to client cleanup. 
+Follow one trace from Beachside provisioning a boxd sandbox through Pi's model and tool calls to client cleanup.
 
 <iframe
   src="https://www.youtube-nocookie.com/embed/pJoT2hYDhPE"
