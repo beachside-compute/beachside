@@ -11,7 +11,7 @@ The repository holds no GitHub or model keys. The job mints a [credential broker
 
 ## A sample review
 
-This is a review the recipe posted on a Beachside pull request. [See it on GitHub](https://github.com/beachside-compute/beachside/pull/295#pullrequestreview-6045037268).
+This is the review the recipe posted on a Beachside pull request that added OTLP metrics export to the Pi tracing example, as it looked when posted. [See it on GitHub](https://github.com/beachside-compute/beachside/pull/295#pullrequestreview-6045037268).
 
 ![The review opens with a summary of the change and its main issues, followed by an inline comment on examples/pi-tracing/boxd.ts lines 229 to 240 explaining that the shutdown error summary drops the underlying failure reasons and suggesting how to keep them.](/images/recipes/pr-review-sample.webp)
 
