@@ -24,7 +24,15 @@ const prefix = "beachside broker";
 export const brokerActions = ["add", "ls", "use", "rm"] as const;
 
 /** Groups handed to the broker's own command line with this broker's URL and keys. */
-const managedGroups = ["status", "config", "integration", "issuer", "grant"] as const;
+export const managedGroups = [
+  "status",
+  "config",
+  "integration",
+  "issuer",
+  "grant",
+  "canary",
+  "alert",
+] as const;
 
 /** A broker as one command reaches it; keys are read only when a call needs them. */
 export type ResolvedBroker = {

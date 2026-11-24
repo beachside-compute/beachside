@@ -557,10 +557,10 @@ beachside profile rm old-daytona
 
 ## broker
 
-Set up credential brokers for --grant, and manage a broker's integrations, issuer allowlist and grants.
+Set up credential brokers for --grant, and manage a broker's integrations, issuer allowlist, grants and canaries.
 
 ```sh
-beachside broker add <name> (--url <origin> [--issuer-key <ref>] [--admin-key <ref>] | --deployment <.env.deploy>) [--default] | ls | use <name> | rm <name> | status | config show | integration <setup|list|show|create|rotate|enable|disable|delete> ... | issuer <show|allow|deny|set> ... | grant <issue|list|renew|revoke> ... [--broker <name>]
+beachside broker add <name> (--url <origin> [--issuer-key <ref>] [--admin-key <ref>] | --deployment <.env.deploy>) [--default] | ls | use <name> | rm <name> | status | config show | integration <setup|list|show|create|rotate|enable|disable|delete> ... | issuer <show|allow|deny|set> ... | grant <issue|list|renew|revoke> ... | canary <issue|list|show|revoke> ... | alert <add|list|test|delete> ... [--broker <name>]
 ```
 
 | Flag                      | Description                                                                                                                    |
@@ -586,6 +586,7 @@ beachside broker issuer allow openrouter
 beachside create --name agent --network internet --grant github --grant openrouter --grant-ttl 7d
 beachside broker grant list
 beachside broker grant renew agent --ttl 7d
+beachside broker canary issue openrouter --label 'decoy .env' --env > decoy.env
 beachside broker integration --help   # every management command and flag
 ```
 

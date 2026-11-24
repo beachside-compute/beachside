@@ -45,3 +45,4 @@ On GitHub Actions you don't need the issuer key at all: a workflow can mint gran
 - [GitHub access](/docs/credential-broker/github/), including GitHub Actions.
 - [Model gateway recipes](/docs/credential-broker/model-gateways/) for Kilo, Cloudflare, Vercel, OpenAI, Anthropic and custom APIs.
 - [Operate the broker](/docs/credential-broker/operate/): rotate keys, list grants and run it locally.
+- [Canary tokens](/docs/credential-broker/canary-tokens/): plant decoy grants that alert Slack, incident.io or PagerDuty when used.
