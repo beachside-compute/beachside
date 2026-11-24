@@ -1,6 +1,6 @@
 ---
 title: Canary tokens
-description: Plant decoy grants and get a Slack message or webhook alert the moment someone tries to use one.
+description: Plant decoy grants and get a Slack message, email or webhook alert the moment someone tries to use one.
 ---
 
 A canary is a decoy grant. It looks exactly like a real one, but nothing legitimate ever uses it. Plant it where only an intruder would find it, such as a decoy `.env` in a repository, a secret on an unused CI workflow, or a sandbox image. When anyone presents it to the broker, the broker refuses the request as it would an expired grant, records who tried, and alerts your destinations.
@@ -11,19 +11,36 @@ Every command here needs the admin key of a [connected broker](/docs/credential-
 
 ## Add a destination
 
-Alerts go to a Slack channel or to any HTTPS webhook. Every destination receives every canary's alerts.
+Alerts go to a Slack channel, an email address or any HTTPS webhook. Every destination receives every canary's alerts.
 
 ```sh
 beachside broker alert add slack ops-chat --to-stdin < /secure/path/slack-webhook-url
 beachside broker alert add webhook pager --to-stdin < /secure/path/alert-url
+beachside broker alert add email inbox --to oncall@example.com
 beachside broker alert test pager
 beachside broker alert list
 ```
 
 - **Slack** takes an [incoming webhook](https://api.slack.com/messaging/webhooks) URL and posts a readable message: the canary, the caller's IP and network, the request, and the trip count.
 - **Webhook** posts a flat JSON object of strings to any HTTPS URL. It's signed per [Standard Webhooks](https://www.standardwebhooks.com/), and the signing secret is printed once, when you add the destination. Add headers with `--header Name=value`, for a receiver that authenticates by header.
+- **Email** sends a plain-text message to one address through Cloudflare Email Service. It needs one-time setup on the broker; see [Email alerts](#email-alerts).
 
 `--to` and `--header` values can be `op://`, `bws://` or `pass://` references. The broker seals the URL, headers and signing secret with its encryption key, and listings show only the host and header names.
+
+### Email alerts
+
+Email goes out through [Cloudflare Email Sending](https://developers.cloudflare.com/email-service/get-started/send-emails/), which needs the Workers Paid plan and a domain on Cloudflare DNS. If your domain isn't on Cloudflare, use Slack or a webhook.
+
+1. In the Cloudflare dashboard, go to **Compute** > **Email Service** > **Email Sending**, select **Onboard Domain**, and pick a subdomain such as `alerts.example.com`. Cloudflare adds the DNS records itself, usually within minutes. A subdomain keeps alert mail apart from your main domain's mail.
+2. In the broker checkout, add `BROKER_EMAIL_FROM=canary@alerts.example.com` to `.env.deploy` and run `bun run deploy`.
+3. Add the destination and send a test:
+
+   ```sh
+   beachside broker alert add email inbox --to oncall@example.com
+   beachside broker alert test inbox
+   ```
+
+The subject is the alert's title, and the body lists every field of the event.
 
 ### incident.io and PagerDuty
 
