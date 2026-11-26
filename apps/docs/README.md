@@ -40,6 +40,11 @@ The public docs focus on the SDK: getting started, agent prompts, everyday guide
 provider setup and tested support, adapter authoring, and TypeScript reference.
 The landing page is maintained separately in `src/pages/index.astro`.
 
+Docs pages link to their Markdown source under **Other formats** on desktop or
+in the footer when the desktop table of contents is hidden. The page metadata
+advertises the same `.md` URL and the `/llms.txt` index. MDX pages expose their
+source, including component markup.
+
 The getting started page imports `examples/getting-started-{daytona,e2b,modal}.ts`
 as its displayed code, so all three copyable examples are checked by the examples
 TypeScript project. Synchronized provider tabs switch install commands, credentials, code, and run commands together. The examples are not executed in offline checks because they
