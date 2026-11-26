@@ -1,0 +1,15 @@
+---
+import DefaultTableOfContents from "@astrojs/starlight/components/TableOfContents.astro";
+import { docsMarkdownPath } from "../lib/docs-markdown-path";
+
+const markdown = docsMarkdownPath(Astro.locals.starlightRoute.entry.id);
+---
+
+<DefaultTableOfContents />
+{markdown && <div class="other-formats"><h2>Other formats</h2><a href={markdown}>Markdown</a></div>}
+
+<style>
+  .other-formats {
+    margin-top: 1rem;
+  }
+</style>

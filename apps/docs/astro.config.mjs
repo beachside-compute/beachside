@@ -49,9 +49,11 @@ export default defineConfig({
         { icon: "x.com", label: "X", href: "https://x.com/pandemicsyn" },
       ],
       customCss: ["./src/styles/tokens.css", "./src/styles/docs.css"],
+      routeMiddleware: "./src/docs-route-middleware.ts",
       components: {
         Footer: "./src/components/DocsFooter.astro",
         SiteTitle: "./src/components/SiteTitle.astro",
+        TableOfContents: "./src/components/DocsTableOfContents.astro",
         ThemeSelect: "./src/components/ThemeToggle.astro",
       },
       expressiveCode: {

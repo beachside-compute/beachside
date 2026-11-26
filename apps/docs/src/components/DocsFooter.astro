@@ -2,15 +2,26 @@
 import DefaultFooter from "@astrojs/starlight/components/Footer.astro";
 import AnalyticsConsent from "./AnalyticsConsent.astro";
 import MadeIn from "./MadeIn.astro";
+import { docsMarkdownPath } from "../lib/docs-markdown-path";
 
 const year = new Date().getFullYear();
-
+const markdown = docsMarkdownPath(Astro.locals.starlightRoute.entry.id);
 const isDocs = Astro.url.pathname === "/docs" || Astro.url.pathname.startsWith("/docs/");
 ---
 
 <DefaultFooter />
+{markdown && <p class="markdown-format"><a href={markdown}>Markdown</a></p>}
 <p class="docs-copyright">© {year} Beachside Compute · <MadeIn /></p>
 <style>
+  .markdown-format {
+    margin-top: 1rem;
+    font-size: var(--sl-text-sm);
+  }
+  @media (min-width: 72rem) {
+    :global([data-has-toc]) .markdown-format {
+      display: none;
+    }
+  }
   .docs-copyright {
     margin-top: 1.5rem;
     font-size: var(--sl-text-xs);

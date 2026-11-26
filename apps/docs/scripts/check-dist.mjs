@@ -74,9 +74,28 @@ const pageText = new Map(
   await Promise.all(pages.map(async (path) => [path, await readFile(path, "utf8")])),
 );
 
+const llms = await readFile(dist + "llms.txt", "utf8");
 const errors = [];
 
 for (const [source, html] of pageText) {
+  const docsId = source.slice(dist.length).match(/^(docs(?:\/.*)?)\/index\.html$/)?.[1];
+
+  if (docsId && !html.includes('http-equiv="refresh"')) {
+    const href = `/${docsId}.md`;
+    const markdownLinks = html.matchAll(/<a\b[^>]*\bhref="([^"]+)"[^>]*>Markdown<\/a>/g);
+
+    if (!Array.from(markdownLinks).some(([, target]) => target === href))
+      errors.push(`${source}: missing Markdown link`);
+
+    if (!html.includes(`rel="alternate" type="text/markdown" href="${href}"`))
+      errors.push(`${source}: missing Markdown metadata`);
+
+    if (!html.includes('rel="describedby" href="/llms.txt"'))
+      errors.push(`${source}: missing llms.txt metadata`);
+
+    if (!llms.includes(`](https://beachside.run${href})`)) errors.push(`llms.txt: missing ${href}`);
+  }
+
   for (const [, raw] of html.matchAll(/\bhref="([^"]+)"/g)) {
     if (!raw.startsWith("/") || raw.startsWith("//")) continue;
     const url = new URL(raw.replaceAll("&amp;", "&"), "https://beachside.run");
