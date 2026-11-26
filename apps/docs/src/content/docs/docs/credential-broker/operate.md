@@ -63,6 +63,30 @@ An `.env.deploy` from an older setup holds the keys as values. It keeps working,
 
 The broker allows up to 1,000 active grants, 100 per issuer. Each grant has its own budget for each of its integrations, including streams: 800 requests a minute and 32 at once on GitHub, enough for large clones and fetches; 600 a minute and 32 at once on the Anthropic, OpenAI and OpenRouter gateways; and 300 a minute and 8 at once on custom `http` endpoints. A request over a limit gets HTTP `429`. To change one integration's limits, add `limits` to `BROKER_CONFIG` in `.env.deploy` and run `bun run deploy`. Set spend limits and scopes at the upstream provider as well. [Grant API limits](https://github.com/beachside-compute/credential-broker/blob/main/services/credential-broker/README.md#grant-api).
 
+## Run a hosted broker
+
+Single-tenant deployments keep their original URL, keys, config, and storage. A hosted deployment can serve multiple tenants from the same Worker, each with its own hostname, keys, storage, and limits. Configure a Cloudflare wildcard route and set `BROKER_TENANT_DOMAIN` to its suffix. Add any additional broker hostnames to `BROKER_HOST_ALIASES` so tenants cannot configure them as upstreams. [Hosted deployment setup](https://github.com/beachside-compute/credential-broker/blob/main/services/credential-broker/README.md#hosted-tenants)
+
+Give the SaaS control plane a private Cloudflare Service Binding to `PlatformControl` for provisioning, listing, and inspecting tenants. Give the trusted operator Worker a separate binding to `PlatformOperator` for suspension and reactivation, role-key resets, deletion, and key rotation. Inspect recent sensitive operations with `PlatformOperator.auditLog()`.
+
+Platform HTTP is off by default. If you need HTTPS platform access, enable `BROKER_PLATFORM_HTTP_ENABLED` and run `bun run deploy:setup --platform-key-only` in the broker checkout to create the separate routine and operator HTTP keys. Store each generated key in your secret manager. Private bindings work independently of the HTTP setting.
+
+Point each client, Git remote, and gateway at its tenant's URL, such as `https://<id>.broker.example.com`. Sandbox tokens use the same format as the single-tenant broker. Use the tenant admin key with `PUT /v1/admin/config` to set per-grant limits and GitHub Actions policy. The GitHub Actions audience is `beachside-broker:<id>`. Hosted tenants use stored credentials and can send canary alerts to Slack and webhooks.
+
+### Rotate a hosted deployment's root key
+
+Add the new root version alongside the old one and make the new version active. Call `PlatformOperator.rewrap({ id })` for each active or suspended tenant. If platform HTTP is enabled, the equivalent is `POST /v1/platform/tenants/:id/rewrap` with the operator key. This preserves its data key and existing ciphertext. Retire the old root only after rewrap succeeds for all these tenants and the built-in broker's integrations and alert destinations have been rotated or recreated.
+
+### Replace a tenant data key
+
+Use `PlatformOperator.rotateDataKey({ id })` to give the tenant a new data key and re-encrypt stored credentials and alert configuration. Retry an interrupted operation to resume. Rotate upstream credentials at their providers if those credentials may already have been exposed.
+
+## Trust a token issuer
+
+A deployment can accept short-lived ES256 tokens from a control plane. In `BROKER_CONFIG.trustedIssuers`, configure the exact issuer, HTTPS JWKS URL, expected audience, and permitted roles. Use the self-hosted broker origin as the audience for a pinned issuer, or `https://<BROKER_TENANT_DOMAIN>` for an unpinned hosted issuer. The default role is `issuer`. Grant `admin` only when the control plane needs to manage the target broker.
+
+A self-hosted broker pins the entry to one org ID using `tenant`. Tokens for that org act on the built-in broker at its existing URL, without a platform key. A hosted broker can omit the pin so tokens can act on hosted tenants. Send each token to the tenant subdomain named by its signed `tenant` claim. Give each agent a stable, distinct `sub` so it can manage its own grants. [Trusted issuer configuration](https://github.com/beachside-compute/credential-broker/blob/main/services/credential-broker/README.md#trusted-token-issuers)
+
 ## Run it locally
 
 To try changes without deploying, run the Worker with Wrangler on your machine. [Local setup](https://github.com/beachside-compute/credential-broker/blob/main/services/credential-broker/README.md#run-wrangler-locally). The CLI accepts plain HTTP for `localhost`, so connect it with the fixture keys you generated.
